@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* 🔥 ROOT */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+/* 🔥 DARK MODE */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+/* 🔥 RESET (KRITISCH FÜR MOBILE) */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* 🔥 BODY FIX */
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+
+  background: var(--background);
+  color: var(--foreground);
+
+  font-family: Arial, Helvetica, sans-serif;
+
+  /* 🔥 MOBILE FIXES */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* 🔥 BUTTON FIX (EXTREM WICHTIG) */
+button {
+  cursor: pointer;
+  border: none;
+  outline: none;
+
+  /* 👉 verhindert Mobile Click-Probleme */
+  touch-action: manipulation;
+}
+
+/* 🔥 CLICK BUG FIX */
+a,
+button,
+div {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 🔥 SCROLL FIX */
+body {
+  overscroll-behavior: none;
+}
+
+/* 🔥 OPTIONAL: smoother UI */
+button:active {
+  transform: scale(0.98);
+}
