@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Gym Tracker",
     short_name: "GymTracker",
     description:
-      "Offline-faehiger Gym Tracker fuer dein Training im Fitnessstudio.",
+      "Offline-fähiger Gym Tracker für dein Training im Fitnessstudio.",
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",

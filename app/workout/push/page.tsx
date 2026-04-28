@@ -1,14 +1,11 @@
 "use client";
 
-import { WorkoutScreen } from "@/components/workout-screen";
-import { workoutPlans } from "@/lib/workoutPlan";
+import { PlanWorkoutPage } from "@/components/plan-workout-page";
 
 export default function PushWorkout() {
   return (
-    <WorkoutScreen
-      workoutType="push"
-      workoutLabel="PUSH WORKOUT"
-      exercises={workoutPlans.push}
+    <PlanWorkoutPage
+      slot="push"
       theme={{
         screenBadge: "#c62828",
         badgeBackground: "#fff5f4",

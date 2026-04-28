@@ -1,4 +1,4 @@
-import { workoutPlans, type WorkoutType } from "@/lib/workoutPlan";
+import { getAllWorkoutDays } from "@/lib/workoutPlan";
 
 const STORAGE_KEY = "gym-tracker-sets";
 const PLAN_VERSION_KEY = "gym-tracker-plan-version";
@@ -12,19 +12,27 @@ export type SetType = {
   sessionId: number;
   timestamp: number;
   type?: string;
+  planId?: string;
+  planName?: string;
+  dayId?: string;
+  dayName?: string;
 };
 
-const REP_RANGES: Record<string, { min: number; max: number }> = Object.values(
-  workoutPlans
-)
-  .flat()
-  .reduce<Record<string, { min: number; max: number }>>((acc, exercise) => {
-    acc[exercise.name] = {
-      min: exercise.minReps,
-      max: exercise.maxReps,
-    };
-    return acc;
-  }, {});
+export type SetComparisonKind = "better" | "worse" | "same" | "new";
+
+const REP_RANGES: Record<string, { min: number; max: number }> =
+  getAllWorkoutDays().reduce<Record<string, { min: number; max: number }>>(
+    (acc, day) => {
+      day.exercises.forEach((exercise) => {
+        acc[exercise.name] = {
+          min: exercise.minReps,
+          max: exercise.maxReps,
+        };
+      });
+      return acc;
+    },
+    {}
+  );
 
 function getWorkSets(sets: SetType[]) {
   return sets.filter((set) => set.set > 0);
@@ -116,23 +124,96 @@ export async function getSetsBySession(sessionId: number): Promise<SetType[]> {
     .sort((a, b) => a.timestamp - b.timestamp);
 }
 
+export async function deleteWorkoutSession(
+  sessionId: number
+): Promise<boolean> {
+  const currentSets = readStoredSets();
+  const nextSets = currentSets.filter((set) => set.sessionId !== sessionId);
+
+  if (nextSets.length === currentSets.length) {
+    return false;
+  }
+
+  writeStoredSets(nextSets);
+  return true;
+}
+
 export async function getLastSetForExercise(
   exercise: string,
-  setNumber: number
+  setNumber: number,
+  workoutType?: string
 ): Promise<SetType | null> {
   const match = readStoredSets()
-    .filter((set) => set.exercise === exercise && set.set === setNumber)
+    .filter(
+      (set) =>
+        set.exercise === exercise &&
+        set.set === setNumber &&
+        (!workoutType || set.type === workoutType)
+    )
     .sort((a, b) => b.timestamp - a.timestamp)[0];
 
   return match ?? null;
 }
 
+export async function getPreviousMatchingSet(
+  exercise: string,
+  setNumber: number,
+  workoutType: string | undefined,
+  currentSessionId: number
+): Promise<SetType | null> {
+  const match = readStoredSets()
+    .filter(
+      (set) =>
+        set.exercise === exercise &&
+        set.set === setNumber &&
+        set.sessionId !== currentSessionId &&
+        (!workoutType || set.type === workoutType)
+    )
+    .sort((a, b) => b.timestamp - a.timestamp)[0];
+
+  return match ?? null;
+}
+
+export async function getBestMatchingSet(
+  exercise: string,
+  setNumber: number,
+  workoutType?: string
+): Promise<SetType | null> {
+  const matches = readStoredSets().filter(
+    (set) =>
+      set.exercise === exercise &&
+      set.set === setNumber &&
+      (!workoutType || set.type === workoutType)
+  );
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  return matches.reduce((best, current) => {
+    if (current.weight > best.weight) {
+      return current;
+    }
+
+    if (current.weight === best.weight && current.reps > best.reps) {
+      return current;
+    }
+
+    return best;
+  }, matches[0]);
+}
+
 export async function getLastSessionForExercise(
   exercise: string,
-  currentSessionId: number
+  currentSessionId: number,
+  workoutType?: string
 ): Promise<SetType[]> {
   const all = readStoredSets()
-    .filter((set) => set.exercise === exercise)
+    .filter(
+      (set) =>
+        set.exercise === exercise &&
+        (!workoutType || set.type === workoutType)
+    )
     .sort((a, b) => b.timestamp - a.timestamp);
 
   const previous = all.find((set) => set.sessionId !== currentSessionId);
@@ -187,6 +268,48 @@ export function getProgress(current: SetType | null, last: SetType | null) {
   };
 }
 
+export function getSetComparison(
+  current: SetType | null,
+  previous: SetType | null
+) {
+  if (!current) {
+    return null;
+  }
+
+  if (!previous) {
+    return {
+      kind: "new" as SetComparisonKind,
+      weight: 0,
+      reps: 0,
+    };
+  }
+
+  const weight = current.weight - previous.weight;
+  const reps = current.reps - previous.reps;
+
+  if (weight > 0 || (weight === 0 && reps > 0)) {
+    return {
+      kind: "better" as SetComparisonKind,
+      weight,
+      reps,
+    };
+  }
+
+  if (weight < 0 || (weight === 0 && reps < 0)) {
+    return {
+      kind: "worse" as SetComparisonKind,
+      weight,
+      reps,
+    };
+  }
+
+  return {
+    kind: "same" as SetComparisonKind,
+    weight,
+    reps,
+  };
+}
+
 export function getCoachDecision(exercise: string, sets: SetType[]) {
   const range = REP_RANGES[exercise];
   const workSets = getWorkSets(sets);
@@ -220,13 +343,21 @@ export async function saveSet({
   set,
   sessionId,
   type,
+  planId,
+  planName,
+  dayId,
+  dayName,
 }: {
   exercise: string;
   weight: number;
   reps: number;
   set: number;
   sessionId: number;
-  type?: WorkoutType;
+  type?: string;
+  planId?: string;
+  planName?: string;
+  dayId?: string;
+  dayName?: string;
 }) {
   if (!sessionId || Number.isNaN(sessionId)) {
     console.error("Invalid sessionId.");
@@ -241,6 +372,10 @@ export async function saveSet({
     sessionId,
     timestamp: Date.now(),
     type: type ?? detectWorkoutType(exercise),
+    planId,
+    planName,
+    dayId,
+    dayName,
   };
 
   const sets = readStoredSets();

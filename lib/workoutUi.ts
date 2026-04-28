@@ -1,30 +1,42 @@
-export const EXERCISE_LABELS: Record<string, string> = {
-  benchpress: "Bankdruecken",
-  pullups: "Klimmzuege",
-  pullups_wide: "Klimmzuege breit",
-  shoulderpress: "Schulterdruecken",
-  dips: "Dips",
-  bulgarian: "Bulgarische Split Squats",
-  core: "Core",
-  rows: "Rudern",
-  latpulldown: "Lat Pulldown",
-  biceps: "Bizeps Curls",
-  rear_delt: "Rear Delt",
-  squat: "Kniebeugen",
-  legpress: "Beinpresse",
-  legcurl: "Leg Curl",
-  calves: "Waden",
-  lunges: "Lunges",
-  pushups: "Push-ups",
-  romanian_deadlift: "Rumaenisches Kreuzheben",
-  face_pulls: "Face Pulls",
-  walking_lunges: "Walking Lunges",
-  hanging_leg_raises: "Hanging Leg Raises",
-  shoulderpress_pushups: "Schulterdruecken + Push-ups",
-};
+import {
+  getExerciseCatalogEntry,
+  getExerciseCatalogSections,
+  getStretchCatalogSections,
+  type ExerciseCatalogEntry,
+} from "@/lib/trainingCatalog";
+
+export const EXERCISE_LABELS: Record<string, string> = Object.fromEntries(
+  getExerciseCatalogSections()
+    .flatMap((section) => section.items)
+    .map((entry) => [entry.id, entry.label])
+);
+
+export const EXERCISE_LIBRARY = getExerciseCatalogSections()
+  .flatMap((section) =>
+    section.items.map((entry) => ({
+      value: entry.id,
+      label: entry.label,
+      category: section.category,
+    }))
+  )
+  .sort((a, b) => a.label.localeCompare(b.label, "de-DE"));
+
+export const STRETCH_LIBRARY = getStretchCatalogSections()
+  .flatMap((section) =>
+    section.items.map((entry) => ({
+      value: entry.id,
+      label: entry.label,
+      category: section.category,
+    }))
+  )
+  .sort((a, b) => a.label.localeCompare(b.label, "de-DE"));
 
 export function getExerciseLabel(exercise: string) {
   return EXERCISE_LABELS[exercise] ?? fallbackLabel(exercise);
+}
+
+export function getExerciseMeta(exercise: string): ExerciseCatalogEntry | null {
+  return getExerciseCatalogEntry(exercise);
 }
 
 function fallbackLabel(value: string) {

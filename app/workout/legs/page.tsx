@@ -1,14 +1,11 @@
 "use client";
 
-import { WorkoutScreen } from "@/components/workout-screen";
-import { workoutPlans } from "@/lib/workoutPlan";
+import { PlanWorkoutPage } from "@/components/plan-workout-page";
 
 export default function LegsWorkout() {
   return (
-    <WorkoutScreen
-      workoutType="mixed"
-      workoutLabel="MIXED WORKOUT"
-      exercises={workoutPlans.mixed}
+    <PlanWorkoutPage
+      slot="mixed"
       theme={{
         screenBadge: "#2e7d32",
         badgeBackground: "#effcf2",
