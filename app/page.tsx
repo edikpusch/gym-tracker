@@ -1,6 +1,10 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import {
+  getActiveWorkoutState,
+  type ActiveWorkoutState,
+} from "@/lib/activeWorkout";
 
 import type { ExercisePlanBlock, TrainingPlanBlock } from "@/lib/trainingModel";
 import {
@@ -8,6 +12,7 @@ import {
   addPauseBlock,
   addStretchBlock,
   deleteTrainingPlan,
+  duplicateDayBlock,
   getDayBlocks,
   duplicateTrainingPlan,
   getActivePlanId,
@@ -28,7 +33,17 @@ import {
   type TrainingExercise,
   type TrainingPlan,
 } from "@/lib/trainingPlans";
-import { EXERCISE_LIBRARY, getExerciseLabel, STRETCH_LIBRARY } from "@/lib/workoutUi";
+import {
+  getExerciseCatalogEntry,
+  getSuggestedExerciseSetup,
+} from "@/lib/trainingCatalog";
+import {
+  EXERCISE_LIBRARY,
+  EXERCISE_LIBRARY_GROUPS,
+  getExerciseLabel,
+  STRETCH_LIBRARY,
+  STRETCH_LIBRARY_GROUPS,
+} from "@/lib/workoutUi";
 
 const slotHref = {
   push: "/workout/push/index.html",
@@ -44,6 +59,8 @@ type DayEditorState = {
 type ExerciseEditorState = {
   dayId: string;
   exerciseId?: string;
+  insertAfterBlockId?: string | null;
+  category: string;
   name: string;
   sets: string;
   minReps: string;
@@ -62,6 +79,8 @@ type WarmupEditorState = {
 type StretchEditorState = {
   dayId: string;
   blockId?: string;
+  insertAfterBlockId?: string | null;
+  category: string;
   stretchId: string;
   holdSeconds: string;
   rounds: string;
@@ -70,16 +89,39 @@ type StretchEditorState = {
 type PauseEditorState = {
   dayId: string;
   blockId?: string;
+  insertAfterBlockId?: string | null;
   label: string;
   seconds: string;
   scope: "exercise" | "workout";
 };
+
+function buildExerciseEditorState(
+  dayId: string,
+  exerciseId?: string,
+  insertAfterBlockId?: string | null
+): ExerciseEditorState {
+  const selectedExerciseId = exerciseId ?? EXERCISE_LIBRARY[0]?.value ?? "benchpress";
+  const selectedMeta = getExerciseCatalogEntry(selectedExerciseId);
+  const defaults = getSuggestedExerciseSetup(selectedExerciseId);
+
+  return {
+    dayId,
+    insertAfterBlockId: insertAfterBlockId ?? null,
+    category: selectedMeta?.category ?? EXERCISE_LIBRARY_GROUPS[0]?.category ?? "Brust",
+    name: selectedExerciseId,
+    sets: String(defaults.sets),
+    minReps: String(defaults.minReps),
+    maxReps: String(defaults.maxReps),
+    restSeconds: String(defaults.restSeconds),
+  };
+}
 
 export default function Home() {
   const [availablePlans, setAvailablePlans] = useState<TrainingPlan[]>([]);
   const [activePlan, setActivePlan] = useState<TrainingPlan>(() =>
     getTrainingPlan("my-plan")
   );
+  const [activeWorkout, setActiveWorkout] = useState<ActiveWorkoutState | null>(null);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [showPlanDetail, setShowPlanDetail] = useState(false);
   const [dayEditor, setDayEditor] = useState<DayEditorState | null>(null);
@@ -93,9 +135,24 @@ export default function Home() {
     refreshPlans();
   }, []);
 
+  useEffect(() => {
+    function refreshActiveWorkout() {
+      setActiveWorkout(getActiveWorkoutState());
+    }
+
+    refreshActiveWorkout();
+    window.addEventListener("focus", refreshActiveWorkout);
+    window.addEventListener("visibilitychange", refreshActiveWorkout);
+
+    return () => {
+      window.removeEventListener("focus", refreshActiveWorkout);
+      window.removeEventListener("visibilitychange", refreshActiveWorkout);
+    };
+  }, []);
+
   function refreshPlans(nextActivePlanId?: string) {
-    const plans = getAllTrainingPlans();
     const resolvedPlan = getTrainingPlan(nextActivePlanId || getActivePlanId());
+    const plans = sortPlansForPicker(getAllTrainingPlans(), resolvedPlan.id);
     setAvailablePlans(plans);
     setActivePlan(resolvedPlan);
   }
@@ -189,27 +246,57 @@ export default function Home() {
     refreshPlans(updated.id);
   }
 
-  function openAddExercise(dayId: string) {
-    setExerciseEditor({
-      dayId,
-      name: EXERCISE_LIBRARY[0]?.value ?? "benchpress",
-      sets: "3",
-      minReps: "8",
-      maxReps: "12",
-      restSeconds: "90",
+  function openAddExercise(dayId: string, insertAfterBlockId?: string | null) {
+    setExerciseEditor(buildExerciseEditorState(dayId, undefined, insertAfterBlockId));
+  }
+
+  function openAddExercisePreset(
+    dayId: string,
+    kind: "compound" | "isolation",
+    insertAfterBlockId?: string | null
+  ) {
+    const presetExercise = EXERCISE_LIBRARY.find((exercise) => {
+      const meta = getExerciseCatalogEntry(exercise.value);
+      return meta?.kind === kind;
     });
+
+    setExerciseEditor(
+      buildExerciseEditorState(dayId, presetExercise?.value, insertAfterBlockId)
+    );
   }
 
   function openEditExercise(dayId: string, exercise: TrainingExercise) {
+    const selectedMeta = getExerciseCatalogEntry(exercise.name);
+
     setExerciseEditor({
       dayId,
       exerciseId: exercise.id,
+      category: selectedMeta?.category ?? EXERCISE_LIBRARY_GROUPS[0]?.category ?? "Brust",
       name: exercise.name,
       sets: String(exercise.sets),
       minReps: String(exercise.minReps),
       maxReps: String(exercise.maxReps),
       restSeconds: String(exercise.restSeconds),
     });
+  }
+
+  function applySuggestedExerciseSetup(exerciseId: string) {
+    const selectedMeta = getExerciseCatalogEntry(exerciseId);
+    const defaults = getSuggestedExerciseSetup(exerciseId);
+
+    setExerciseEditor((current) =>
+      current
+        ? {
+            ...current,
+            category: selectedMeta?.category ?? current.category,
+            name: exerciseId,
+            sets: String(defaults.sets),
+            minReps: String(defaults.minReps),
+            maxReps: String(defaults.maxReps),
+            restSeconds: String(defaults.restSeconds),
+          }
+        : current
+    );
   }
 
   function saveExerciseEditor() {
@@ -232,7 +319,12 @@ export default function Home() {
           exerciseEditor.exerciseId,
           draft
         )
-      : addTrainingExercise(activePlan.id, exerciseEditor.dayId, draft);
+      : addTrainingExercise(
+          activePlan.id,
+          exerciseEditor.dayId,
+          draft,
+          exerciseEditor.insertAfterBlockId
+        );
 
     if (!updated) {
       return;
@@ -300,15 +392,36 @@ export default function Home() {
     stretchId?: string,
     holdSeconds?: number,
     rounds?: number,
-    blockId?: string
+    blockId?: string,
+    insertAfterBlockId?: string | null
   ) {
+    const selectedStretchId = stretchId ?? STRETCH_LIBRARY[0]?.value ?? "chest_stretch";
+    const selectedMeta = getExerciseCatalogEntry(selectedStretchId);
+
     setStretchEditor({
       dayId,
       blockId,
-      stretchId: stretchId ?? STRETCH_LIBRARY[0]?.value ?? "chest_stretch",
+      insertAfterBlockId: insertAfterBlockId ?? null,
+      category: selectedMeta?.category ?? STRETCH_LIBRARY_GROUPS[0]?.category ?? "Mobilität",
+      stretchId: selectedStretchId,
       holdSeconds: String(holdSeconds ?? 30),
       rounds: String(rounds ?? 1),
     });
+  }
+
+  function applyStretchCategory(category: string) {
+    const nextGroup = STRETCH_LIBRARY_GROUPS.find((group) => group.category === category);
+    const nextStretchId = nextGroup?.items[0]?.value;
+
+    setStretchEditor((current) =>
+      current
+        ? {
+            ...current,
+            category,
+            stretchId: nextStretchId ?? current.stretchId,
+          }
+        : current
+    );
   }
 
   function saveStretchEditor() {
@@ -329,7 +442,12 @@ export default function Home() {
           stretchEditor.blockId,
           draft
         )
-      : addStretchBlock(activePlan.id, stretchEditor.dayId, draft);
+      : addStretchBlock(
+          activePlan.id,
+          stretchEditor.dayId,
+          draft,
+          stretchEditor.insertAfterBlockId
+        );
 
     if (!updated) {
       return;
@@ -344,11 +462,13 @@ export default function Home() {
     label?: string,
     seconds?: number,
     scope: "exercise" | "workout" = "exercise",
-    blockId?: string
+    blockId?: string,
+    insertAfterBlockId?: string | null
   ) {
     setPauseEditor({
       dayId,
       blockId,
+      insertAfterBlockId: insertAfterBlockId ?? null,
       label: label ?? "",
       seconds: String(seconds ?? 60),
       scope,
@@ -368,7 +488,12 @@ export default function Home() {
 
     const updated = pauseEditor.blockId
       ? updatePauseBlock(activePlan.id, pauseEditor.dayId, pauseEditor.blockId, draft)
-      : addPauseBlock(activePlan.id, pauseEditor.dayId, draft);
+      : addPauseBlock(
+          activePlan.id,
+          pauseEditor.dayId,
+          draft,
+          pauseEditor.insertAfterBlockId
+        );
 
     if (!updated) {
       return;
@@ -405,6 +530,15 @@ export default function Home() {
     refreshPlans(updated.id);
   }
 
+  function handleDuplicateBlock(dayId: string, blockId: string) {
+    const updated = duplicateDayBlock(activePlan.id, dayId, blockId);
+    if (!updated) {
+      return;
+    }
+
+    refreshPlans(updated.id);
+  }
+
   const canEditActivePlan = isCustomTrainingPlan(activePlan.id);
 
   return (
@@ -417,11 +551,32 @@ export default function Home() {
           </a>
         </div>
 
+        {activeWorkout ? (
+          <a href={activeWorkout.href} style={resumeCard}>
+            <div>
+              <div style={resumeKicker}>Training läuft</div>
+              <div style={resumeTitle}>
+                {activeWorkout.dayName || activeWorkout.workoutLabel}
+              </div>
+              <div style={resumeCopy}>
+                {[activeWorkout.planName, activeWorkout.stateLabel]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </div>
+            </div>
+            <span style={resumeButton}>Fortsetzen</span>
+          </a>
+        ) : null}
+
         <div style={heroCard}>
           <div style={heroTopRow}>
             <div>
               <div style={sectionTitle}>Aktiver Plan</div>
               <div style={heroTitle}>{activePlan.name}</div>
+              <div style={heroMeta}>
+                {activePlan.days.length} Tage ·{" "}
+                {canEditActivePlan ? "Eigener Plan" : "Vorlage"}
+              </div>
             </div>
             <div style={heroActions}>
               <button style={ghostAction} onClick={openPlanPicker}>
@@ -444,22 +599,39 @@ export default function Home() {
             )}, minmax(0, 1fr))`,
           }}
         >
-          {activePlan.days.map((day) => (
-            <a
-              key={day.id}
-              href={slotHref[day.slot]}
-              style={{
-                ...dayCard,
-                background: `linear-gradient(135deg, ${day.color} 0%, ${shadeColor(
-                  day.color
-                )} 100%)`,
-              }}
-            >
-              <span style={dayKicker}>{activePlan.name}</span>
-              <span style={dayTitle}>{day.name}</span>
-              <span style={dayCopy}>{buildExercisePreview(day.exercises)}</span>
-            </a>
-          ))}
+          {activePlan.days.map((day) => {
+            const dayBlocks = getDayBlocks(day);
+            const daySummary = getEditorDaySummary(dayBlocks);
+            const dayPreview = getEditorDayPreview(dayBlocks);
+
+            return (
+              <a
+                key={day.id}
+                href={slotHref[day.slot]}
+                style={{
+                  ...dayCard,
+                  background: `linear-gradient(135deg, ${day.color} 0%, ${shadeColor(
+                    day.color
+                  )} 100%)`,
+                }}
+              >
+                <span style={dayKicker}>{activePlan.name}</span>
+                <span style={dayTitle}>{day.name}</span>
+                <div style={startDaySummaryStack}>
+                  <span style={dayCopy}>{daySummary}</span>
+                  {dayPreview.length > 0 ? (
+                    <div style={startDayPreviewRow}>
+                      {dayPreview.map((item) => (
+                        <span key={`${day.id}-${item}`} style={startDayPreviewChip}>
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </a>
+            );
+          })}
         </div>
       </main>
 
@@ -487,6 +659,7 @@ export default function Home() {
                     style={{
                       ...planCard,
                       ...(isActive ? activePlanCard : null),
+                      ...(isActive ? activePlanCardFeatured : null),
                       borderColor: isActive ? plan.accent : "#e5ebf4",
                     }}
                   >
@@ -527,6 +700,7 @@ export default function Home() {
               <div>
                 <div style={sectionTitle}>Plan</div>
                 <div style={sheetTitle}>{activePlan.name}</div>
+                <div style={detailPreview}>{getPlanPreview(activePlan)}</div>
               </div>
               <button style={closeButton} onClick={() => setShowPlanDetail(false)}>
                 ← Zurück
@@ -544,13 +718,13 @@ export default function Home() {
                       style={detailActionButton}
                       onClick={() => handleRenamePlan(activePlan.id)}
                     >
-                      Plan umbenennen
+                      Umbenennen
                     </button>
                     <button
                       style={dangerDetailActionButton}
                       onClick={() => handleDeletePlan(activePlan.id)}
                     >
-                      Plan löschen
+                      Löschen
                     </button>
                   </>
                 ) : (
@@ -558,7 +732,7 @@ export default function Home() {
                     style={detailActionButton}
                     onClick={() => handleDuplicatePlan(activePlan.id)}
                   >
-                    Als Kopie speichern
+                    Kopie
                   </button>
                 )}
               </div>
@@ -567,6 +741,9 @@ export default function Home() {
             <div style={planDetailStack}>
               {activePlan.days.map((day) => {
                 const dayBlocks = getDayBlocks(day);
+                const startInsertLabel = getEditorInsertPointLabel(dayBlocks, null);
+                const daySummary = getEditorDaySummary(dayBlocks);
+                const dayPreview = getEditorDayPreview(dayBlocks);
 
                 return (
                 <div key={day.id} style={planDetailCard}>
@@ -580,40 +757,121 @@ export default function Home() {
                       {day.name}
                     </div>
                     {canEditActivePlan ? (
-                      <div style={miniActionRow}>
+                      <div style={dayToolbar}>
                         <button
-                          style={miniActionButton}
+                          style={secondaryMiniActionButton}
                           onClick={() => openDayEditor(day.id, day.name)}
                         >
                           Tag
                         </button>
                         <button
-                          style={miniActionButton}
-                          onClick={() => openStretchEditor(day.id)}
-                        >
-                          Dehnen +
-                        </button>
-                        <button
-                          style={miniActionButton}
-                          onClick={() => openPauseEditor(day.id)}
-                        >
-                          Pause +
-                        </button>
-                        <button
-                          style={miniActionButton}
+                          style={secondaryMiniActionButton}
                           onClick={() => openAddExercise(day.id)}
                         >
-                          Übung +
+                          + Übung
+                        </button>
+                        <button
+                          style={quickAddButton}
+                          onClick={() => openAddExercisePreset(day.id, "compound")}
+                        >
+                          + Grund
+                        </button>
+                        <button
+                          style={quickAddButton}
+                          onClick={() => openAddExercisePreset(day.id, "isolation")}
+                        >
+                          + Iso
+                        </button>
+                        <button
+                          style={quickAddButton}
+                          onClick={() => openStretchEditor(day.id)}
+                        >
+                          + Dehnen
+                        </button>
+                        <button
+                          style={quickAddButton}
+                          onClick={() => openPauseEditor(day.id)}
+                        >
+                          + Pause
+                        </button>
+                        <button
+                          style={quickAddButton}
+                          onClick={() => openPauseEditor(day.id, "Workout-Pause", 60, "workout")}
+                        >
+                          + Workout
                         </button>
                       </div>
                     ) : null}
                   </div>
+                  <div style={daySummaryStack}>
+                    <div style={daySummaryLine}>{daySummary}</div>
+                    {dayPreview.length > 0 ? (
+                      <div style={dayPreviewRow}>
+                        {dayPreview.map((item) => (
+                          <span key={`${day.id}-${item}`} style={dayPreviewChip}>
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <div style={exerciseList}>
+                    {canEditActivePlan ? (
+                      <div style={insertRow}>
+                        <span style={insertLabel}>{startInsertLabel}</span>
+                        <button
+                          style={insertActionButton}
+                          onClick={() => openAddExercisePreset(day.id, "compound")}
+                        >
+                          Grund
+                        </button>
+                        <button
+                          style={insertActionButton}
+                          onClick={() => openAddExercisePreset(day.id, "isolation")}
+                        >
+                          Iso
+                        </button>
+                        <button
+                          style={insertActionButton}
+                          onClick={() => openStretchEditor(day.id)}
+                        >
+                          Dehnen
+                        </button>
+                        <button
+                          style={insertActionButton}
+                          onClick={() => openPauseEditor(day.id)}
+                        >
+                          Pause
+                        </button>
+                      </div>
+                    ) : null}
                     {dayBlocks.map((block, blockIndex) => {
                       const editableExercise = getEditableExerciseForBlock(
                         block,
                         day.exercises
                       );
+                      const blockSectionLabel = getEditorSectionLabel(
+                        dayBlocks,
+                        blockIndex
+                      );
+                      const insertPointLabel = getEditorInsertPointLabel(
+                        dayBlocks,
+                        block.id
+                      );
+                      const moveUpLabel = getEditorMoveTargetLabel(
+                        dayBlocks,
+                        blockIndex,
+                        "up"
+                      );
+                      const moveDownLabel = getEditorMoveTargetLabel(
+                        dayBlocks,
+                        blockIndex,
+                        "down"
+                      );
+                      const blockContextLabel =
+                        block.type === "stretch" || block.type === "pause"
+                          ? getEditorBlockContextLabel(dayBlocks, block.id)
+                          : "";
                       const warmupExercise =
                         block.type === "warmup"
                           ? day.exercises.find(
@@ -622,118 +880,182 @@ export default function Home() {
                           : null;
 
                       return (
-                        <div key={block.id} style={exerciseRow}>
-                          <div style={exerciseRowTop}>
-                            <div style={blockInfo}>
-                              <span style={exerciseName}>{getBlockTitle(block)}</span>
-                              <span style={getBlockBadgeStyle(block.type)}>
-                                {getBlockBadgeLabel(block.type)}
-                              </span>
+                        <Fragment key={block.id}>
+                          {blockSectionLabel ? (
+                            <div style={editorSectionLabel}>{blockSectionLabel}</div>
+                          ) : null}
+                          <div
+                            style={{
+                              ...exerciseRow,
+                              ...(block.type === "exercise" ? null : nestedBlockRow),
+                            }}
+                          >
+                            <div style={exerciseRowTop}>
+                              <div style={blockInfo}>
+                                <span style={exerciseName}>{getBlockTitle(block)}</span>
+                                <span style={getBlockBadgeStyle(block.type)}>
+                                  {getBlockBadgeLabel(block.type)}
+                                </span>
+                              </div>
+                              {canEditActivePlan ? (
+                                <div style={blockControlStack}>
+                                  <div style={miniActionRow}>
+                                    <button
+                                      style={miniIconButton}
+                                      onClick={() => handleMoveBlock(day.id, block.id, "up")}
+                                      disabled={blockIndex === 0}
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      style={miniIconButton}
+                                      onClick={() => handleMoveBlock(day.id, block.id, "down")}
+                                      disabled={blockIndex === dayBlocks.length - 1}
+                                    >
+                                      ↓
+                                    </button>
+                                  </div>
+                                  <div style={moveHintRow}>
+                                    <span style={moveHintText}>↑ {moveUpLabel}</span>
+                                    <span style={moveHintText}>↓ {moveDownLabel}</span>
+                                  </div>
+                                  {editableExercise ? (
+                                    <div style={miniActionRow}>
+                                      <button
+                                        style={miniActionButton}
+                                        onClick={() => openEditExercise(day.id, editableExercise)}
+                                      >
+                                        Bearb.
+                                      </button>
+                                      <button
+                                        style={secondaryMiniActionButton}
+                                        onClick={() => handleDuplicateBlock(day.id, block.id)}
+                                      >
+                                        Kopie
+                                      </button>
+                                      <button
+                                        style={dangerMiniActionButton}
+                                        onClick={() =>
+                                          handleRemoveExercise(day.id, editableExercise.id)
+                                        }
+                                      >
+                                        Löschen
+                                      </button>
+                                    </div>
+                                  ) : block.type === "warmup" && warmupExercise ? (
+                                    <div style={miniActionRow}>
+                                      <button
+                                        style={miniActionButton}
+                                        onClick={() =>
+                                          openWarmupEditor(
+                                            day.id,
+                                            warmupExercise.id,
+                                            getExerciseLabel(warmupExercise.name),
+                                            block.rounds,
+                                            block.restSeconds
+                                          )
+                                        }
+                                      >
+                                        Bearb.
+                                      </button>
+                                    </div>
+                                  ) : block.type === "stretch" ? (
+                                    <div style={miniActionRow}>
+                                      <button
+                                        style={miniActionButton}
+                                        onClick={() =>
+                                          openStretchEditor(
+                                            day.id,
+                                            block.stretchId,
+                                            block.holdSeconds,
+                                            block.rounds,
+                                            block.id
+                                          )
+                                        }
+                                      >
+                                        Bearb.
+                                      </button>
+                                      <button
+                                        style={secondaryMiniActionButton}
+                                        onClick={() => handleDuplicateBlock(day.id, block.id)}
+                                      >
+                                        Kopie
+                                      </button>
+                                      <button
+                                        style={dangerMiniActionButton}
+                                        onClick={() => handleRemoveBlock(day.id, block.id)}
+                                      >
+                                        Löschen
+                                      </button>
+                                    </div>
+                                  ) : block.type === "pause" ? (
+                                    <div style={miniActionRow}>
+                                      <button
+                                        style={miniActionButton}
+                                        onClick={() =>
+                                          openPauseEditor(
+                                            day.id,
+                                            block.label,
+                                            block.seconds,
+                                            block.scope,
+                                            block.id
+                                          )
+                                        }
+                                      >
+                                        Bearb.
+                                      </button>
+                                      <button
+                                        style={secondaryMiniActionButton}
+                                        onClick={() => handleDuplicateBlock(day.id, block.id)}
+                                      >
+                                        Kopie
+                                      </button>
+                                      <button
+                                        style={dangerMiniActionButton}
+                                        onClick={() => handleRemoveBlock(day.id, block.id)}
+                                      >
+                                        Löschen
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
-                            {canEditActivePlan ? (
-                              <div style={miniActionRow}>
-                                <button
-                                  style={miniIconButton}
-                                  onClick={() => handleMoveBlock(day.id, block.id, "up")}
-                                  disabled={blockIndex === 0}
-                                >
-                                  ↑
-                                </button>
-                                <button
-                                  style={miniIconButton}
-                                  onClick={() => handleMoveBlock(day.id, block.id, "down")}
-                                  disabled={blockIndex === dayBlocks.length - 1}
-                                >
-                                  ↓
-                                </button>
-                              </div>
-                            ) : null}
-                            {canEditActivePlan && editableExercise ? (
-                              <div style={miniActionRow}>
-                                <button
-                                  style={miniActionButton}
-                                  onClick={() => openEditExercise(day.id, editableExercise)}
-                                >
-                                  Bearbeiten
-                                </button>
-                                <button
-                                  style={miniActionButton}
-                                  onClick={() =>
-                                    handleRemoveExercise(day.id, editableExercise.id)
-                                  }
-                                >
-                                  Entfernen
-                                </button>
-                              </div>
-                            ) : canEditActivePlan &&
-                              block.type === "warmup" &&
-                              warmupExercise ? (
-                              <div style={miniActionRow}>
-                                <button
-                                  style={miniActionButton}
-                                  onClick={() =>
-                                    openWarmupEditor(
-                                      day.id,
-                                      warmupExercise.id,
-                                      getExerciseLabel(warmupExercise.name),
-                                      block.rounds,
-                                      block.restSeconds
-                                    )
-                                  }
-                                >
-                                  Bearbeiten
-                                </button>
-                              </div>
-                            ) : canEditActivePlan && block.type === "stretch" ? (
-                              <div style={miniActionRow}>
-                                <button
-                                  style={miniActionButton}
-                                  onClick={() =>
-                                    openStretchEditor(
-                                      day.id,
-                                      block.stretchId,
-                                      block.holdSeconds,
-                                      block.rounds,
-                                      block.id
-                                    )
-                                  }
-                                >
-                                  Bearbeiten
-                                </button>
-                                <button
-                                  style={miniActionButton}
-                                  onClick={() => handleRemoveBlock(day.id, block.id)}
-                                >
-                                  Entfernen
-                                </button>
-                              </div>
-                            ) : canEditActivePlan && block.type === "pause" ? (
-                              <div style={miniActionRow}>
-                                <button
-                                  style={miniActionButton}
-                                  onClick={() =>
-                                    openPauseEditor(
-                                      day.id,
-                                      block.label,
-                                      block.seconds,
-                                      block.scope,
-                                      block.id
-                                    )
-                                  }
-                                >
-                                  Bearbeiten
-                                </button>
-                                <button
-                                  style={miniActionButton}
-                                  onClick={() => handleRemoveBlock(day.id, block.id)}
-                                >
-                                  Entfernen
-                                </button>
-                              </div>
+                            <span style={exerciseMeta}>{getBlockMeta(block)}</span>
+                            {blockContextLabel ? (
+                              <span style={blockContextMeta}>{blockContextLabel}</span>
                             ) : null}
                           </div>
-                          <span style={exerciseMeta}>{getBlockMeta(block)}</span>
-                        </div>
+                          {canEditActivePlan ? (
+                            <div style={insertRow}>
+                              <span style={insertLabel}>{insertPointLabel}</span>
+                              <button
+                                style={insertActionButton}
+                                onClick={() => openAddExercisePreset(day.id, "compound", block.id)}
+                              >
+                                Grund
+                              </button>
+                              <button
+                                style={insertActionButton}
+                                onClick={() => openAddExercisePreset(day.id, "isolation", block.id)}
+                              >
+                                Iso
+                              </button>
+                              <button
+                                style={insertActionButton}
+                                onClick={() => openStretchEditor(day.id, undefined, undefined, undefined, undefined, block.id)}
+                              >
+                                Dehnen
+                              </button>
+                              <button
+                                style={insertActionButton}
+                                onClick={() => openPauseEditor(day.id, undefined, undefined, "exercise", undefined, block.id)}
+                              >
+                                Pause
+                              </button>
+                            </div>
+                          ) : null}
+                        </Fragment>
                       );
                     })}
                   </div>
@@ -790,131 +1112,271 @@ export default function Home() {
       {exerciseEditor ? (
         <div style={overlay}>
           <div style={editorSheet}>
-            <div style={sheetHeader}>
-              <div>
-                <div style={sectionTitle}>Übung</div>
-                <div style={sheetTitle}>
-                  {exerciseEditor.exerciseId ? "Übung bearbeiten" : "Übung hinzufügen"}
-                </div>
-              </div>
-              <button
-                style={closeButton}
-                onClick={() => setExerciseEditor(null)}
-              >
-                ← Zurück
-              </button>
-            </div>
+            {(() => {
+              const selectedExerciseMeta = getExerciseCatalogEntry(exerciseEditor.name);
+              const visibleExerciseGroups = EXERCISE_LIBRARY_GROUPS.filter(
+                (group) => group.category === exerciseEditor.category
+              );
 
-            <div style={fieldGrid}>
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Übung</span>
-                <select
-                  style={textInput}
-                  value={exerciseEditor.name}
-                  onChange={(event) =>
-                    setExerciseEditor((current) =>
-                      current
-                        ? {
-                            ...current,
-                            name: event.target.value,
+              return (
+                <>
+                  <div style={sheetHeader}>
+                    <div>
+                      <div style={sectionTitle}>Übung</div>
+                      <div style={sheetTitle}>
+                        {exerciseEditor.exerciseId ? "Übung bearbeiten" : "Übung hinzufügen"}
+                      </div>
+                    </div>
+                    <button
+                      style={closeButton}
+                      onClick={() => setExerciseEditor(null)}
+                    >
+                      ← Zurück
+                    </button>
+                  </div>
+
+                  <div style={editorContextCard}>
+                    <span style={editorContextLabel}>Ablauf</span>
+                    <span style={editorContextValue}>
+                      {exerciseEditor.exerciseId
+                        ? getEditorBlockContextLabel(
+                            getDayBlocks(
+                              activePlan.days.find((day) => day.id === exerciseEditor.dayId) ??
+                                activePlan.days[0]
+                            ),
+                            `exercise:${exerciseEditor.exerciseId}`
+                          ) || "Übungsblock im Ablauf"
+                        : getEditorInsertContextLabel(
+                            getDayBlocks(
+                              activePlan.days.find((day) => day.id === exerciseEditor.dayId) ??
+                                activePlan.days[0]
+                            ),
+                            exerciseEditor.insertAfterBlockId
+                          )}
+                    </span>
+                  </div>
+
+                  <div style={fieldGrid}>
+                    <div style={{ ...infoRow, gridColumn: "1 / -1" }}>
+                      {EXERCISE_LIBRARY_GROUPS.map((group) => (
+                        <button
+                          key={group.category}
+                          style={
+                            group.category === exerciseEditor.category
+                              ? activeSelectButton
+                              : selectButton
                           }
-                        : current
-                    )
-                  }
-                >
-                  {EXERCISE_LIBRARY.map((exercise) => (
-                    <option key={exercise.value} value={exercise.value}>
-                      {exercise.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                          onClick={() => {
+                            const nextExerciseId = group.items[0]?.value;
+                            if (nextExerciseId) {
+                              applySuggestedExerciseSetup(nextExerciseId);
+                            }
+                          }}
+                        >
+                          {group.category}
+                        </button>
+                      ))}
+                    </div>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Sätze</span>
-                <input
-                  style={textInput}
-                  inputMode="numeric"
-                  value={exerciseEditor.sets}
-                  onChange={(event) =>
-                    setExerciseEditor((current) =>
-                      current
-                        ? {
-                            ...current,
-                            sets: event.target.value,
-                          }
-                        : current
-                    )
-                  }
-                />
-              </label>
+                    <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
+                      <span style={fieldLabel}>Übung</span>
+                      <select
+                        style={textInput}
+                        value={exerciseEditor.name}
+                        onChange={(event) => applySuggestedExerciseSetup(event.target.value)}
+                      >
+                        {visibleExerciseGroups.map((group) => (
+                          <optgroup key={group.category} label={group.category}>
+                            {group.items.map((exercise) => (
+                              <option key={exercise.value} value={exercise.value}>
+                                {exercise.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </label>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Min. Wdh</span>
-                <input
-                  style={textInput}
-                  inputMode="numeric"
-                  value={exerciseEditor.minReps}
-                  onChange={(event) =>
-                    setExerciseEditor((current) =>
-                      current
-                        ? {
-                            ...current,
-                            minReps: event.target.value,
-                          }
-                        : current
-                    )
-                  }
-                />
-              </label>
+                    {selectedExerciseMeta ? (
+                      <div style={{ ...infoRow, gridColumn: "1 / -1" }}>
+                        <span style={infoChip}>
+                          {selectedExerciseMeta.kind === "compound"
+                            ? "Grundübung"
+                            : "Isolation"}
+                        </span>
+                        <span style={infoChip}>{selectedExerciseMeta.category}</span>
+                        {selectedExerciseMeta.supportsAssistanceWeight ? (
+                          <span style={infoChip}>Unterstützungsgewicht</span>
+                        ) : null}
+                      </div>
+                    ) : null}
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Max. Wdh</span>
-                <input
-                  style={textInput}
-                  inputMode="numeric"
-                  value={exerciseEditor.maxReps}
-                  onChange={(event) =>
-                    setExerciseEditor((current) =>
-                      current
-                        ? {
-                            ...current,
-                            maxReps: event.target.value,
-                          }
-                        : current
-                    )
-                  }
-                />
-              </label>
+                    <div style={{ ...fieldStack, gridColumn: "1 / -1" }}>
+                      <span style={fieldLabel}>Schnellwahl</span>
+                      <div style={quickValueGrid}>
+                        {[3, 4, 5].map((sets) => (
+                          <button
+                            key={`sets-${sets}`}
+                            style={
+                              exerciseEditor.sets === String(sets)
+                                ? activeQuickValueButton
+                                : quickValueButton
+                            }
+                            onClick={() =>
+                              setExerciseEditor((current) =>
+                                current ? { ...current, sets: String(sets) } : current
+                              )
+                            }
+                          >
+                            {sets} Sätze
+                          </button>
+                        ))}
+                        {[
+                          { min: 5, max: 8 },
+                          { min: 6, max: 10 },
+                          { min: 8, max: 12 },
+                          { min: 10, max: 15 },
+                        ].map((range) => {
+                          const active =
+                            exerciseEditor.minReps === String(range.min) &&
+                            exerciseEditor.maxReps === String(range.max);
 
-              <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
-                <span style={fieldLabel}>Pause (Sekunden)</span>
-                <input
-                  style={textInput}
-                  inputMode="numeric"
-                  value={exerciseEditor.restSeconds}
-                  onChange={(event) =>
-                    setExerciseEditor((current) =>
-                      current
-                        ? {
-                            ...current,
-                            restSeconds: event.target.value,
-                          }
-                        : current
-                    )
-                  }
-                />
-              </label>
-            </div>
+                          return (
+                            <button
+                              key={`range-${range.min}-${range.max}`}
+                              style={active ? activeQuickValueButton : quickValueButton}
+                              onClick={() =>
+                                setExerciseEditor((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        minReps: String(range.min),
+                                        maxReps: String(range.max),
+                                      }
+                                    : current
+                                )
+                              }
+                            >
+                              {range.min}-{range.max} Wdh
+                            </button>
+                          );
+                        })}
+                        {[60, 75, 90, 120, 150, 180].map((seconds) => (
+                          <button
+                            key={`rest-${seconds}`}
+                            style={
+                              exerciseEditor.restSeconds === String(seconds)
+                                ? activeQuickValueButton
+                                : quickValueButton
+                            }
+                            onClick={() =>
+                              setExerciseEditor((current) =>
+                                current
+                                  ? { ...current, restSeconds: String(seconds) }
+                                  : current
+                              )
+                            }
+                          >
+                            {seconds} Sek
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-            <div style={editorActions}>
-              <button style={selectButton} onClick={() => setExerciseEditor(null)}>
-                Abbrechen
-              </button>
-              <button style={activeSelectButton} onClick={saveExerciseEditor}>
-                Speichern
-              </button>
-            </div>
+                    <label style={fieldStack}>
+                      <span style={fieldLabel}>Sätze</span>
+                      <input
+                        style={textInput}
+                        inputMode="numeric"
+                        value={exerciseEditor.sets}
+                        onChange={(event) =>
+                          setExerciseEditor((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  sets: event.target.value,
+                                }
+                              : current
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label style={fieldStack}>
+                      <span style={fieldLabel}>Min. Wdh</span>
+                      <input
+                        style={textInput}
+                        inputMode="numeric"
+                        value={exerciseEditor.minReps}
+                        onChange={(event) =>
+                          setExerciseEditor((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  minReps: event.target.value,
+                                }
+                              : current
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label style={fieldStack}>
+                      <span style={fieldLabel}>Max. Wdh</span>
+                      <input
+                        style={textInput}
+                        inputMode="numeric"
+                        value={exerciseEditor.maxReps}
+                        onChange={(event) =>
+                          setExerciseEditor((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  maxReps: event.target.value,
+                                }
+                              : current
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
+                      <span style={fieldLabel}>Pause (Sekunden)</span>
+                      <input
+                        style={textInput}
+                        inputMode="numeric"
+                        value={exerciseEditor.restSeconds}
+                        onChange={(event) =>
+                          setExerciseEditor((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  restSeconds: event.target.value,
+                                }
+                              : current
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div style={editorActions}>
+                    <button style={selectButton} onClick={() => setExerciseEditor(null)}>
+                      Abbrechen
+                    </button>
+                    <button
+                      style={selectButton}
+                      onClick={() => applySuggestedExerciseSetup(exerciseEditor.name)}
+                    >
+                      Standards
+                    </button>
+                    <button style={activeSelectButton} onClick={saveExerciseEditor}>
+                      Speichern
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       ) : null}
@@ -936,6 +1398,48 @@ export default function Home() {
             </div>
 
             <div style={fieldGrid}>
+              <div style={{ ...fieldStack, gridColumn: "1 / -1" }}>
+                <span style={fieldLabel}>Schnellwahl</span>
+                <div style={quickValueGrid}>
+                  {[0, 1, 3].map((rounds) => (
+                    <button
+                      key={`warmup-rounds-${rounds}`}
+                      style={
+                        warmupEditor.rounds === String(rounds)
+                          ? activeQuickValueButton
+                          : quickValueButton
+                      }
+                      onClick={() =>
+                        setWarmupEditor((current) =>
+                          current ? { ...current, rounds: String(rounds) } : current
+                        )
+                      }
+                    >
+                      {rounds} Sätze
+                    </button>
+                  ))}
+                  {[45, 60, 90].map((seconds) => (
+                    <button
+                      key={`warmup-rest-${seconds}`}
+                      style={
+                        warmupEditor.restSeconds === String(seconds)
+                          ? activeQuickValueButton
+                          : quickValueButton
+                      }
+                      onClick={() =>
+                        setWarmupEditor((current) =>
+                          current
+                            ? { ...current, restSeconds: String(seconds) }
+                            : current
+                        )
+                      }
+                    >
+                      {seconds} Sek
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <label style={fieldStack}>
                 <span style={fieldLabel}>Aufwärmsätze</span>
                 <input
@@ -994,81 +1498,168 @@ export default function Home() {
       {stretchEditor ? (
         <div style={overlay}>
           <div style={editorSheet}>
-            <div style={sheetHeader}>
-              <div>
-                <div style={sectionTitle}>Dehnen</div>
-                <div style={sheetTitle}>
-                  {stretchEditor.blockId ? "Dehnblock bearbeiten" : "Dehnblock hinzufügen"}
-                </div>
-              </div>
-              <button style={closeButton} onClick={() => setStretchEditor(null)}>
-                ← Zurück
-              </button>
-            </div>
+            {(() => {
+              const visibleStretchGroups = STRETCH_LIBRARY_GROUPS.filter(
+                (group) => group.category === stretchEditor.category
+              );
 
-            <div style={fieldGrid}>
-              <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
-                <span style={fieldLabel}>Dehnung</span>
-                <select
-                  style={textInput}
-                  value={stretchEditor.stretchId}
-                  onChange={(event) =>
-                    setStretchEditor((current) =>
-                      current
-                        ? { ...current, stretchId: event.target.value }
-                        : current
-                    )
-                  }
-                >
-                  {STRETCH_LIBRARY.map((stretch) => (
-                    <option key={stretch.value} value={stretch.value}>
-                      {stretch.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              return (
+                <>
+                  <div style={sheetHeader}>
+                    <div>
+                      <div style={sectionTitle}>Dehnen</div>
+                      <div style={sheetTitle}>
+                        {stretchEditor.blockId ? "Dehnblock bearbeiten" : "Dehnblock hinzufügen"}
+                      </div>
+                    </div>
+                    <button style={closeButton} onClick={() => setStretchEditor(null)}>
+                      ← Zurück
+                    </button>
+                  </div>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Halten (Sekunden)</span>
-                <input
-                  style={textInput}
-                  inputMode="numeric"
-                  value={stretchEditor.holdSeconds}
-                  onChange={(event) =>
-                    setStretchEditor((current) =>
-                      current
-                        ? { ...current, holdSeconds: event.target.value }
-                        : current
-                    )
-                  }
-                />
-              </label>
+                  {stretchEditor.blockId ? (
+                    <div style={editorContextCard}>
+                      <span style={editorContextLabel}>Ablauf</span>
+                      <span style={editorContextValue}>
+                        {getEditorBlockContextLabel(
+                          getDayBlocks(
+                            activePlan.days.find((day) => day.id === stretchEditor.dayId) ??
+                              activePlan.days[0]
+                          ),
+                          stretchEditor.blockId
+                        ) || "Zusatzblock im Ablauf"}
+                      </span>
+                    </div>
+                  ) : null}
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Runden</span>
-                <input
-                  style={textInput}
-                  inputMode="numeric"
-                  value={stretchEditor.rounds}
-                  onChange={(event) =>
-                    setStretchEditor((current) =>
-                      current
-                        ? { ...current, rounds: event.target.value }
-                        : current
-                    )
-                  }
-                />
-              </label>
-            </div>
+                  <div style={fieldGrid}>
+                    <div style={{ ...infoRow, gridColumn: "1 / -1" }}>
+                      {STRETCH_LIBRARY_GROUPS.map((group) => (
+                        <button
+                          key={group.category}
+                          style={
+                            group.category === stretchEditor.category
+                              ? activeSelectButton
+                              : selectButton
+                          }
+                          onClick={() => applyStretchCategory(group.category)}
+                        >
+                          {group.category}
+                        </button>
+                      ))}
+                    </div>
 
-            <div style={editorActions}>
-              <button style={selectButton} onClick={() => setStretchEditor(null)}>
-                Abbrechen
-              </button>
-              <button style={activeSelectButton} onClick={saveStretchEditor}>
-                Speichern
-              </button>
-            </div>
+                    <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
+                      <span style={fieldLabel}>Dehnung</span>
+                      <select
+                        style={textInput}
+                        value={stretchEditor.stretchId}
+                        onChange={(event) =>
+                          setStretchEditor((current) =>
+                            current
+                              ? { ...current, stretchId: event.target.value }
+                              : current
+                          )
+                        }
+                      >
+                        {visibleStretchGroups.map((group) => (
+                          <optgroup key={group.category} label={group.category}>
+                            {group.items.map((stretch) => (
+                              <option key={stretch.value} value={stretch.value}>
+                                {stretch.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div style={{ ...fieldStack, gridColumn: "1 / -1" }}>
+                      <span style={fieldLabel}>Schnellwahl</span>
+                      <div style={quickValueGrid}>
+                        {[20, 30, 45, 60].map((seconds) => (
+                          <button
+                            key={`stretch-hold-${seconds}`}
+                            style={
+                              stretchEditor.holdSeconds === String(seconds)
+                                ? activeQuickValueButton
+                                : quickValueButton
+                            }
+                            onClick={() =>
+                              setStretchEditor((current) =>
+                                current
+                                  ? { ...current, holdSeconds: String(seconds) }
+                                  : current
+                              )
+                            }
+                          >
+                            {seconds} Sek
+                          </button>
+                        ))}
+                        {[1, 2, 3].map((rounds) => (
+                          <button
+                            key={`stretch-rounds-${rounds}`}
+                            style={
+                              stretchEditor.rounds === String(rounds)
+                                ? activeQuickValueButton
+                                : quickValueButton
+                            }
+                            onClick={() =>
+                              setStretchEditor((current) =>
+                                current ? { ...current, rounds: String(rounds) } : current
+                              )
+                            }
+                          >
+                            {rounds} Runden
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <label style={fieldStack}>
+                      <span style={fieldLabel}>Halten (Sekunden)</span>
+                      <input
+                        style={textInput}
+                        inputMode="numeric"
+                        value={stretchEditor.holdSeconds}
+                        onChange={(event) =>
+                          setStretchEditor((current) =>
+                            current
+                              ? { ...current, holdSeconds: event.target.value }
+                              : current
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label style={fieldStack}>
+                      <span style={fieldLabel}>Runden</span>
+                      <input
+                        style={textInput}
+                        inputMode="numeric"
+                        value={stretchEditor.rounds}
+                        onChange={(event) =>
+                          setStretchEditor((current) =>
+                            current
+                              ? { ...current, rounds: event.target.value }
+                              : current
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div style={editorActions}>
+                    <button style={selectButton} onClick={() => setStretchEditor(null)}>
+                      Abbrechen
+                    </button>
+                    <button style={activeSelectButton} onClick={saveStretchEditor}>
+                      Speichern
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       ) : null}
@@ -1088,7 +1679,70 @@ export default function Home() {
               </button>
             </div>
 
+            {pauseEditor.blockId ? (
+              <div style={editorContextCard}>
+                <span style={editorContextLabel}>Ablauf</span>
+                <span style={editorContextValue}>
+                  {getEditorBlockContextLabel(
+                    getDayBlocks(
+                      activePlan.days.find((day) => day.id === pauseEditor.dayId) ??
+                        activePlan.days[0]
+                    ),
+                    pauseEditor.blockId
+                  ) || "Zusatzblock im Ablauf"}
+                </span>
+              </div>
+            ) : null}
+
             <div style={fieldGrid}>
+              <div style={{ ...fieldStack, gridColumn: "1 / -1" }}>
+                <span style={fieldLabel}>Schnellwahl</span>
+                <div style={quickValueGrid}>
+                  {[
+                    { label: "Übung", value: "exercise" },
+                    { label: "Workout", value: "workout" },
+                  ].map((scope) => (
+                    <button
+                      key={`pause-scope-${scope.value}`}
+                      style={
+                        pauseEditor.scope === scope.value
+                          ? activeQuickValueButton
+                          : quickValueButton
+                      }
+                      onClick={() =>
+                        setPauseEditor((current) =>
+                          current
+                            ? {
+                                ...current,
+                                scope: scope.value as "exercise" | "workout",
+                              }
+                            : current
+                        )
+                      }
+                    >
+                      {scope.label}
+                    </button>
+                  ))}
+                  {[30, 45, 60, 90, 120, 180].map((seconds) => (
+                    <button
+                      key={`pause-seconds-${seconds}`}
+                      style={
+                        pauseEditor.seconds === String(seconds)
+                          ? activeQuickValueButton
+                          : quickValueButton
+                      }
+                      onClick={() =>
+                        setPauseEditor((current) =>
+                          current ? { ...current, seconds: String(seconds) } : current
+                        )
+                      }
+                    >
+                      {seconds} Sek
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
                 <span style={fieldLabel}>Name</span>
                 <input
@@ -1157,15 +1811,6 @@ export default function Home() {
   );
 }
 
-function buildExercisePreview(
-  exercises: TrainingPlan["days"][number]["exercises"]
-) {
-  return exercises
-    .slice(0, 3)
-    .map((exercise) => getExerciseLabel(exercise.name))
-    .join(", ");
-}
-
 function shadeColor(color: string) {
   const shades: Record<string, string> = {
     "#111827": "#1f2937",
@@ -1189,6 +1834,24 @@ function formatRest(seconds: number) {
   }
 
   return `${seconds} Sek`;
+}
+
+function sortPlansForPicker(plans: TrainingPlan[], activePlanId: string) {
+  return [...plans].sort((left, right) => {
+    if (left.id === activePlanId) {
+      return -1;
+    }
+
+    if (right.id === activePlanId) {
+      return 1;
+    }
+
+    if (isCustomTrainingPlan(left.id) !== isCustomTrainingPlan(right.id)) {
+      return isCustomTrainingPlan(left.id) ? -1 : 1;
+    }
+
+    return left.name.localeCompare(right.name, "de");
+  });
 }
 
 function isExerciseBlock(block: TrainingPlanBlock): block is ExercisePlanBlock {
@@ -1232,6 +1895,244 @@ function getBlockMeta(block: TrainingPlanBlock) {
   return `${formatRest(block.seconds)} · ${
     block.scope === "workout" ? "Workout-Pause" : "Übungspause"
   }`;
+}
+
+function getEditorBlockContextLabel(
+  dayBlocks: TrainingPlanBlock[],
+  blockId: string
+) {
+  const blockIndex = dayBlocks.findIndex((block) => block.id === blockId);
+
+  if (blockIndex === -1) {
+    return "";
+  }
+
+  let previousExerciseLabel: string | null = null;
+  for (let index = blockIndex - 1; index >= 0; index -= 1) {
+    const block = dayBlocks[index];
+    if (block.type === "exercise") {
+      previousExerciseLabel = block.label;
+      break;
+    }
+  }
+
+  let nextExerciseLabel: string | null = null;
+  for (let index = blockIndex + 1; index < dayBlocks.length; index += 1) {
+    const block = dayBlocks[index];
+    if (block.type === "exercise") {
+      nextExerciseLabel = block.label;
+      break;
+    }
+  }
+
+  if (previousExerciseLabel && nextExerciseLabel) {
+    return `Zwischen ${previousExerciseLabel} und ${nextExerciseLabel}`;
+  }
+
+  if (nextExerciseLabel) {
+    return `Vor ${nextExerciseLabel}`;
+  }
+
+  if (previousExerciseLabel) {
+    return `Nach ${previousExerciseLabel}`;
+  }
+
+  return "";
+}
+
+function getEditorInsertContextLabel(
+  dayBlocks: TrainingPlanBlock[],
+  insertAfterBlockId?: string | null
+) {
+  if (!insertAfterBlockId) {
+    const firstExercise = dayBlocks.find((block) => block.type === "exercise");
+    return firstExercise?.type === "exercise"
+      ? `Am Anfang · vor ${firstExercise.label}`
+      : "Am Anfang des Tages";
+  }
+
+  const afterIndex = dayBlocks.findIndex((block) => block.id === insertAfterBlockId);
+  if (afterIndex === -1) {
+    return "Neue Position im Ablauf";
+  }
+
+  const afterBlock = dayBlocks[afterIndex];
+  let nextExerciseLabel: string | null = null;
+
+  for (let index = afterIndex + 1; index < dayBlocks.length; index += 1) {
+    const block = dayBlocks[index];
+    if (block.type === "exercise") {
+      nextExerciseLabel = block.label;
+      break;
+    }
+  }
+
+  if (afterBlock.type === "exercise" && nextExerciseLabel) {
+    return `Nach ${afterBlock.label} · vor ${nextExerciseLabel}`;
+  }
+
+  if (afterBlock.type === "exercise") {
+    return `Nach ${afterBlock.label}`;
+  }
+
+  return nextExerciseLabel
+    ? `Nach ${afterBlock.label} · vor ${nextExerciseLabel}`
+    : `Nach ${afterBlock.label}`;
+}
+
+function getEditorSectionLabel(
+  dayBlocks: TrainingPlanBlock[],
+  blockIndex: number
+) {
+  const block = dayBlocks[blockIndex];
+
+  if (!block) {
+    return "";
+  }
+
+  if (block.type === "exercise") {
+    let exerciseOrder = 0;
+
+    for (let index = 0; index <= blockIndex; index += 1) {
+      if (dayBlocks[index]?.type === "exercise") {
+        exerciseOrder += 1;
+      }
+    }
+
+    return `Übung ${exerciseOrder}`;
+  }
+
+  if (blockIndex === 0 && (block.type === "stretch" || block.type === "pause")) {
+    return "Start";
+  }
+
+  return "";
+}
+
+function getEditorInsertPointLabel(
+  dayBlocks: TrainingPlanBlock[],
+  insertAfterBlockId: string | null
+) {
+  if (!insertAfterBlockId) {
+    const firstExerciseIndex = dayBlocks.findIndex(
+      (block) => block.type === "exercise"
+    );
+
+    if (firstExerciseIndex === -1) {
+      return "Start";
+    }
+
+    return `Start · vor Übung ${getExerciseSectionNumber(dayBlocks, firstExerciseIndex)}`;
+  }
+
+  const blockIndex = dayBlocks.findIndex((block) => block.id === insertAfterBlockId);
+  if (blockIndex === -1) {
+    return "Danach";
+  }
+
+  const nextExerciseIndex = dayBlocks.findIndex(
+    (block, index) => index > blockIndex && block.type === "exercise"
+  );
+
+  if (nextExerciseIndex === -1) {
+    return "Danach · am Ende";
+  }
+
+  return `Danach · vor Übung ${getExerciseSectionNumber(dayBlocks, nextExerciseIndex)}`;
+}
+
+function getExerciseSectionNumber(
+  dayBlocks: TrainingPlanBlock[],
+  blockIndex: number
+) {
+  let exerciseOrder = 0;
+
+  for (let index = 0; index <= blockIndex; index += 1) {
+    if (dayBlocks[index]?.type === "exercise") {
+      exerciseOrder += 1;
+    }
+  }
+
+  return exerciseOrder;
+}
+
+function getEditorDaySummary(dayBlocks: TrainingPlanBlock[]) {
+  const exerciseCount = dayBlocks.filter((block) => block.type === "exercise").length;
+  const warmupCount = dayBlocks.filter((block) => block.type === "warmup").length;
+  const stretchCount = dayBlocks.filter((block) => block.type === "stretch").length;
+  const pauseCount = dayBlocks.filter((block) => block.type === "pause").length;
+
+  const parts = [`${exerciseCount} Übungen`];
+
+  if (warmupCount > 0) {
+    parts.push(`${warmupCount} Aufwärmen`);
+  }
+  if (stretchCount > 0) {
+    parts.push(`${stretchCount} Dehnen`);
+  }
+  if (pauseCount > 0) {
+    parts.push(`${pauseCount} Pausen`);
+  }
+
+  return parts.join(" · ");
+}
+
+function getEditorDayPreview(dayBlocks: TrainingPlanBlock[]) {
+  return dayBlocks.slice(0, 5).map((block) => {
+    if (block.type === "exercise") {
+      return block.label;
+    }
+
+    if (block.type === "warmup") {
+      return "Aufwärmen";
+    }
+
+    if (block.type === "stretch") {
+      return "Dehnen";
+    }
+
+    return block.scope === "workout" ? "Workout-Pause" : "Pause";
+  });
+}
+
+function getEditorMoveTargetLabel(
+  dayBlocks: TrainingPlanBlock[],
+  blockIndex: number,
+  direction: "up" | "down"
+) {
+  const nextIndex = direction === "up" ? blockIndex - 1 : blockIndex + 1;
+
+  if (nextIndex < 0) {
+    return "Start";
+  }
+
+  if (nextIndex >= dayBlocks.length) {
+    return "Ende";
+  }
+
+  let targetExerciseIndex = -1;
+
+  if (direction === "up") {
+    for (let index = nextIndex; index >= 0; index -= 1) {
+      if (dayBlocks[index]?.type === "exercise") {
+        targetExerciseIndex = index;
+        break;
+      }
+    }
+  } else {
+    for (let index = nextIndex; index < dayBlocks.length; index += 1) {
+      if (dayBlocks[index]?.type === "exercise") {
+        targetExerciseIndex = index;
+        break;
+      }
+    }
+  }
+
+  if (targetExerciseIndex === -1) {
+    return direction === "up" ? "früher" : "später";
+  }
+
+  return `zu Übung ${getExerciseSectionNumber(dayBlocks, targetExerciseIndex)}`;
 }
 
 function getBlockBadgeLabel(type: TrainingPlanBlock["type"]) {
@@ -1323,8 +2224,59 @@ const historyLink = {
   fontSize: 13,
 };
 
+const resumeCard = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+  padding: "10px 12px",
+  borderRadius: 18,
+  textDecoration: "none",
+  background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+  color: "#ffffff",
+  border: "1px solid rgba(148, 163, 184, 0.2)",
+  boxShadow: "0 16px 30px rgba(15, 23, 42, 0.16)",
+};
+
+const resumeKicker = {
+  fontSize: 11,
+  textTransform: "uppercase" as const,
+  letterSpacing: 1,
+  color: "rgba(255,255,255,0.68)",
+  fontWeight: "bold",
+};
+
+const resumeTitle = {
+  marginTop: 3,
+  fontSize: 17,
+  fontWeight: "bold",
+  lineHeight: 1.1,
+};
+
+const resumeCopy = {
+  marginTop: 4,
+  fontSize: 11,
+  lineHeight: 1.3,
+  color: "rgba(255,255,255,0.78)",
+  fontWeight: 600,
+};
+
+const resumeButton = {
+  minHeight: 30,
+  padding: "5px 10px",
+  borderRadius: 999,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#ffffff",
+  color: "#111827",
+  fontSize: 12,
+  fontWeight: "bold",
+  whiteSpace: "nowrap" as const,
+};
+
 const heroCard = {
-  padding: "12px 14px",
+  padding: "11px 13px",
   borderRadius: 22,
   background: "linear-gradient(135deg, #ffffff 0%, #f6f9ff 100%)",
   border: "1px solid #dde6f3",
@@ -1339,11 +2291,19 @@ const heroTopRow = {
 };
 
 const heroTitle = {
-  marginTop: 3,
-  fontSize: 20,
+  marginTop: 2,
+  fontSize: 18,
   fontWeight: "bold",
   lineHeight: 1.05,
   color: "#111827",
+};
+
+const heroMeta = {
+  marginTop: 4,
+  fontSize: 11,
+  fontWeight: 700,
+  lineHeight: 1.2,
+  color: "#64748b",
 };
 
 const heroActions = {
@@ -1355,8 +2315,8 @@ const heroActions = {
 };
 
 const ghostAction = {
-  minHeight: 32,
-  padding: "6px 10px",
+  minHeight: 30,
+  padding: "5px 10px",
   borderRadius: 999,
   border: "1px solid #d7e1ef",
   background: "rgba(255,255,255,0.96)",
@@ -1367,8 +2327,8 @@ const ghostAction = {
 };
 
 const heroCopy = {
-  marginTop: 6,
-  fontSize: 12,
+  marginTop: 5,
+  fontSize: 11,
   fontWeight: 600,
   lineHeight: 1.3,
   color: "#475569",
@@ -1384,7 +2344,7 @@ const sectionTitle = {
 
 const dayGrid = {
   display: "grid",
-  gap: 8,
+  gap: 7,
   minHeight: 0,
 };
 
@@ -1392,7 +2352,7 @@ const dayCard = {
   borderRadius: 24,
   color: "#fff",
   textDecoration: "none",
-  padding: "12px 14px",
+  padding: "11px 13px",
   display: "flex",
   flexDirection: "column" as const,
   justifyContent: "space-between",
@@ -1408,16 +2368,42 @@ const dayKicker = {
 };
 
 const dayTitle = {
-  fontSize: 24,
+  fontSize: 22,
   lineHeight: 1,
   fontWeight: "bold",
 };
 
 const dayCopy = {
-  fontSize: 12,
-  lineHeight: 1.2,
-  fontWeight: 600,
-  opacity: 0.92,
+  fontSize: 11,
+  lineHeight: 1.3,
+  fontWeight: 700,
+  opacity: 0.94,
+};
+
+const startDaySummaryStack = {
+  display: "grid",
+  gap: 7,
+};
+
+const startDayPreviewRow = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 6,
+};
+
+const startDayPreviewChip = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 22,
+  padding: "4px 8px",
+  borderRadius: 999,
+  background: "rgba(255, 255, 255, 0.16)",
+  border: "1px solid rgba(255, 255, 255, 0.22)",
+  color: "#ffffff",
+  fontSize: 10,
+  fontWeight: 700,
+  lineHeight: 1,
+  backdropFilter: "blur(6px)",
 };
 
 const overlay = {
@@ -1495,6 +2481,10 @@ const planCard = {
 const activePlanCard = {
   background: "#eef4ff",
   boxShadow: "0 12px 28px rgba(37, 99, 235, 0.10)",
+};
+
+const activePlanCardFeatured = {
+  gridColumn: "1 / -1",
 };
 
 const planCardTop = {
@@ -1576,7 +2566,7 @@ const customBadge = {
 const detailMetaRow = {
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "center",
+  alignItems: "start",
   gap: 10,
   marginBottom: 10,
 };
@@ -1584,13 +2574,13 @@ const detailMetaRow = {
 const detailActionRow = {
   display: "flex",
   flexWrap: "wrap" as const,
-  gap: 8,
+  gap: 6,
   justifyContent: "end",
 };
 
 const detailActionButton = {
-  minHeight: 34,
-  padding: "6px 12px",
+  minHeight: 32,
+  padding: "5px 10px",
   borderRadius: 999,
   border: "1px solid #d7e1ef",
   background: "#f8fafc",
@@ -1612,7 +2602,7 @@ const planDetailStack = {
 };
 
 const planDetailCard = {
-  padding: "12px 12px 10px",
+  padding: "11px 11px 10px",
   borderRadius: 18,
   background: "#f8fafc",
   border: "1px solid #e5ebf4",
@@ -1622,13 +2612,53 @@ const planDetailTop = {
   display: "flex",
   justifyContent: "space-between",
   gap: 10,
-  alignItems: "center",
+  alignItems: "start",
 };
 
 const planDetailDay = {
-  fontSize: 18,
+  fontSize: 17,
   fontWeight: "bold",
   lineHeight: 1.1,
+};
+
+const detailPreview = {
+  marginTop: 5,
+  fontSize: 12,
+  fontWeight: 600,
+  lineHeight: 1.3,
+  color: "#475569",
+};
+
+const daySummaryStack = {
+  display: "grid",
+  gap: 6,
+  marginTop: 6,
+};
+
+const daySummaryLine = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#475569",
+  lineHeight: 1.3,
+};
+
+const dayPreviewRow = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 6,
+};
+
+const dayPreviewChip = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 24,
+  padding: "4px 8px",
+  borderRadius: 999,
+  background: "#ffffff",
+  border: "1px solid #dbe4f0",
+  color: "#334155",
+  fontSize: 11,
+  fontWeight: "bold",
 };
 
 const miniActionRow = {
@@ -1637,15 +2667,56 @@ const miniActionRow = {
   gap: 6,
 };
 
+const moveHintRow = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 6,
+  justifyContent: "end",
+};
+
+const moveHintText = {
+  fontSize: 10,
+  fontWeight: "bold",
+  color: "#94a3b8",
+  letterSpacing: "0.03em",
+};
+
+const dayToolbar = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 6,
+  justifyContent: "end",
+};
+
 const miniActionButton = {
   minHeight: 28,
-  padding: "4px 10px",
+  padding: "4px 9px",
   borderRadius: 999,
   border: "1px solid #d7e1ef",
   background: "#ffffff",
   color: "#111827",
   fontSize: 11,
   fontWeight: "bold",
+};
+
+const secondaryMiniActionButton = {
+  ...miniActionButton,
+  background: "#f8fafc",
+  color: "#475569",
+};
+
+const quickAddButton = {
+  ...miniActionButton,
+  background: "#eef4ff",
+  border: "1px solid #dbe7ff",
+  color: "#1d4ed8",
+};
+
+const dangerMiniActionButton = {
+  ...miniActionButton,
+  background: "#fff1f2",
+  border: "1px solid #fecdd3",
+  color: "#be123c",
 };
 
 const miniIconButton = {
@@ -1674,16 +2745,28 @@ const exerciseRow = {
   borderTop: "1px solid #e7edf5",
 };
 
+const nestedBlockRow = {
+  marginLeft: 12,
+  paddingLeft: 10,
+  borderLeft: "2px solid #e2e8f0",
+};
+
 const exerciseRowTop = {
   display: "flex",
   justifyContent: "space-between",
   gap: 10,
-  alignItems: "center",
+  alignItems: "start",
 };
 
 const blockInfo = {
   display: "grid",
   gap: 4,
+};
+
+const blockControlStack = {
+  display: "grid",
+  gap: 6,
+  justifyItems: "end" as const,
 };
 
 const exerciseName = {
@@ -1734,10 +2817,90 @@ const exerciseMeta = {
   lineHeight: 1.3,
 };
 
+const blockContextMeta = {
+  fontSize: 12,
+  color: "#64748b",
+  fontWeight: 600,
+  lineHeight: 1.3,
+};
+
+const editorSectionLabel = {
+  marginTop: 6,
+  fontSize: 11,
+  fontWeight: "bold",
+  color: "#94a3b8",
+  textTransform: "uppercase" as const,
+  letterSpacing: "0.08em",
+};
+
 const fieldGrid = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: 8,
+};
+
+const infoRow = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 8,
+};
+
+const infoChip = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 28,
+  padding: "4px 10px",
+  borderRadius: 999,
+  background: "#f8fafc",
+  border: "1px solid #dbe4f0",
+  color: "#334155",
+  fontSize: 12,
+  fontWeight: "bold",
+};
+
+const quickValueGrid = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 8,
+};
+
+const quickValueButton = {
+  minHeight: 32,
+  padding: "6px 10px",
+  borderRadius: 999,
+  border: "1px solid #d7e1ef",
+  background: "#ffffff",
+  color: "#475569",
+  fontSize: 12,
+  fontWeight: "bold",
+};
+
+const activeQuickValueButton = {
+  ...quickValueButton,
+  background: "#eef4ff",
+  border: "1px solid #bfdbfe",
+  color: "#1d4ed8",
+};
+
+const insertRow = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 8,
+  padding: "2px 8px 10px",
+  alignItems: "center",
+};
+
+const insertLabel = {
+  fontSize: 11,
+  fontWeight: "bold",
+  color: "#64748b",
+  textTransform: "uppercase" as const,
+  letterSpacing: "0.08em",
+};
+
+const insertActionButton = {
+  ...miniActionButton,
+  padding: "4px 9px",
 };
 
 const fieldStack = {
@@ -1776,6 +2939,31 @@ const editorHint = {
   fontSize: 12,
   color: "#475569",
   lineHeight: 1.4,
+};
+
+const editorContextCard = {
+  display: "grid",
+  gap: 4,
+  marginBottom: 10,
+  padding: "10px 12px",
+  borderRadius: 14,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+};
+
+const editorContextLabel = {
+  fontSize: 11,
+  fontWeight: "bold",
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.8,
+  color: "#94a3b8",
+};
+
+const editorContextValue = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#334155",
+  lineHeight: 1.3,
 };
 
 function getPlanCardText(plan: TrainingPlan) {

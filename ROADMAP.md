@@ -4,7 +4,7 @@
 
 Die App soll im echten Studio schnell, klar und handlich nutzbar sein.
 
-Wichtige Grundsätze:
+Grundsätze:
 
 - möglichst wenig Tippen im Gym
 - möglichst wenig Scrollen
@@ -30,9 +30,36 @@ Bereits vorhanden:
   - Preview
   - Sandbox
 
-## Neues Real-World-Feedback aus dem Studio
+Neu dazugekommen:
 
-Diese Punkte sind jetzt wichtig:
+- freier Plan-Editor mit Blöcken:
+  - Übung
+  - Aufwärmen
+  - Dehnen
+  - Pause
+  - Workout-Pause
+- Block-Reihenfolge frei verschiebbar
+- Blöcke einfügen, duplizieren, löschen, bearbeiten
+- Übungs- und Dehnbibliothek mit Kategorien
+- Standardwerte je Übung aus der Bibliothek
+- Gewichtslogik mit:
+  - 5 kg
+  - 2,5 kg
+  - 1 kg
+  - 0,5 kg
+  - negativem Gewicht für Unterstützungsübungen
+- aktives Training mit:
+  - Vergleich
+  - Planübersicht
+  - Satzfortschritt
+  - Workout-Pause
+  - Dehnen und freie Pausen als echte Flow-Schritte
+- 10-Sekunden-Hinweis und 3, 2, 1 im Vordergrund
+- sichtbare Rückkehr ins laufende Training über die Startseite
+
+## Studio-Feedback als Leitlinie
+
+Diese Punkte bleiben maßgeblich:
 
 - allgemeine Pause für das gesamte Workout
 - Grundübungen mit 3 Aufwärmsätzen
@@ -47,221 +74,158 @@ Diese Punkte sind jetzt wichtig:
 - während des aktiven Satzes Vergleich mit letztem Training, letztem Satz und bestem Satz
 - Überblick über Trainingsplan und bereits geleistete Sätze im aktiven Training
 - während der Pause Überblick über letzte Übung und erledigte Sätze
-- Bildschirm muss gesperrt im Hochformat bleiben
-- vorherige Übung und vorheriger Satz sollen im Pausenfenster sichtbar sein
+- Bildschirm muss im Hochformat bleiben
 - personalisierte Pläne müssen frei anordenbar und bearbeitbar sein
-- zusätzliche Gewichtsänderungen mit 1 kg und 0,5 kg
-- Gewicht muss auch ins Minus gehen können
 - ausgewählter Plan in der Plan-Auswahl immer ganz oben
-- klarer Satz an Hauptaktionen:
-  - Home
-  - Pause
-  - Play
-  - Zurück
 
-## Grundentscheidung für die nächste Ausbaustufe
-
-Wir bauen die App ab jetzt nicht nur schöner, sondern strukturell gym-tauglich.
-
-Das bedeutet:
-
-- ein Training besteht künftig nicht nur aus Übungen
-- ein Plan besteht aus frei anordenbaren Blöcken
-- diese Blöcke können sein:
-  - Übung
-  - Aufwärmsatz
-  - Dehnen
-  - Pause
-- aktives Training und pausiertes Training werden als echter Zustand behandelt
-- alle Vergleiche bleiben objektiv, die App entscheidet aber weiterhin nichts für den Nutzer
-
-## Neue Arbeitsreihenfolge
+## Phasenstatus
 
 ### Phase 6: Trainingslogik und Datenmodell
 
-Ziel:
+Status: weitgehend erledigt
 
-- die App so umbauen, dass sie die echten Studio-Abläufe tragen kann
+Erledigt:
 
-#### 6.1 Plan-Blöcke definieren
+- Blockmodell für:
+  - Übung
+  - Aufwärmen
+  - Dehnen
+  - Pause
+- Übungsarten:
+  - Grundübung
+  - Isolationsübung
+  - Dehnen
+- Standardregeln für Aufwärmsätze
+- Gewichtsmodell mit 5 / 2,5 / 1 / 0,5
+- negatives Gewicht für Unterstützungsübungen
 
-Status: in Arbeit
+Offen:
 
-- neuer Blocktyp `Übung`
-- neuer Blocktyp `Aufwärmsatz`
-- neuer Blocktyp `Dehnen`
-- neuer Blocktyp `Pause`
-- Reihenfolge frei speicherbar
+- Datenmodell später noch erweitern, falls echte Minimierung oder Hintergrundzustände tiefer gespeichert werden sollen
 
-#### 6.2 Übungsarten definieren
-
-Status: in Arbeit
-
-- `Grundübung`
-- `Isolationsübung`
-- `Dehnen`
-
-Regeln:
-
-- Grundübung standardmäßig 3 Aufwärmsätze
-- Isolationsübung standardmäßig 1 Aufwärmsatz
-- alles trotzdem manuell änderbar
-
-#### 6.3 Gewichtsmodell erweitern
+### Phase 7: Aktives Training
 
 Status: in Arbeit
 
-- negative Gewichte erlauben
-- zusätzliche Schritte 1 kg und 0,5 kg
-- Reihenfolge der Buttons:
-  - 5
-  - 2,5
-  - 1
-  - 0,5
+Erledigt:
 
-### Phase 7: Aktives Training neu aufbauen
-
-Ziel:
-
-- während des Trainings mehr Kontext zeigen, ohne unübersichtlich zu werden
-
-#### 7.1 Aktiver Satz
-
-Status: offen
-
-- letztes Training anzeigen
-- letzter Satz anzeigen
-- bester Satz bisher anzeigen
-- Überblick über Trainingsplan und bereits erledigte Sätze
-
-#### 7.2 Pause
-
-Status: offen
-
-- allgemeine Workout-Pause
-- Satzpause
-- letzte Übung anzeigen
-- vorherigen Satz anzeigen
-- erledigte Sätze sichtbar markieren
-- nächstes Gewicht weiter anpassbar
+- Vergleich im aktiven Satz:
+  - letzter Satz
+  - letztes Training
+  - Bestwert
+- Heutiger Plan mit Satzfortschritt
+- Ablauf mit echten Blocktypen
+- Aufwärmen als echter Schritt
+- Dehnen als echter Schritt
+- freie Pause als echter Schritt
+- Workout-Pause als eigener Zustand
+- Pause mit letzter Übung und erledigten Sätzen
 - 10-Sekunden-Hinweis
-- 3, 2, 1 auf dem Display
+- 3, 2, 1 im Vordergrund
+- sichtbare Rückkehr ins laufende Training über Startseite
 
-#### 7.3 Minimiertes Training
+Offen:
 
-Status: offen
+- minimiertes Training außerhalb der App wirklich robust lösen
+- Flow zwischen mehreren Zusatzblöcken weiter glätten
+- Übergänge im Workout weiter auf Praxis-Flow trimmen
 
-- aktives Training minimieren
-- jederzeit zurück ins laufende Training
-- klare Anzeige, dass noch ein Training aktiv ist
+### Phase 8: Plan-Editor
 
-### Phase 8: Plan-Editor neu strukturieren
+Status: weitgehend erledigt
 
-Ziel:
-
-- persönliche Pläne wirklich frei bearbeitbar machen
-
-#### 8.1 Freie Anordnung
-
-Status: offen
+Erledigt:
 
 - Blöcke frei verschieben
 - Blöcke einfügen
 - Blöcke löschen
 - Blöcke duplizieren
-
-#### 8.2 Plan-Inhalte
-
-Status: offen
-
 - Übungen aus Bibliothek wählen
 - Dehnen aus Bibliothek wählen
 - Pausen einfügen
 - Aufwärmsätze anpassen
+- Schnellbausteine:
+  - Grundübung
+  - Isolation
+  - Dehnen
+  - Pause
+  - Workout-Pause
+- aktiver Plan im Picker oben und hervorgehoben
 
-#### 8.3 Plan-Auswahl
+Offen:
 
-Status: offen
-
-- aktiver Plan immer oben
-- aktiver Plan klar hervorgehoben
+- optional später echtes Drag-and-drop
+- noch flüssigere Block-Bearbeitung mit weniger Einzel-Buttons
 
 ### Phase 9: Übungs- und Dehnbibliothek
 
-Ziel:
+Status: in Arbeit
 
-- saubere Grundlage für Editor und Trainingsaufbau
+Erledigt:
 
-#### 9.1 Trainingsübungen
+- Kategorien für Trainingsübungen
+- Kategorien für Dehnen und Mobilität
+- mehrere zusätzliche Übungen
+- mehrere zusätzliche Dehnungen
+- sinnvolle Standardwerte pro Übung
 
-Status: offen
+Offen:
 
-- Übungen in Kategorien gliedern
-- Beispielkategorien:
-  - Brust
-  - Rücken
-  - Schultern
-  - Beine
-  - Arme
-  - Core
-
-#### 9.2 Dehnen und Mobilität
-
-Status: offen
-
-- Dehnen in Kategorien gliedern
-- Beispielkategorien:
-  - Oberkörper
-  - Unterkörper
-  - Hüfte
-  - Rücken
-  - Schultern
+- Bibliothek weiter ausbauen
+- Auswahl noch schneller machen
+- Standards pro Übung weiter schärfen
 
 ### Phase 10: Geräte- und Systemverhalten
 
-Ziel:
+Status: teilweise erledigt
 
-- die App im Training stabiler und praktischer machen
+Erledigt:
 
-#### 10.1 Hochformat sperren
+- Hochformat im Android-Setup berücksichtigt
+- Training bleibt in der App sichtbar fortsetzbar
 
-Status: offen
+Offen:
 
-- Bildschirm darf sich nicht drehen
+- echtes Minimieren des aktiven Trainings außerhalb der App
+- belastbare Rückkehr in laufende Pausen auch bei Systemwechsel
+- Systemverhalten im echten Studio weiter härten
 
-#### 10.2 Trainingszustand erhalten
+## Aktuelle Prioritäten
 
-Status: offen
+### 1. Aktiven Trainings-Flow finalisieren
 
-- Training bleibt beim Verlassen erhalten
-- Rückkehr ins Training muss sofort möglich sein
+Noch offen:
 
-## Was wir zuerst umsetzen sollten
+- Flow zwischen Satz, Satzpause, Dehnen und freien Pausen weiter glätten
+- Zusatzblöcke hintereinander noch natürlicher führen
+- Training außerhalb der App robuster fortsetzen
 
-Die sinnvollste Reihenfolge ist:
+### 2. Bibliothek weiter ausbauen
 
-1. neues Datenmodell für Plan-Blöcke
-2. Übungsarten und Standardregeln für Aufwärmsätze
-3. Gewichtsmodell mit Minus, 1 kg und 0,5 kg
-4. aktiven Workout-Screen um Trainingsüberblick und Vergleichsdaten erweitern
-5. Pause-Screen um vorherige Übung, Satzstatus und Workout-Pause erweitern
-6. danach freier Editor
-7. danach Bibliothek
-8. zuletzt Systemthemen wie Minimieren und Hochformat-Sperre
+Noch offen:
+
+- mehr Übungen
+- mehr Dehnungen
+- bessere Standards pro Übung
+
+### 3. Letzter UI-Feinschliff
+
+Noch offen:
+
+- letzte Restabstände auf kleinen Displays
+- restliche sichtbare Text-/Encoding-Prüfung im ganzen Projekt
+- gleiche Dichte auf allen Hauptscreens halten
+
+## Nächste sinnvolle Einzelschritte
+
+1. aktiven Trainings-Flow weiter glätten
+2. Bibliothek erweitern und Standards schärfen
+3. minimiertes Training bzw. System-Rückkehr später als eigener Block
 
 ## Nächster konkreter Schritt
 
-Als Nächstes sollten wir nicht direkt an der Oberfläche anfangen, sondern zuerst das Datenmodell festziehen:
+Als Nächstes sinnvoll:
 
-1. Blocktypen definieren
-2. Übungsarten definieren
-3. Standardregeln für Aufwärmsätze festlegen
-4. Gewichtsmodell erweitern
-
-Stand:
-
-- Grundstruktur im Code angelegt
-- Übungskatalog mit Kategorien angelegt
-- Aufwärmsatz-Regeln und Gewichtsregeln als Basis angelegt
-
-Darauf baut fast alles Weitere auf.
+1. Zusatzblöcke im aktiven Training noch flüssiger machen
+2. danach die Bibliothek weiter ausbauen
+3. erst danach wieder größere Systemthemen angehen

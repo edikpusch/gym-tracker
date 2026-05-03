@@ -1,5 +1,7 @@
 import { getExerciseCatalogEntry } from "@/lib/trainingCatalog";
 import {
+  buildExerciseBlock,
+  buildWarmupBlock,
   syncDayBlocks,
   type PausePlanBlock,
   type StretchPlanBlock,
@@ -66,6 +68,55 @@ function normalizeTrainingPlan(plan: TrainingPlan): TrainingPlan {
   };
 }
 
+type TemplateExtraBlock = {
+  placement: "start" | "end" | `after:${string}`;
+  block: StretchPlanBlock | PausePlanBlock;
+};
+
+function buildTemplateDayBlocks(
+  exercises: TrainingExercise[],
+  extras: TemplateExtraBlock[] = []
+) {
+  const blocks: TrainingPlanBlock[] = [];
+  const startExtras = extras.filter((entry) => entry.placement === "start");
+  const endExtras = extras.filter((entry) => entry.placement === "end");
+
+  blocks.push(...startExtras.map((entry) => entry.block));
+
+  exercises.forEach((exercise) => {
+    const exerciseBlock = buildExerciseBlock(exercise);
+    const warmupBlock = buildWarmupBlock(exerciseBlock);
+
+    if (warmupBlock) {
+      blocks.push(warmupBlock);
+    }
+
+    blocks.push(exerciseBlock);
+
+    const afterExtras = extras.filter(
+      (entry) => entry.placement === `after:${exercise.id}`
+    );
+    blocks.push(...afterExtras.map((entry) => entry.block));
+  });
+
+  blocks.push(...endExtras.map((entry) => entry.block));
+
+  return blocks;
+}
+
+function createTemplateDay(
+  config: Omit<TrainingDay, "blocks"> & { extras?: TemplateExtraBlock[] }
+): TrainingDay {
+  return {
+    id: config.id,
+    name: config.name,
+    slot: config.slot,
+    color: config.color,
+    exercises: config.exercises,
+    blocks: buildTemplateDayBlocks(config.exercises, config.extras ?? []),
+  };
+}
+
 const defaultTrainingPlansSource: TrainingPlan[] = [
   {
     id: "my-plan",
@@ -74,7 +125,7 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
     accent: "#111827",
     origin: "template",
     days: [
-      {
+      createTemplateDay({
         id: "push-focus",
         name: "Push",
         slot: "push",
@@ -87,22 +138,70 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
           { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 6, maxReps: 9, restSeconds: 120 },
           { id: "hanging_leg_raises", name: "hanging_leg_raises", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
         ],
-      },
-      {
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:push-focus:chest",
+              type: "stretch",
+              label: "Brust öffnen",
+              stretchId: "doorway_chest_stretch",
+              category: "Brust",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:shoulderpress",
+            block: {
+              id: "pause:push-focus:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 75,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
+      createTemplateDay({
         id: "pull-focus",
         name: "Pull",
         slot: "pull",
         color: "#2563eb",
         exercises: [
-          { id: "rows", name: "rows", sets: 3, minReps: 6, maxReps: 9, restSeconds: 180 },
+          { id: "chest_supported_row", name: "chest_supported_row", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "pushups", name: "pushups", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
           { id: "face_pulls", name: "face_pulls", sets: 3, minReps: 12, maxReps: 15, restSeconds: 105 },
           { id: "walking_lunges", name: "walking_lunges", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
           { id: "hanging_leg_raises", name: "hanging_leg_raises", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
         ],
-      },
-      {
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:pull-focus:lat",
+              type: "stretch",
+              label: "Lat mobilisieren",
+              stretchId: "lat_stretch",
+              category: "Rücken",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:romanian_deadlift",
+            block: {
+              id: "pause:pull-focus:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 75,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
+      createTemplateDay({
         id: "mixed-day",
         name: "Mixed",
         slot: "mixed",
@@ -115,7 +214,31 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
           { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 7, maxReps: 10, restSeconds: 120 },
           { id: "core", name: "core", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
         ],
-      },
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:mixed-day:mobility",
+              type: "stretch",
+              label: "Tiefer Start",
+              stretchId: "deep_squat_hold",
+              category: "Mobilität",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:romanian_deadlift",
+            block: {
+              id: "pause:mixed-day:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 90,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
     ],
   },
   {
@@ -125,7 +248,7 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
     accent: "#7c3aed",
     origin: "template",
     days: [
-      {
+      createTemplateDay({
         id: "tag-a",
         name: "Tag A",
         slot: "push",
@@ -133,13 +256,37 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
         exercises: [
           { id: "squat", name: "squat", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
           { id: "benchpress", name: "benchpress", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "rows", name: "rows", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+          { id: "machine_row", name: "machine_row", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "shoulderpress", name: "shoulderpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
-          { id: "legcurl", name: "legcurl", sets: 3, minReps: 8, maxReps: 12, restSeconds: 90 },
-          { id: "core", name: "core", sets: 3, minReps: 8, maxReps: 15, restSeconds: 75 },
+          { id: "seated_legcurl", name: "seated_legcurl", sets: 3, minReps: 10, maxReps: 15, restSeconds: 90 },
+          { id: "cable_crunch", name: "cable_crunch", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
-      },
-      {
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:tag-a:ankle",
+              type: "stretch",
+              label: "Sprunggelenk",
+              stretchId: "ankle_mobility",
+              category: "Mobilität",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:shoulderpress",
+            block: {
+              id: "pause:tag-a:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 75,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
+      createTemplateDay({
         id: "tag-b",
         name: "Tag B",
         slot: "pull",
@@ -147,12 +294,36 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
         exercises: [
           { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
           { id: "pullups", name: "pullups", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "incline_benchpress", name: "incline_benchpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+          { id: "incline_chest_press", name: "incline_chest_press", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
-          { id: "biceps", name: "biceps", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "hammer_curls", name: "hammer_curls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
           { id: "dips", name: "dips", sets: 3, minReps: 6, maxReps: 10, restSeconds: 120 },
         ],
-      },
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:tag-b:hip",
+              type: "stretch",
+              label: "Hüfte vorbereiten",
+              stretchId: "hip_flexor_stretch",
+              category: "Hüfte",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:incline_chest_press",
+            block: {
+              id: "pause:tag-b:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 75,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
     ],
   },
   {
@@ -162,35 +333,83 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
     accent: "#0891b2",
     origin: "template",
     days: [
-      {
+      createTemplateDay({
         id: "push",
         name: "Push",
         slot: "push",
         color: "#dc2626",
         exercises: [
           { id: "benchpress", name: "benchpress", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "incline_benchpress", name: "incline_benchpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+          { id: "incline_chest_press", name: "incline_chest_press", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "shoulderpress", name: "shoulderpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
-          { id: "lateral_raise", name: "lateral_raise", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "machine_lateral_raise", name: "machine_lateral_raise", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
           { id: "dips", name: "dips", sets: 3, minReps: 6, maxReps: 10, restSeconds: 120 },
-          { id: "triceps", name: "triceps", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "triceps_pushdown", name: "triceps_pushdown", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
-      },
-      {
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:split-3-push:chest",
+              type: "stretch",
+              label: "Brust öffnen",
+              stretchId: "doorway_chest_stretch",
+              category: "Brust",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:shoulderpress",
+            block: {
+              id: "pause:split-3-push:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 75,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
+      createTemplateDay({
         id: "pull",
         name: "Pull",
         slot: "pull",
         color: "#2563eb",
         exercises: [
           { id: "pullups", name: "pullups", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "rows", name: "rows", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
-          { id: "latpulldown", name: "latpulldown", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+          { id: "t_bar_row", name: "t_bar_row", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+          { id: "close_grip_latpulldown", name: "close_grip_latpulldown", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "face_pulls", name: "face_pulls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
-          { id: "biceps", name: "biceps", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
-          { id: "rear_delt", name: "rear_delt", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "hammer_curls", name: "hammer_curls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "reverse_fly", name: "reverse_fly", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
-      },
-      {
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:split-3-pull:lat",
+              type: "stretch",
+              label: "Rücken vorbereiten",
+              stretchId: "lat_stretch",
+              category: "Rücken",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:close_grip_latpulldown",
+            block: {
+              id: "pause:split-3-pull:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 75,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
+      createTemplateDay({
         id: "legs",
         name: "Beine",
         slot: "mixed",
@@ -200,10 +419,34 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
           { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
           { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
           { id: "legpress", name: "legpress", sets: 3, minReps: 10, maxReps: 15, restSeconds: 120 },
-          { id: "legcurl", name: "legcurl", sets: 3, minReps: 10, maxReps: 15, restSeconds: 90 },
-          { id: "calves", name: "calves", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "seated_legcurl", name: "seated_legcurl", sets: 3, minReps: 10, maxReps: 15, restSeconds: 90 },
+          { id: "seated_calf_raise", name: "seated_calf_raise", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
-      },
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:split-3-legs:ankle",
+              type: "stretch",
+              label: "Unterkörper aktivieren",
+              stretchId: "deep_squat_hold",
+              category: "Mobilität",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:bulgarian",
+            block: {
+              id: "pause:split-3-legs:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 90,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
     ],
   },
   {
@@ -213,7 +456,7 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
     accent: "#2563eb",
     origin: "template",
     days: [
-      {
+      createTemplateDay({
         id: "push",
         name: "Push",
         slot: "push",
@@ -221,27 +464,75 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
         exercises: [
           { id: "benchpress", name: "benchpress", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
           { id: "shoulderpress", name: "shoulderpress", sets: 3, minReps: 6, maxReps: 9, restSeconds: 150 },
-          { id: "incline_benchpress", name: "incline_benchpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+          { id: "incline_chest_press", name: "incline_chest_press", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "dips", name: "dips", sets: 3, minReps: 6, maxReps: 10, restSeconds: 120 },
-          { id: "lateral_raise", name: "lateral_raise", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
-          { id: "triceps", name: "triceps", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "machine_lateral_raise", name: "machine_lateral_raise", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "triceps_pushdown", name: "triceps_pushdown", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
-      },
-      {
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:ppl-push:chest",
+              type: "stretch",
+              label: "Brust öffnen",
+              stretchId: "doorway_chest_stretch",
+              category: "Brust",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:incline_chest_press",
+            block: {
+              id: "pause:ppl-push:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 75,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
+      createTemplateDay({
         id: "pull",
         name: "Pull",
         slot: "pull",
         color: "#2563eb",
         exercises: [
           { id: "pullups", name: "pullups", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "rows", name: "rows", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
-          { id: "latpulldown", name: "latpulldown", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+          { id: "machine_row", name: "machine_row", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+          { id: "close_grip_latpulldown", name: "close_grip_latpulldown", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
           { id: "face_pulls", name: "face_pulls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
-          { id: "biceps", name: "biceps", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "hammer_curls", name: "hammer_curls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
-      },
-      {
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:ppl-pull:lat",
+              type: "stretch",
+              label: "Lat mobilisieren",
+              stretchId: "lat_stretch",
+              category: "Rücken",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:romanian_deadlift",
+            block: {
+              id: "pause:ppl-pull:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 75,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
+      createTemplateDay({
         id: "legs",
         name: "Legs",
         slot: "mixed",
@@ -250,11 +541,35 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
           { id: "squat", name: "squat", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
           { id: "legpress", name: "legpress", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
-          { id: "legcurl", name: "legcurl", sets: 3, minReps: 10, maxReps: 15, restSeconds: 90 },
-          { id: "calves", name: "calves", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
-          { id: "core", name: "core", sets: 3, minReps: 8, maxReps: 15, restSeconds: 75 },
+          { id: "seated_legcurl", name: "seated_legcurl", sets: 3, minReps: 10, maxReps: 15, restSeconds: 90 },
+          { id: "seated_calf_raise", name: "seated_calf_raise", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "cable_crunch", name: "cable_crunch", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
-      },
+        extras: [
+          {
+            placement: "start",
+            block: {
+              id: "stretch:ppl-legs:mobility",
+              type: "stretch",
+              label: "Beine mobilisieren",
+              stretchId: "deep_squat_hold",
+              category: "Mobilität",
+              holdSeconds: 30,
+              rounds: 2,
+            },
+          },
+          {
+            placement: "after:bulgarian",
+            block: {
+              id: "pause:ppl-legs:reset",
+              type: "pause",
+              label: "Workout-Pause",
+              seconds: 90,
+              scope: "workout",
+            },
+          },
+        ],
+      }),
     ],
   },
   {
@@ -271,11 +586,11 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
         color: "#ea580c",
         exercises: [
           { id: "benchpress", name: "benchpress", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "rows", name: "rows", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+          { id: "machine_row", name: "machine_row", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "pullups", name: "pullups", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
           { id: "shoulderpress", name: "shoulderpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
-          { id: "biceps", name: "biceps", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
-          { id: "triceps", name: "triceps", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "hammer_curls", name: "hammer_curls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "triceps_pushdown", name: "triceps_pushdown", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
       },
       {
@@ -287,9 +602,9 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
           { id: "squat", name: "squat", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
           { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
           { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
-          { id: "legcurl", name: "legcurl", sets: 3, minReps: 10, maxReps: 15, restSeconds: 90 },
-          { id: "calves", name: "calves", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
-          { id: "core", name: "core", sets: 3, minReps: 8, maxReps: 15, restSeconds: 75 },
+          { id: "seated_legcurl", name: "seated_legcurl", sets: 3, minReps: 10, maxReps: 15, restSeconds: 90 },
+          { id: "seated_calf_raise", name: "seated_calf_raise", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          { id: "cable_crunch", name: "cable_crunch", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
       },
     ],
@@ -309,10 +624,10 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
         exercises: [
           { id: "squat", name: "squat", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
           { id: "benchpress", name: "benchpress", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "rows", name: "rows", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+          { id: "chest_supported_row", name: "chest_supported_row", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "shoulderpress", name: "shoulderpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
           { id: "pullups", name: "pullups", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "core", name: "core", sets: 3, minReps: 8, maxReps: 15, restSeconds: 75 },
+          { id: "cable_crunch", name: "cable_crunch", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
         ],
       },
       {
@@ -322,8 +637,8 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
         color: "#14b8a6",
         exercises: [
           { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
-          { id: "incline_benchpress", name: "incline_benchpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
-          { id: "latpulldown", name: "latpulldown", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+          { id: "incline_chest_press", name: "incline_chest_press", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+          { id: "close_grip_latpulldown", name: "close_grip_latpulldown", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
           { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
           { id: "face_pulls", name: "face_pulls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
           { id: "dips", name: "dips", sets: 3, minReps: 6, maxReps: 10, restSeconds: 120 },
@@ -333,7 +648,181 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
   },
 ];
 
-const defaultTrainingPlans = defaultTrainingPlansSource.map(normalizeTrainingPlan);
+function enhanceTemplatePlanBlocks(plan: TrainingPlan): TrainingPlan {
+  if (plan.id === "upper-lower") {
+    return {
+      ...plan,
+      days: [
+        createTemplateDay({
+          id: "upper",
+          name: "Oberkörper",
+          slot: "push",
+          color: "#ea580c",
+          exercises: [
+            { id: "benchpress", name: "benchpress", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+            { id: "machine_row", name: "machine_row", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+            { id: "pullups", name: "pullups", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+            { id: "shoulderpress", name: "shoulderpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+            { id: "hammer_curls", name: "hammer_curls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+            { id: "triceps_pushdown", name: "triceps_pushdown", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          ],
+          extras: [
+            {
+              placement: "start",
+              block: {
+                id: "stretch:upper:shoulder",
+                type: "stretch",
+                label: "Schulter vorbereiten",
+                stretchId: "band_shoulder_mobility",
+                category: "Mobilität",
+                holdSeconds: 30,
+                rounds: 2,
+              },
+            },
+            {
+              placement: "after:pullups",
+              block: {
+                id: "pause:upper:reset",
+                type: "pause",
+                label: "Workout-Pause",
+                seconds: 75,
+                scope: "workout",
+              },
+            },
+          ],
+        }),
+        createTemplateDay({
+          id: "lower",
+          name: "Unterkörper",
+          slot: "pull",
+          color: "#f97316",
+          exercises: [
+            { id: "squat", name: "squat", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+            { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
+            { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
+            { id: "seated_legcurl", name: "seated_legcurl", sets: 3, minReps: 10, maxReps: 15, restSeconds: 90 },
+            { id: "seated_calf_raise", name: "seated_calf_raise", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+            { id: "cable_crunch", name: "cable_crunch", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          ],
+          extras: [
+            {
+              placement: "start",
+              block: {
+                id: "stretch:lower:ankle",
+                type: "stretch",
+                label: "Unterkörper vorbereiten",
+                stretchId: "ankle_mobility",
+                category: "Mobilität",
+                holdSeconds: 30,
+                rounds: 2,
+              },
+            },
+            {
+              placement: "after:bulgarian",
+              block: {
+                id: "pause:lower:reset",
+                type: "pause",
+                label: "Workout-Pause",
+                seconds: 90,
+                scope: "workout",
+              },
+            },
+          ],
+        }),
+      ],
+    };
+  }
+
+  if (plan.id === "full-body") {
+    return {
+      ...plan,
+      days: [
+        createTemplateDay({
+          id: "full-body-a",
+          name: "Ganzkörper A",
+          slot: "push",
+          color: "#0f766e",
+          exercises: [
+            { id: "squat", name: "squat", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+            { id: "benchpress", name: "benchpress", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+            { id: "chest_supported_row", name: "chest_supported_row", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+            { id: "shoulderpress", name: "shoulderpress", sets: 3, minReps: 6, maxReps: 10, restSeconds: 150 },
+            { id: "pullups", name: "pullups", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+            { id: "cable_crunch", name: "cable_crunch", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+          ],
+          extras: [
+            {
+              placement: "start",
+              block: {
+                id: "stretch:full-a:start",
+                type: "stretch",
+                label: "Ganzkörper mobilisieren",
+                stretchId: "worlds_greatest_stretch",
+                category: "Mobilität",
+                holdSeconds: 30,
+                rounds: 2,
+              },
+            },
+            {
+              placement: "after:shoulderpress",
+              block: {
+                id: "pause:full-a:reset",
+                type: "pause",
+                label: "Workout-Pause",
+                seconds: 75,
+                scope: "workout",
+              },
+            },
+          ],
+        }),
+        createTemplateDay({
+          id: "full-body-b",
+          name: "Ganzkörper B",
+          slot: "pull",
+          color: "#14b8a6",
+          exercises: [
+            { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
+            { id: "incline_chest_press", name: "incline_chest_press", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+            { id: "close_grip_latpulldown", name: "close_grip_latpulldown", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+            { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
+            { id: "face_pulls", name: "face_pulls", sets: 3, minReps: 10, maxReps: 15, restSeconds: 75 },
+            { id: "dips", name: "dips", sets: 3, minReps: 6, maxReps: 10, restSeconds: 120 },
+          ],
+          extras: [
+            {
+              placement: "start",
+              block: {
+                id: "stretch:full-b:start",
+                type: "stretch",
+                label: "Hüfte und Rücken",
+                stretchId: "figure_four_stretch",
+                category: "Hüfte",
+                holdSeconds: 30,
+                rounds: 2,
+              },
+            },
+            {
+              placement: "after:bulgarian",
+              block: {
+                id: "pause:full-b:reset",
+                type: "pause",
+                label: "Workout-Pause",
+                seconds: 75,
+                scope: "workout",
+              },
+            },
+          ],
+        }),
+      ],
+    };
+  }
+
+  return plan;
+}
+
+const defaultTrainingPlans = defaultTrainingPlansSource
+  .map(enhanceTemplatePlanBlocks)
+  .map(normalizeTrainingPlan);
 
 export const trainingPlans = defaultTrainingPlans;
 
@@ -641,10 +1130,32 @@ type PauseDraft = {
   scope: "exercise" | "workout";
 };
 
+function insertBlocksAfter(
+  blocks: TrainingPlanBlock[],
+  newBlocks: TrainingPlanBlock[],
+  insertAfterBlockId?: string | null
+) {
+  if (!insertAfterBlockId) {
+    return [...blocks, ...newBlocks];
+  }
+
+  const insertIndex = blocks.findIndex((block) => block.id === insertAfterBlockId);
+  if (insertIndex === -1) {
+    return [...blocks, ...newBlocks];
+  }
+
+  return [
+    ...blocks.slice(0, insertIndex + 1),
+    ...newBlocks,
+    ...blocks.slice(insertIndex + 1),
+  ];
+}
+
 export function addTrainingExercise(
   planId: string,
   dayId: string,
-  draft: ExerciseDraft
+  draft: ExerciseDraft,
+  insertAfterBlockId?: string | null
 ) {
   if (!draft.name) {
     return null;
@@ -656,10 +1167,31 @@ export function addTrainingExercise(
       return null;
     }
 
-    day.exercises.push({
+    const exercise = {
       id: createExerciseId(draft.name),
       ...normalizeExerciseDraft(draft),
-    });
+    };
+    day.exercises.push(exercise);
+
+    const syncedBlocks = syncDayBlocks(day.exercises, day.blocks);
+    const insertedBlocks = syncedBlocks.filter(
+      (block) =>
+        (block.type === "exercise" && block.exerciseId === exercise.id) ||
+        (block.type === "warmup" && block.parentExerciseId === exercise.id)
+    );
+    const remainingBlocks = syncedBlocks.filter(
+      (block) =>
+        !(
+          (block.type === "exercise" && block.exerciseId === exercise.id) ||
+          (block.type === "warmup" && block.parentExerciseId === exercise.id)
+        )
+    );
+
+    day.blocks = insertBlocksAfter(
+      remainingBlocks,
+      insertedBlocks,
+      insertAfterBlockId
+    );
     return plan;
   });
 }
@@ -754,7 +1286,8 @@ export function updateWarmupBlock(
 export function addStretchBlock(
   planId: string,
   dayId: string,
-  draft: StretchDraft
+  draft: StretchDraft,
+  insertAfterBlockId?: string | null
 ) {
   if (!draft.stretchId) {
     return null;
@@ -785,7 +1318,7 @@ export function addStretchBlock(
       rounds,
     };
 
-    day.blocks = [...blocks, stretchBlock];
+    day.blocks = insertBlocksAfter(blocks, [stretchBlock], insertAfterBlockId);
     return plan;
   });
 }
@@ -841,7 +1374,8 @@ export function updateStretchBlock(
 export function addPauseBlock(
   planId: string,
   dayId: string,
-  draft: PauseDraft
+  draft: PauseDraft,
+  insertAfterBlockId?: string | null
 ) {
   const seconds = Math.max(15, Math.round(Number(draft.seconds) || 60));
 
@@ -862,7 +1396,7 @@ export function addPauseBlock(
       scope: draft.scope,
     };
 
-    day.blocks = [...blocks, pauseBlock];
+    day.blocks = insertBlocksAfter(blocks, [pauseBlock], insertAfterBlockId);
     return plan;
   });
 }
@@ -949,6 +1483,82 @@ export function moveDayBlock(
     const [moved] = blocks.splice(index, 1);
     blocks.splice(targetIndex, 0, moved);
     day.blocks = blocks;
+    return plan;
+  });
+}
+
+export function duplicateDayBlock(
+  planId: string,
+  dayId: string,
+  blockId: string
+) {
+  return updateCustomPlan(planId, (plan) => {
+    const day = plan.days.find((entry) => entry.id === dayId);
+    if (!day) {
+      return null;
+    }
+
+    const blocks = day.blocks ?? syncDayBlocks(day.exercises);
+    const sourceBlock = blocks.find((block) => block.id === blockId);
+
+    if (!sourceBlock || sourceBlock.type === "warmup") {
+      return null;
+    }
+
+    if (sourceBlock.type === "exercise") {
+      const sourceExercise = day.exercises.find(
+        (exercise) => exercise.id === sourceBlock.exerciseId
+      );
+
+      if (!sourceExercise) {
+        return null;
+      }
+
+      const duplicatedExercise = {
+        ...sourceExercise,
+        id: createExerciseId(sourceExercise.name),
+      };
+
+      day.exercises.push(duplicatedExercise);
+
+      const syncedBlocks = syncDayBlocks(day.exercises, blocks);
+      const duplicatedBlocks = syncedBlocks.filter(
+        (block) =>
+          (block.type === "exercise" &&
+            block.exerciseId === duplicatedExercise.id) ||
+          (block.type === "warmup" &&
+            block.parentExerciseId === duplicatedExercise.id)
+      );
+      const remainingBlocks = syncedBlocks.filter(
+        (block) =>
+          !(
+            (block.type === "exercise" &&
+              block.exerciseId === duplicatedExercise.id) ||
+            (block.type === "warmup" &&
+              block.parentExerciseId === duplicatedExercise.id)
+          )
+      );
+
+      day.blocks = insertBlocksAfter(remainingBlocks, duplicatedBlocks, blockId);
+      return plan;
+    }
+
+    if (sourceBlock.type === "stretch") {
+      const duplicateStretch: StretchPlanBlock = {
+        ...sourceBlock,
+        id: `stretch:${sourceBlock.stretchId}:${Date.now()}`,
+      };
+
+      day.blocks = insertBlocksAfter(blocks, [duplicateStretch], blockId);
+      return plan;
+    }
+
+    const duplicatePause: PausePlanBlock = {
+      ...sourceBlock,
+      id: `pause:${Date.now()}`,
+    };
+
+    day.blocks = insertBlocksAfter(blocks, [duplicatePause], blockId);
     return plan;
   });
 }

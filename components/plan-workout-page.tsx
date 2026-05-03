@@ -5,11 +5,18 @@ import { useEffect, useState } from "react";
 import { WorkoutScreen } from "@/components/workout-screen";
 import {
   getActivePlanId,
+  getDayBlocks,
   getDayForSlot,
   getTrainingPlan,
   type PlanRouteSlot,
   type TrainingDay,
 } from "@/lib/trainingPlans";
+
+const slotHref = {
+  push: "/workout/push/index.html",
+  pull: "/workout/pull/index.html",
+  mixed: "/workout/legs/index.html",
+} as const;
 
 type WorkoutTheme = {
   screenBadge: string;
@@ -61,10 +68,12 @@ export function PlanWorkoutPage({
       workoutType={`${planId}:${day.id}`}
       workoutLabel={day.name.toUpperCase()}
       exercises={day.exercises}
+      dayBlocks={getDayBlocks(day)}
       planId={planId}
       planName={planName}
       dayId={day.id}
       dayName={day.name}
+      resumeHref={slotHref[slot]}
       theme={theme}
     />
   );

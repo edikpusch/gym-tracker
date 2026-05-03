@@ -5,6 +5,7 @@ const PLAN_VERSION_KEY = "gym-tracker-plan-version";
 const PLAN_VERSION = "2026-04-23-plan-v2";
 
 export type SetType = {
+  eventType?: "set";
   exercise: string;
   weight: number;
   reps: number;
@@ -18,6 +19,26 @@ export type SetType = {
   dayName?: string;
 };
 
+export type WorkoutFlowEvent = {
+  eventType: "stretch" | "pause";
+  exercise: string;
+  weight: 0;
+  reps: 0;
+  set: 0;
+  sessionId: number;
+  timestamp: number;
+  type?: string;
+  planId?: string;
+  planName?: string;
+  dayId?: string;
+  dayName?: string;
+  label: string;
+  contextLabel?: string;
+  durationSeconds: number;
+  scope?: "exercise" | "workout";
+};
+
+export type WorkoutLogEntry = SetType | WorkoutFlowEvent;
 export type SetComparisonKind = "better" | "worse" | "same" | "new";
 
 const REP_RANGES: Record<string, { min: number; max: number }> =
@@ -34,6 +55,16 @@ const REP_RANGES: Record<string, { min: number; max: number }> =
     {}
   );
 
+export function isLoggedSetEntry(entry: WorkoutLogEntry): entry is SetType {
+  return entry.eventType !== "stretch" && entry.eventType !== "pause";
+}
+
+export function isFlowEventEntry(
+  entry: WorkoutLogEntry
+): entry is WorkoutFlowEvent {
+  return entry.eventType === "stretch" || entry.eventType === "pause";
+}
+
 function getWorkSets(sets: SetType[]) {
   return sets.filter((set) => set.set > 0);
 }
@@ -42,7 +73,7 @@ function canUseStorage() {
   return typeof window !== "undefined" && "localStorage" in window;
 }
 
-function readStoredSets(): SetType[] {
+function readStoredSets(): WorkoutLogEntry[] {
   if (!canUseStorage()) {
     return [];
   }
@@ -59,14 +90,14 @@ function readStoredSets(): SetType[] {
       return [];
     }
 
-    return parsed.filter(isValidSet).sort((a, b) => a.timestamp - b.timestamp);
+    return parsed.filter(isValidEntry).sort((a, b) => a.timestamp - b.timestamp);
   } catch (error) {
     console.error("Local set storage could not be read:", error);
     return [];
   }
 }
 
-function writeStoredSets(sets: SetType[]) {
+function writeStoredSets(sets: WorkoutLogEntry[]) {
   if (!canUseStorage()) {
     return;
   }
@@ -97,31 +128,118 @@ export function ensureCurrentPlanStorage() {
   }
 }
 
-function isValidSet(value: unknown): value is SetType {
+function hasBaseEntryShape(value: unknown): value is Partial<WorkoutLogEntry> {
   if (!value || typeof value !== "object") {
     return false;
   }
 
-  const set = value as Partial<SetType>;
-
+  const entry = value as Partial<WorkoutLogEntry>;
   return (
-    typeof set.exercise === "string" &&
-    typeof set.weight === "number" &&
-    typeof set.reps === "number" &&
-    typeof set.set === "number" &&
-    typeof set.sessionId === "number" &&
-    typeof set.timestamp === "number"
+    typeof entry.exercise === "string" &&
+    typeof entry.weight === "number" &&
+    typeof entry.reps === "number" &&
+    typeof entry.set === "number" &&
+    typeof entry.sessionId === "number" &&
+    typeof entry.timestamp === "number"
   );
 }
 
-export async function getAllSets(): Promise<SetType[]> {
+function isValidSet(value: unknown): value is SetType {
+  if (!hasBaseEntryShape(value)) {
+    return false;
+  }
+
+  const set = value as Partial<SetType>;
+  return set.eventType === undefined || set.eventType === "set";
+}
+
+function isValidFlowEvent(value: unknown): value is WorkoutFlowEvent {
+  if (!hasBaseEntryShape(value)) {
+    return false;
+  }
+
+  const entry = value as Partial<WorkoutFlowEvent>;
+  return (
+    (entry.eventType === "stretch" || entry.eventType === "pause") &&
+    typeof entry.label === "string" &&
+    typeof entry.durationSeconds === "number"
+  );
+}
+
+function isValidEntry(value: unknown): value is WorkoutLogEntry {
+  return isValidSet(value) || isValidFlowEvent(value);
+}
+
+export async function getAllSets(): Promise<WorkoutLogEntry[]> {
   return readStoredSets().sort((a, b) => b.timestamp - a.timestamp);
 }
 
-export async function getSetsBySession(sessionId: number): Promise<SetType[]> {
+export async function getSetsBySession(sessionId: number): Promise<WorkoutLogEntry[]> {
   return readStoredSets()
     .filter((set) => set.sessionId === sessionId)
     .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+export async function getSessionSetEntries(sessionId: number): Promise<SetType[]> {
+  return (await getSetsBySession(sessionId)).filter(isLoggedSetEntry);
+}
+
+function getStoredSetEntries() {
+  return readStoredSets().filter(isLoggedSetEntry);
+}
+
+export async function saveWorkoutEvent({
+  label,
+  contextLabel,
+  durationSeconds,
+  eventType,
+  scope,
+  sessionId,
+  type,
+  planId,
+  planName,
+  dayId,
+  dayName,
+}: {
+  label: string;
+  contextLabel?: string;
+  durationSeconds: number;
+  eventType: "stretch" | "pause";
+  scope?: "exercise" | "workout";
+  sessionId: number;
+  type?: string;
+  planId?: string;
+  planName?: string;
+  dayId?: string;
+  dayName?: string;
+}) {
+  if (!sessionId || Number.isNaN(sessionId)) {
+    console.error("Invalid sessionId.");
+    return;
+  }
+
+  const nextEvent: WorkoutFlowEvent = {
+    eventType,
+    exercise: label,
+    weight: 0,
+    reps: 0,
+    set: 0,
+    sessionId,
+    timestamp: Date.now(),
+    type,
+    planId,
+    planName,
+    dayId,
+    dayName,
+    label,
+    contextLabel,
+    durationSeconds,
+    scope,
+  };
+
+  const entries = readStoredSets();
+  entries.push(nextEvent);
+  writeStoredSets(entries);
 }
 
 export async function deleteWorkoutSession(
@@ -143,7 +261,7 @@ export async function getLastSetForExercise(
   setNumber: number,
   workoutType?: string
 ): Promise<SetType | null> {
-  const match = readStoredSets()
+  const match = getStoredSetEntries()
     .filter(
       (set) =>
         set.exercise === exercise &&
@@ -161,7 +279,7 @@ export async function getPreviousMatchingSet(
   workoutType: string | undefined,
   currentSessionId: number
 ): Promise<SetType | null> {
-  const match = readStoredSets()
+  const match = getStoredSetEntries()
     .filter(
       (set) =>
         set.exercise === exercise &&
@@ -179,7 +297,7 @@ export async function getBestMatchingSet(
   setNumber: number,
   workoutType?: string
 ): Promise<SetType | null> {
-  const matches = readStoredSets().filter(
+  const matches = getStoredSetEntries().filter(
     (set) =>
       set.exercise === exercise &&
       set.set === setNumber &&
@@ -208,7 +326,7 @@ export async function getLastSessionForExercise(
   currentSessionId: number,
   workoutType?: string
 ): Promise<SetType[]> {
-  const all = readStoredSets()
+  const all = getStoredSetEntries()
     .filter(
       (set) =>
         set.exercise === exercise &&
@@ -365,6 +483,7 @@ export async function saveSet({
   }
 
   const nextSet: SetType = {
+    eventType: "set",
     exercise,
     weight,
     reps,

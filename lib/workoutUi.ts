@@ -21,6 +21,16 @@ export const EXERCISE_LIBRARY = getExerciseCatalogSections()
   )
   .sort((a, b) => a.label.localeCompare(b.label, "de-DE"));
 
+export const EXERCISE_LIBRARY_GROUPS = getExerciseCatalogSections().map(
+  (section) => ({
+    category: section.category,
+    items: section.items.map((entry) => ({
+      value: entry.id,
+      label: entry.label,
+    })),
+  })
+);
+
 export const STRETCH_LIBRARY = getStretchCatalogSections()
   .flatMap((section) =>
     section.items.map((entry) => ({
@@ -30,6 +40,16 @@ export const STRETCH_LIBRARY = getStretchCatalogSections()
     }))
   )
   .sort((a, b) => a.label.localeCompare(b.label, "de-DE"));
+
+export const STRETCH_LIBRARY_GROUPS = getStretchCatalogSections().map(
+  (section) => ({
+    category: section.category,
+    items: section.items.map((entry) => ({
+      value: entry.id,
+      label: entry.label,
+    })),
+  })
+);
 
 export function getExerciseLabel(exercise: string) {
   return EXERCISE_LABELS[exercise] ?? fallbackLabel(exercise);

@@ -5,8 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   deleteWorkoutSession,
   getAllSets,
+  isFlowEventEntry,
+  isLoggedSetEntry,
   getTopSet,
   type SetType,
+  type WorkoutLogEntry,
 } from "@/lib/workoutEngine";
 import { getActivePlanId, getTrainingPlan } from "@/lib/trainingPlans";
 import { getExerciseLabel } from "@/lib/workoutUi";
@@ -14,6 +17,7 @@ import { getExerciseLabel } from "@/lib/workoutUi";
 type SessionExerciseSummary = {
   exercise: string;
   topSet: SetType | null;
+  topSetNumber: number | null;
   previousTopSet: SetType | null;
 };
 
@@ -27,6 +31,10 @@ type SessionCard = {
   date: string;
   weekday: string;
   duration: number;
+  warmupCount: number;
+  stretchCount: number;
+  pauseCount: number;
+  entries: WorkoutLogEntry[];
   sets: SetType[];
   summaries: SessionExerciseSummary[];
 };
@@ -80,8 +88,8 @@ export default function HistoryPage() {
     try {
       setLoading(true);
 
-      const sets = await getAllSets();
-      const grouped = sets.reduce<Record<string, SetType[]>>((acc, current) => {
+      const entries = await getAllSets();
+      const grouped = entries.reduce<Record<string, WorkoutLogEntry[]>>((acc, current) => {
         const key = String(current.sessionId);
         acc[key] ??= [];
         acc[key].push(current);
@@ -90,11 +98,13 @@ export default function HistoryPage() {
 
       const sortedSessionEntries = Object.entries(grouped)
         .map(([sessionId, sessionSets]) => {
-          const orderedSets = [...sessionSets].sort(
+          const orderedEntries = [...sessionSets].sort(
             (a, b) => a.timestamp - b.timestamp
           );
-          const first = orderedSets[0];
-          const last = orderedSets[orderedSets.length - 1];
+          const loggedSets = orderedEntries.filter(isLoggedSetEntry);
+          const flowEvents = orderedEntries.filter(isFlowEventEntry);
+          const first = orderedEntries[0];
+          const last = orderedEntries[orderedEntries.length - 1];
           const date = new Date(first.timestamp);
           const fallbackPlan = getTrainingPlan(
             first.planId ||
@@ -104,9 +114,9 @@ export default function HistoryPage() {
           return {
             sessionId,
             timestamp: first.timestamp,
-            type: first.type || detectWorkoutType(orderedSets),
+            type: first.type || detectWorkoutType(loggedSets),
             typeLabel:
-              first.dayName || first.type || detectWorkoutType(orderedSets),
+              first.dayName || first.type || detectWorkoutType(loggedSets),
             planId: first.planId || fallbackPlan.id,
             planName: first.planName || fallbackPlan.name,
             date: date.toLocaleDateString("de-DE", {
@@ -123,7 +133,11 @@ export default function HistoryPage() {
               1,
               Math.round((last.timestamp - first.timestamp) / 60000)
             ),
-            sets: orderedSets,
+            warmupCount: loggedSets.filter((set) => set.set <= 0).length,
+            stretchCount: flowEvents.filter((entry) => entry.eventType === "stretch").length,
+            pauseCount: flowEvents.filter((entry) => entry.eventType === "pause").length,
+            entries: orderedEntries,
+            sets: loggedSets,
           };
         })
         .sort((a, b) => b.timestamp - a.timestamp);
@@ -140,9 +154,9 @@ export default function HistoryPage() {
         );
 
         summaries.forEach((summary) => {
-          if (summary.topSet) {
+          if (summary.topSet && summary.topSetNumber !== null) {
             exerciseHistory.set(
-              getHistoryKey(session.type, summary.exercise),
+              getHistoryKey(session.type, summary.exercise, summary.topSetNumber),
               summary.topSet
             );
           }
@@ -251,11 +265,40 @@ export default function HistoryPage() {
                   {session.sets.length} Sätze
                 </div>
                 <div style={sessionCompareRow}>
-                  {getSessionStats(session.summaries).map((item) => (
-                    <span key={`${session.sessionId}-${item.label}`} style={item.style}>
-                      {item.text}
-                    </span>
-                  ))}
+                  <div style={sessionSection}>
+                    <span style={sectionLabelSmall}>Leistung</span>
+                    <div style={sessionBadgeRow}>
+                      {getSessionStats(session.summaries).map((item) => (
+                        <span key={`${session.sessionId}-${item.label}`} style={item.style}>
+                          {item.text}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {formatHistoryAdditionalSummary(session) ? (
+                    <div style={sessionSection}>
+                      <span style={sectionLabelSmall}>Zusatz</span>
+                      <div style={sectionSummaryLine}>
+                        {formatHistoryAdditionalSummary(session)}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div style={sessionSection}>
+                    <span style={sectionLabelSmall}>Ablauf</span>
+                    <div style={sectionSummaryLine}>
+                      {formatHistoryDaySummary(session)}
+                    </div>
+                    <div style={sessionPreviewRow}>
+                      {buildHistoryDayPreview(session).map((item) => (
+                        <span
+                          key={`${session.sessionId}-preview-${item}`}
+                          style={sessionPreviewChip}
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -268,7 +311,7 @@ export default function HistoryPage() {
                     )
                   }
                 >
-                  {expandedSessionId === session.sessionId ? "Sätze" : "Details"}
+                  {expandedSessionId === session.sessionId ? "Zuklappen" : "Details"}
                 </button>
                 <button
                   style={deleteButton}
@@ -299,15 +342,28 @@ export default function HistoryPage() {
                     {getExerciseLabel(summary.exercise)}
                   </div>
                   {summary.topSet ? (
-                    <div
-                      style={{
-                        ...summaryTopSet,
-                        ...(compactMode ? compactSummaryTopSet : null),
-                      }}
-                    >
-                      {summary.topSet.weight} kg x {summary.topSet.reps}
-                    </div>
+                    <>
+                      <div style={summaryCaption}>
+                        Bester Satz · {formatHistorySetStage(summary.topSetNumber)}
+                      </div>
+                      <div
+                        style={{
+                          ...summaryTopSet,
+                          ...(compactMode ? compactSummaryTopSet : null),
+                        }}
+                      >
+                        {summary.topSet.weight} kg x {summary.topSet.reps}
+                      </div>
+                    </>
                   ) : null}
+                  <div style={summaryMetaList}>
+                    <div style={summaryMetaRow}>
+                      <span style={summaryMetaLabel}>Letztes Training</span>
+                      <span style={summaryMetaValue}>
+                        {formatHistoryTopSet(summary.previousTopSet)}
+                      </span>
+                    </div>
+                  </div>
                   <div style={summaryBadgeRow}>
                     <span style={getComparisonBadgeStyle(summary)}>
                       {getComparisonArrow(summary)} {getComparisonLabel(summary)}
@@ -319,17 +375,23 @@ export default function HistoryPage() {
 
             {expandedSessionId === session.sessionId ? (
               <div style={setList}>
-                {session.sets.map((set, index) => (
+                {session.entries.map((entry, index) => (
                   <div
-                    key={`${session.sessionId}-${set.exercise}-${index}`}
+                    key={`${session.sessionId}-${entry.exercise}-${index}`}
                     style={setRow}
                   >
-                    <span style={exerciseName}>
-                      {getExerciseLabel(set.exercise)} {labelSet(set.set)}
-                    </span>
-                    <span style={setValue}>
-                      {set.weight} kg x {set.reps}
-                    </span>
+                    <div style={setRowTop}>
+                      <span style={exerciseName}>
+                        {formatHistoryEntryLabel(session.entries, index)}
+                      </span>
+                      <span style={historyEntryBadge}>
+                        {getHistoryEntryKindLabel(entry)}
+                      </span>
+                    </div>
+                    <span style={setValue}>{formatHistoryEntryValue(entry)}</span>
+                    {isFlowEventEntry(entry) && entry.contextLabel ? (
+                      <span style={historyEntryContext}>{entry.contextLabel}</span>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -356,7 +418,7 @@ const screen = {
 const shell = {
   maxWidth: 520,
   margin: "0 auto",
-  padding: "20px 18px 24px",
+  padding: "18px 16px 22px",
   borderRadius: 30,
   background: "rgba(255,255,255,0.94)",
   border: "1px solid rgba(148, 163, 184, 0.16)",
@@ -367,7 +429,7 @@ const shell = {
 const headerRow = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 16,
+  gap: 12,
   alignItems: "start",
 };
 
@@ -380,19 +442,19 @@ const eyebrow = {
 
 const title = {
   marginTop: 4,
-  fontSize: 30,
+  fontSize: 28,
   fontWeight: "bold",
 };
 
 const headerCopy = {
-  marginTop: 6,
-  fontSize: 14,
+  marginTop: 5,
+  fontSize: 13,
   fontWeight: 600,
   color: "#475569",
 };
 
 const backPill = {
-  padding: "10px 14px",
+  padding: "8px 12px",
   borderRadius: 999,
   textDecoration: "none",
   color: "#111827",
@@ -403,18 +465,18 @@ const backPill = {
 
 const filterRow = {
   display: "flex",
-  gap: 8,
-  marginTop: 14,
+  gap: 7,
+  marginTop: 12,
 };
 
 const filterButton = {
-  minHeight: 36,
-  padding: "8px 12px",
+  minHeight: 34,
+  padding: "7px 11px",
   borderRadius: 999,
   border: "1px solid #dde5f0",
   background: "#fff",
   color: "#111827",
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: "bold",
 };
 
@@ -450,9 +512,9 @@ const emptyCopy = {
 };
 
 const card = {
-  marginTop: 16,
-  padding: 16,
-  borderRadius: 22,
+  marginTop: 14,
+  padding: 14,
+  borderRadius: 20,
   background: "#f9fbff",
   border: "1px solid #e8ecf3",
 };
@@ -460,7 +522,7 @@ const card = {
 const cardTop = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 12,
+  gap: 10,
   alignItems: "start",
 };
 
@@ -468,37 +530,80 @@ const cardButtonStack = {
   display: "flex",
   flexDirection: "column" as const,
   alignItems: "end",
-  gap: 8,
+  gap: 6,
 };
 
 const cardDate = {
   fontWeight: "bold",
-  fontSize: 16,
+  fontSize: 15,
 };
 
 const cardMetaLine = {
   marginTop: 4,
-  fontSize: 13,
+  fontSize: 12,
   opacity: 0.62,
 };
 
 const sessionCompareRow = {
+  display: "grid",
+  gap: 7,
+  marginTop: 7,
+};
+
+const sessionSection = {
+  display: "grid",
+  gap: 5,
+};
+
+const sectionSummaryLine = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#475569",
+};
+
+const sessionPreviewRow = {
   display: "flex",
   flexWrap: "wrap" as const,
   gap: 6,
-  marginTop: 8,
+};
+
+const sessionPreviewChip = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 24,
+  padding: "4px 8px",
+  borderRadius: 999,
+  background: "#ffffff",
+  border: "1px solid #dbe4f0",
+  color: "#334155",
+  fontSize: 11,
+  fontWeight: "bold",
+};
+
+const sessionBadgeRow = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 6,
+};
+
+const sectionLabelSmall = {
+  fontSize: 11,
+  textTransform: "uppercase" as const,
+  letterSpacing: 1,
+  color: "#94a3b8",
+  fontWeight: "bold",
 };
 
 const summaryGrid = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: 10,
-  marginTop: 14,
+  gap: 8,
+  marginTop: 12,
 };
 
 const summaryCard = {
-  padding: "12px 12px 10px",
-  borderRadius: 18,
+  padding: "10px 10px 9px",
+  borderRadius: 16,
   background: "#ffffff",
   border: "1px solid #e8ecf3",
   boxShadow: "0 10px 24px rgba(15, 23, 42, 0.04)",
@@ -511,14 +616,47 @@ const summaryExercise = {
 };
 
 const summaryTopSet = {
-  marginTop: 6,
-  fontSize: 18,
+  marginTop: 5,
+  fontSize: 17,
   fontWeight: "bold",
   color: "#111827",
 };
 
+const summaryCaption = {
+  marginTop: 5,
+  fontSize: 11,
+  color: "#64748b",
+  fontWeight: 600,
+};
+
+const summaryMetaList = {
+  marginTop: 7,
+  display: "grid",
+  gap: 3,
+};
+
+const summaryMetaRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 8,
+};
+
+const summaryMetaLabel = {
+  fontSize: 11,
+  color: "#64748b",
+  fontWeight: 600,
+};
+
+const summaryMetaValue = {
+  fontSize: 12,
+  color: "#111827",
+  fontWeight: "bold",
+  textAlign: "right" as const,
+};
+
 const summaryBadgeRow = {
-  marginTop: 8,
+  marginTop: 7,
   display: "flex",
 };
 
@@ -550,28 +688,61 @@ const neutralBadge = {
   background: "#f3f4f6",
 };
 
+const warmupBadge = {
+  ...neutralBadge,
+  color: "#64748b",
+};
+
 const setList = {
-  marginTop: 14,
-  display: "flex",
-  flexDirection: "column" as const,
-  gap: 8,
+  marginTop: 12,
+  display: "grid",
+  gap: 7,
 };
 
 const setRow = {
+  display: "grid",
+  gap: 6,
+  padding: "9px 10px",
+  fontSize: 13,
+  borderRadius: 13,
+  background: "#ffffff",
+  border: "1px solid #e8ecf3",
+};
+
+const setRowTop = {
   display: "flex",
   justifyContent: "space-between",
-  gap: 12,
-  fontSize: 14,
-  paddingTop: 8,
-  borderTop: "1px solid #eceff5",
+  alignItems: "start",
+  gap: 10,
 };
 
 const exerciseName = {
   fontWeight: 600,
+  color: "#111827",
 };
 
 const setValue = {
+  fontWeight: "bold",
+  color: "#111827",
+};
+
+const historyEntryContext = {
+  marginTop: 2,
+  fontSize: 12,
   fontWeight: 600,
+  color: "#64748b",
+};
+
+const historyEntryBadge = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 24,
+  padding: "4px 8px",
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: "bold",
+  color: "#475569",
+  background: "#f3f4f6",
 };
 
 const toggleButton = {
@@ -581,7 +752,7 @@ const toggleButton = {
   fontWeight: "bold",
   fontSize: 12,
   borderRadius: 999,
-  padding: "6px 10px",
+  padding: "5px 9px",
 };
 
 const deleteButton = {
@@ -591,7 +762,7 @@ const deleteButton = {
   fontWeight: "bold",
   fontSize: 12,
   borderRadius: 999,
-  padding: "6px 10px",
+  padding: "5px 9px",
 };
 
 const bottomLink = {
@@ -668,16 +839,27 @@ function buildExerciseSummaries(
     return acc;
   }, {});
 
-  return Object.entries(grouped).map(([exercise, exerciseSets]) => ({
-    exercise,
-    topSet: getTopSet(exerciseSets),
-    previousTopSet:
-      exerciseHistory.get(getHistoryKey(sessionType, exercise)) ?? null,
-  }));
+  return Object.entries(grouped).map(([exercise, exerciseSets]) => {
+    const workSets = exerciseSets.filter((set) => set.set > 0);
+    const comparableSets = workSets.length > 0 ? workSets : exerciseSets;
+    const topSet = getTopSet(comparableSets);
+    const topSetNumber = topSet?.set ?? null;
+
+    return {
+      exercise,
+      topSet,
+      topSetNumber,
+      previousTopSet:
+        topSetNumber !== null
+          ? exerciseHistory.get(getHistoryKey(sessionType, exercise, topSetNumber)) ??
+            null
+          : null,
+    };
+  });
 }
 
-function getHistoryKey(sessionType: string, exercise: string) {
-  return `${sessionType}:${exercise}`;
+function getHistoryKey(sessionType: string, exercise: string, setNumber: number) {
+  return `${sessionType}:${exercise}:${setNumber}`;
 }
 
 function getComparisonArrow(summary: SessionExerciseSummary) {
@@ -775,6 +957,80 @@ function compareTopSet(current: SetType | null, previous: SetType | null) {
   return current.reps - previous.reps;
 }
 
+function formatHistoryTopSet(set: SetType | null) {
+  if (!set) {
+    return "Neu";
+  }
+
+  return `${set.weight} kg x ${set.reps}`;
+}
+
+function formatHistorySetStage(setNumber: number | null) {
+  if (setNumber === null) {
+    return "Neu";
+  }
+
+  if (setNumber > 0) {
+    return `Satz ${setNumber}`;
+  }
+
+  return `Aufwärmen ${Math.abs(setNumber)}`;
+}
+
+function formatHistoryAdditionalSummary(session: SessionCard) {
+  const parts = [];
+
+  if (session.warmupCount > 0) {
+    parts.push(`${session.warmupCount} Aufwärmen`);
+  }
+  if (session.stretchCount > 0) {
+    parts.push(`${session.stretchCount} Dehnen`);
+  }
+  if (session.pauseCount > 0) {
+    parts.push(`${session.pauseCount} Pausen`);
+  }
+
+  return parts.join(" · ");
+}
+
+function formatHistoryDaySummary(session: SessionCard) {
+  const exerciseCount = session.summaries.length;
+  const parts = [];
+
+  if (exerciseCount > 0) {
+    parts.push(`${exerciseCount} Übungen`);
+  }
+  if (session.warmupCount > 0) {
+    parts.push(`${session.warmupCount} Aufwärmen`);
+  }
+  if (session.stretchCount > 0) {
+    parts.push(`${session.stretchCount} Dehnen`);
+  }
+  if (session.pauseCount > 0) {
+    parts.push(`${session.pauseCount} Pausen`);
+  }
+
+  return parts.join(" · ");
+}
+
+function buildHistoryDayPreview(session: SessionCard) {
+  const exerciseItems = session.summaries
+    .slice(0, 3)
+    .map((summary) => getExerciseLabel(summary.exercise));
+  const flowItems = session.entries
+    .filter(isFlowEventEntry)
+    .slice(0, 2)
+    .map((entry) =>
+      entry.eventType === "stretch"
+        ? "Dehnen"
+        : entry.scope === "workout"
+          ? "Workout-Pause"
+          : "Pause"
+    );
+
+  return [...exerciseItems, ...flowItems].slice(0, 5);
+}
+
 function detectWorkoutType(sets: SetType[]) {
   const exerciseNames = sets.map((set) => set.exercise);
 
@@ -805,10 +1061,93 @@ function detectWorkoutType(sets: SetType[]) {
   return "workout";
 }
 
-function labelSet(setNumber?: number) {
-  if (setNumber === undefined) return "";
-  if (setNumber === 0) return "(Warm-up)";
-  return `(Satz ${setNumber})`;
+function getDetailedSetLabel(sets: SetType[], index: number) {
+  const set = sets[index];
+
+  if (!set) {
+    return "";
+  }
+
+  if (set.set > 0) {
+    return `(Satz ${set.set})`;
+  }
+
+  const warmupNumber =
+    sets
+      .slice(0, index + 1)
+      .filter((entry) => entry.exercise === set.exercise && entry.set <= 0).length;
+
+  return `(Aufwärmen ${warmupNumber})`;
+}
+
+function formatHistoryEntryLabel(entries: WorkoutLogEntry[], index: number) {
+  const entry = entries[index];
+
+  if (!entry) {
+    return "";
+  }
+
+  if (isFlowEventEntry(entry)) {
+    const scopeLabel =
+      entry.eventType === "pause" && entry.scope === "workout"
+        ? " · Workout"
+        : "";
+    return `${entry.label}${scopeLabel}`;
+  }
+
+  return `${getExerciseLabel(entry.exercise)} ${getStoredSetLabel(entries, index)}`.trim();
+}
+
+function formatHistoryEntryValue(entry: WorkoutLogEntry) {
+  if (isFlowEventEntry(entry)) {
+    return formatDurationMinutes(entry.durationSeconds);
+  }
+
+  return `${entry.weight} kg x ${entry.reps}`;
+}
+
+function getHistoryEntryKindLabel(entry: WorkoutLogEntry) {
+  if (isFlowEventEntry(entry)) {
+    if (entry.eventType === "stretch") {
+      return "Dehnen";
+    }
+
+    return entry.scope === "workout" ? "Workout-Pause" : "Pause";
+  }
+
+  return entry.set > 0 ? `Satz ${entry.set}` : "Aufwärmen";
+}
+
+function formatDurationMinutes(seconds: number) {
+  if (seconds % 60 === 0) {
+    return `${seconds / 60} min`;
+  }
+
+  return `${seconds} Sek`;
+}
+
+function getStoredSetLabel(entries: WorkoutLogEntry[], index: number) {
+  const entry = entries[index];
+
+  if (!entry || isFlowEventEntry(entry)) {
+    return "";
+  }
+
+  if (entry.set > 0) {
+    return `(Satz ${entry.set})`;
+  }
+
+  const warmupNumber =
+    entries
+      .slice(0, index + 1)
+      .filter(
+        (current) =>
+          isLoggedSetEntry(current) &&
+          current.exercise === entry.exercise &&
+          current.set <= 0
+      ).length;
+
+  return `(Aufwärmen ${warmupNumber})`;
 }
 
 function capitalize(value: string) {
