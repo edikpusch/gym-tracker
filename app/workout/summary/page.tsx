@@ -2,20 +2,15 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { clearActiveWorkoutState } from "@/lib/activeWorkout";
 
 import {
   getBestMatchingSet,
   getPreviousMatchingSet,
   getSetComparison,
-  getSessionSetEntries,
   getSetsBySession,
-  isFlowEventEntry,
   getTopSet,
   type SetComparisonKind,
   type SetType,
-  type WorkoutFlowEvent,
-  type WorkoutLogEntry,
 } from "@/lib/workoutEngine";
 import { getTrainingPlan } from "@/lib/trainingPlans";
 import { getExerciseLabel } from "@/lib/workoutUi";
@@ -30,14 +25,7 @@ type SummaryRow = {
 
 type ExerciseSummary = {
   exercise: string;
-  warmupCount: number;
   rows: SummaryRow[];
-  topRow: SummaryRow | null;
-};
-
-type SessionFlowStats = {
-  stretchCount: number;
-  pauseCount: number;
 };
 
 export default function SummaryPage() {
@@ -54,11 +42,6 @@ function SummaryContent() {
   const [sessionDate, setSessionDate] = useState("");
   const [sessionMeta, setSessionMeta] = useState("");
   const [exerciseData, setExerciseData] = useState<ExerciseSummary[]>([]);
-  const [flowStats, setFlowStats] = useState<SessionFlowStats>({
-    stretchCount: 0,
-    pauseCount: 0,
-  });
-  const [flowEntries, setFlowEntries] = useState<WorkoutFlowEvent[]>([]);
   const [compactMode, setCompactMode] = useState(false);
   const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
 
@@ -70,10 +53,6 @@ function SummaryContent() {
       : null;
 
   useEffect(() => {
-    clearActiveWorkoutState();
-  }, []);
-
-  useEffect(() => {
     async function loadSession() {
       if (!sessionId) {
         setLoading(false);
@@ -81,28 +60,14 @@ function SummaryContent() {
       }
 
       try {
-        const entries = await getSetsBySession(sessionId);
-        const data = await getSessionSetEntries(sessionId);
-        const allSets = data;
+        const data = await getSetsBySession(sessionId);
         const workSets = data.filter((set) => set.set > 0);
-        const first = entries[0];
+        const first = data[0];
         const workoutType = first?.type;
 
-        setFlowStats({
-          stretchCount: entries.filter(
-            (entry): entry is WorkoutLogEntry =>
-              isFlowEventEntry(entry) && entry.eventType === "stretch"
-          ).length,
-          pauseCount: entries.filter(
-            (entry): entry is WorkoutLogEntry =>
-              isFlowEventEntry(entry) && entry.eventType === "pause"
-          ).length,
-        });
-        setFlowEntries(entries.filter(isFlowEventEntry));
-
-        if (entries.length > 0 && first) {
-          const min = entries[0].timestamp;
-          const max = entries[entries.length - 1].timestamp;
+        if (data.length > 0 && first) {
+          const min = data[0].timestamp;
+          const max = data[data.length - 1].timestamp;
           const fallbackPlan = getTrainingPlan(
             first.planId ||
               (first.type?.includes(":") ? first.type.split(":")[0] : "my-plan")
@@ -124,7 +89,7 @@ function SummaryContent() {
         }
 
         const grouped = new Map<string, SetType[]>();
-        allSets.forEach((set) => {
+        workSets.forEach((set) => {
           if (!grouped.has(set.exercise)) {
             grouped.set(set.exercise, []);
           }
@@ -135,11 +100,9 @@ function SummaryContent() {
 
         for (const [exercise, currentSets] of grouped.entries()) {
           const sortedSets = [...currentSets].sort((a, b) => a.set - b.set);
-          const warmupCount = sortedSets.filter((set) => set.set <= 0).length;
-          const workRows = sortedSets.filter((set) => set.set > 0);
 
           const rows = await Promise.all(
-            workRows.map(async (current) => {
+            sortedSets.map(async (current) => {
               const previous = await getPreviousMatchingSet(
                 exercise,
                 current.set,
@@ -164,9 +127,7 @@ function SummaryContent() {
 
           result.push({
             exercise,
-            warmupCount,
             rows,
-            topRow: getTopSummaryRow(rows),
           });
         }
 
@@ -196,57 +157,29 @@ function SummaryContent() {
   }, []);
 
   const stats = useMemo(() => getSummaryStats(exerciseData), [exerciseData]);
-  const totalWarmupCount = useMemo(
-    () => exerciseData.reduce((sum, exercise) => sum + exercise.warmupCount, 0),
-    [exerciseData]
-  );
-  const additionalSummary = useMemo(
-    () =>
-      formatAdditionalSummary({
-        warmupCount: totalWarmupCount,
-        stretchCount: flowStats.stretchCount,
-        pauseCount: flowStats.pauseCount,
-      }),
-    [flowStats.pauseCount, flowStats.stretchCount, totalWarmupCount]
-  );
-  const daySummary = useMemo(
-    () =>
-      formatDaySummaryLine({
-        exerciseCount: exerciseData.length,
-        warmupCount: totalWarmupCount,
-        stretchCount: flowStats.stretchCount,
-        pauseCount: flowStats.pauseCount,
-      }),
-    [exerciseData.length, flowStats.pauseCount, flowStats.stretchCount, totalWarmupCount]
-  );
-  const dayPreview = useMemo(
-    () => buildSummaryDayPreview(exerciseData, flowEntries),
-    [exerciseData, flowEntries]
-  );
 
   return (
     <div style={screen}>
       <div style={{ ...shell, ...(compactMode ? compactShell : null) }}>
+        <div style={topBar}>
+          <div style={brandPill}>Gym Tracker</div>
+          <div style={topBarRight}>
+            <a href="/index.html" style={topBackButton}>← Zurück</a>
+          </div>
+        </div>
         <div style={{ ...hero, ...(compactMode ? compactHero : null) }}>
           <div style={heroTopRow}>
             <div>
+              <div style={eyebrow}>Auswertung</div>
               <div style={{ ...title, ...(compactMode ? compactTitle : null) }}>
-                Training {sessionDate || "-"}
+                {sessionDate || "-"}
               </div>
               {sessionMeta ? (
-                <div
-                  style={{ ...metaLine, ...(compactMode ? compactMetaLine : null) }}
-                >
+                <div style={{ ...metaLine, ...(compactMode ? compactMetaLine : null) }}>
                   {sessionMeta}
                 </div>
               ) : null}
             </div>
-            <a
-              href="/index.html"
-              style={{ ...backButton, ...(compactMode ? compactBackButton : null) }}
-            >
-              ← Zurück
-            </a>
           </div>
 
           {!loading ? (
@@ -274,39 +207,13 @@ function SummaryContent() {
                   ...(compactMode ? compactHeroSummaryRow : null),
                 }}
               >
-                <div style={summarySection}>
-                  <span style={sectionEyebrow}>Leistung</span>
-                  <div style={badgeRow}>
-                    <span style={successBadge}>{stats.better} besser</span>
-                    <span style={neutralBadge}>{stats.same} gleich</span>
-                    <span style={warningBadge}>{stats.worse} schwächer</span>
-                    {stats.newCount > 0 ? (
-                      <span style={newBadge}>{stats.newCount} neu</span>
-                    ) : null}
-                  </div>
-                </div>
-                {additionalSummary ? (
-                  <div style={summarySection}>
-                    <span style={sectionEyebrow}>Zusatz</span>
-                    <div style={sectionSummaryLine}>{additionalSummary}</div>
-                  </div>
+                <span style={successBadge}>{stats.better} besser</span>
+                <span style={neutralBadge}>{stats.same} gleich</span>
+                <span style={warningBadge}>{stats.worse} schwächer</span>
+                {stats.newCount > 0 ? (
+                  <span style={newBadge}>{stats.newCount} neu</span>
                 ) : null}
               </div>
-              {daySummary ? (
-                <div style={flowDetailSection}>
-                  <span style={sectionEyebrow}>Ablauf</span>
-                  <div style={heroFlowSummaryLine}>{daySummary}</div>
-                  {dayPreview.length > 0 ? (
-                    <div style={heroFlowPreviewRow}>
-                      {dayPreview.map((item) => (
-                        <span key={`summary-preview-${item}`} style={heroFlowPreviewChip}>
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </>
           ) : null}
         </div>
@@ -342,34 +249,9 @@ function SummaryContent() {
                         ...(compactMode ? compactOverviewTopSet : null),
                       }}
                     >
-                      {formatSummaryTopRowValue(exercise.topRow)}
+                      {formatTopSet(exercise.rows)}
                     </div>
-                    <div style={overviewCaption}>
-                      {exercise.topRow
-                        ? `Bester Satz heute · Satz ${exercise.topRow.setNumber}`
-                        : "Bester Satz heute"}
-                    </div>
-                    <div style={overviewMetaList}>
-                      <div style={overviewMetaRow}>
-                        <span style={overviewMetaLabel}>Letztes Training</span>
-                        <span style={overviewMetaValue}>
-                          {exercise.topRow
-                            ? formatSetValue(exercise.topRow.previous)
-                            : "Neu"}
-                        </span>
-                      </div>
-                      <div style={overviewMetaRow}>
-                        <span style={overviewMetaLabel}>Bestwert</span>
-                        <span style={overviewMetaValue}>
-                          {exercise.topRow ? formatSetValue(exercise.topRow.best) : "Neu"}
-                        </span>
-                      </div>
-                    </div>
-                    {exercise.warmupCount > 0 ? (
-                      <div style={overviewWarmupCaption}>
-                        {exercise.warmupCount} Aufwärmsätze
-                      </div>
-                    ) : null}
+                    <div style={overviewCaption}>Bester Satz heute</div>
                     <div style={overviewBadgeRow}>
                       {getExerciseStats(exercise.rows).map((item) => (
                         <span key={`${exercise.exercise}-${item.label}`} style={item.style}>
@@ -385,7 +267,7 @@ function SummaryContent() {
                         )
                       }
                     >
-                      {expandedExercise === exercise.exercise ? "Zuklappen" : "Satzdetails"}
+                      {expandedExercise === exercise.exercise ? "Details zu" : "Sätze"}
                     </button>
                   </div>
 
@@ -409,51 +291,37 @@ function SummaryContent() {
                             </span>
                           </div>
 
-                          <div style={setMetaList}>
-                            <div style={setMetaRow}>
-                              <span style={setMetaLabel}>Heute</span>
-                              <span
-                                style={{
-                                  ...todayValueInline,
-                                  ...(compactMode ? compactTodayValueInline : null),
-                                }}
-                              >
-                                {formatSetValue(row.current)}
-                              </span>
-                            </div>
-                            <div style={setMetaRow}>
-                              <span style={setMetaLabel}>Letztes Mal</span>
-                              <span
-                                style={{
-                                  ...comparisonValue,
-                                  ...(compactMode ? compactComparisonValue : null),
-                                }}
-                              >
-                                {formatSetValue(row.previous)}
-                              </span>
-                            </div>
-                            <div style={setMetaRow}>
-                              <span style={setMetaLabel}>Bestwert</span>
-                              <span
-                                style={{
-                                  ...comparisonValue,
-                                  ...(compactMode ? compactComparisonValue : null),
-                                }}
-                              >
-                                {formatSetValue(row.best)}
-                              </span>
-                            </div>
-                            <div style={setMetaRow}>
-                              <span style={setMetaLabel}>Differenz</span>
-                              <span
-                                style={{
-                                  ...deltaValue,
-                                  ...(compactMode ? compactDeltaValue : null),
-                                }}
-                              >
-                                {formatDelta(row.comparison)}
-                              </span>
-                            </div>
+                          <div
+                            style={{
+                              ...todayValue,
+                              ...(compactMode ? compactTodayValue : null),
+                            }}
+                          >
+                            Heute: {formatSetValue(row.current)}
+                          </div>
+                          <div
+                            style={{
+                              ...comparisonLine,
+                              ...(compactMode ? compactComparisonLine : null),
+                            }}
+                          >
+                            Letztes Mal: {formatSetValue(row.previous)}
+                          </div>
+                          <div
+                            style={{
+                              ...comparisonLine,
+                              ...(compactMode ? compactComparisonLine : null),
+                            }}
+                          >
+                            Bestwert: {formatSetValue(row.best)}
+                          </div>
+                          <div
+                            style={{
+                              ...deltaLine,
+                              ...(compactMode ? compactDeltaLine : null),
+                            }}
+                          >
+                            Differenz: {formatDelta(row.comparison)}
                           </div>
                         </div>
                       ))}
@@ -462,34 +330,6 @@ function SummaryContent() {
                 </div>
               ))}
             </div>
-            {flowEntries.length > 0 ? (
-              <div style={flowDetailSection}>
-                <div style={flowDetailHeader}>Zusatzblöcke</div>
-                <div style={flowDetailList}>
-                  {flowEntries.map((entry, index) => (
-                    <div
-                      key={`${entry.timestamp}-${entry.label}-${index}`}
-                      style={{ ...flowDetailCard, ...(compactMode ? compactFlowDetailCard : null) }}
-                    >
-                      <div style={flowDetailTop}>
-                        <span style={flowDetailTitle}>{entry.label}</span>
-                        <span style={flowDetailBadge}>
-                          {entry.eventType === "stretch"
-                            ? "Dehnen"
-                            : entry.scope === "workout"
-                              ? "Workout-Pause"
-                              : "Pause"}
-                        </span>
-                      </div>
-                      <div style={flowDetailMeta}>{formatFlowEventDuration(entry)}</div>
-                      {entry.contextLabel ? (
-                        <div style={flowDetailContext}>{entry.contextLabel}</div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
         )}
 
@@ -574,133 +414,6 @@ function formatTopSet(rows: SummaryRow[]) {
   return `${topSet.weight} kg x ${topSet.reps}`;
 }
 
-function getTopSummaryRow(rows: SummaryRow[]) {
-  if (rows.length === 0) {
-    return null;
-  }
-
-  return rows.reduce((best, current) => {
-    if (current.current.weight > best.current.weight) {
-      return current;
-    }
-
-    if (
-      current.current.weight === best.current.weight &&
-      current.current.reps > best.current.reps
-    ) {
-      return current;
-    }
-
-    return best;
-  }, rows[0]);
-}
-
-function formatSummaryTopRowValue(row: SummaryRow | null) {
-  if (!row) {
-    return "Neu";
-  }
-
-  return formatSetValue(row.current);
-}
-
-function formatAdditionalSummary({
-  warmupCount,
-  stretchCount,
-  pauseCount,
-}: {
-  warmupCount: number;
-  stretchCount: number;
-  pauseCount: number;
-}) {
-  const parts = [];
-
-  if (warmupCount > 0) {
-    parts.push(`${warmupCount} Aufwärmen`);
-  }
-  if (stretchCount > 0) {
-    parts.push(`${stretchCount} Dehnen`);
-  }
-  if (pauseCount > 0) {
-    parts.push(`${pauseCount} Pausen`);
-  }
-
-  return parts.join(" · ");
-}
-
-function formatDaySummaryLine({
-  exerciseCount,
-  warmupCount,
-  stretchCount,
-  pauseCount,
-}: {
-  exerciseCount: number;
-  warmupCount: number;
-  stretchCount: number;
-  pauseCount: number;
-}) {
-  const parts = [];
-
-  if (exerciseCount > 0) {
-    parts.push(`${exerciseCount} Übungen`);
-  }
-  if (warmupCount > 0) {
-    parts.push(`${warmupCount} Aufwärmen`);
-  }
-  if (stretchCount > 0) {
-    parts.push(`${stretchCount} Dehnen`);
-  }
-  if (pauseCount > 0) {
-    parts.push(`${pauseCount} Pausen`);
-  }
-
-  return parts.join(" · ");
-}
-
-function buildSummaryDayPreview(
-  exercises: ExerciseSummary[],
-  flowEntries: WorkoutFlowEvent[]
-) {
-  const exerciseItems = exercises.slice(0, 3).map((exercise) =>
-    getExerciseLabel(exercise.exercise)
-  );
-  const flowItems = flowEntries
-    .slice(0, 2)
-    .map((entry) =>
-      entry.eventType === "stretch"
-        ? "Dehnen"
-        : entry.scope === "workout"
-          ? "Workout-Pause"
-          : "Pause"
-    );
-
-  return [...exerciseItems, ...flowItems].slice(0, 5);
-}
-
-function formatFlowEventDuration(entry: WorkoutFlowEvent) {
-  if (entry.durationSeconds % 60 === 0) {
-    return `${entry.durationSeconds / 60} min`;
-  }
-
-  return `${entry.durationSeconds} Sek`;
-}
-
-function formatReferenceTopSet(
-  rows: SummaryRow[],
-  field: "previous" | "best"
-) {
-  const topSet = getTopSet(
-    rows
-      .map((row) => row[field])
-      .filter((set): set is SetType => set !== null)
-  );
-
-  if (!topSet) {
-    return "Neu";
-  }
-
-  return `${topSet.weight} kg x ${topSet.reps}`;
-}
-
 function formatSetValue(set: SetType | null) {
   if (!set) {
     return "Neu";
@@ -771,10 +484,9 @@ function getStatusBadgeStyle(kind: SetComparisonKind | undefined) {
 
 const screen = {
   height: "100dvh",
-  padding: "10px 10px 12px",
+  padding: "10px",
   overflow: "hidden" as const,
-  background:
-    "radial-gradient(circle at top, #e7eefb 0%, #f4f6fb 34%, #fbfbfd 100%)",
+  background: "radial-gradient(circle at top, #dde6f5 0%, #f3f5f9 42%, #fbfbfd 100%)",
   fontFamily: "sans-serif",
 };
 
@@ -782,9 +494,62 @@ const shell = {
   maxWidth: 460,
   height: "100%",
   margin: "0 auto",
+  padding: "12px",
+  borderRadius: 28,
+  background: "rgba(255,255,255,0.96)",
+  boxShadow: "0 24px 60px rgba(17, 24, 39, 0.08)",
+  border: "1px solid rgba(148, 163, 184, 0.14)",
   display: "grid",
-  gridTemplateRows: "auto 1fr auto",
+  gridTemplateRows: "auto auto 1fr auto",
   gap: 10,
+  overflow: "hidden" as const,
+};
+
+const topBar = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+};
+
+const brandPill = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 34,
+  padding: "7px 12px",
+  borderRadius: 999,
+  background: "#111827",
+  color: "#fff",
+  fontSize: 13,
+  fontWeight: "bold",
+};
+
+const topBarRight = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+};
+
+const topBackButton = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 34,
+  padding: "6px 12px",
+  borderRadius: 999,
+  border: "1px solid #d7e1ef",
+  background: "#f1f5f9",
+  color: "#374151",
+  fontSize: 12,
+  fontWeight: "bold",
+  textDecoration: "none",
+};
+
+const eyebrow = {
+  fontSize: 11,
+  textTransform: "uppercase" as const,
+  letterSpacing: 1.1,
+  color: "rgba(255,255,255,0.6)",
+  fontWeight: "bold",
 };
 
 const hero = {
@@ -842,132 +607,18 @@ const backButton = {
   alignItems: "center",
   justifyContent: "center",
   textDecoration: "none",
-  color: "#111827",
+  color: "rgba(255,255,255,0.9)",
   fontSize: 12,
   fontWeight: "bold",
-  background: "#f8fafc",
+  background: "rgba(255,255,255,0.14)",
   border: "1px solid rgba(255,255,255,0.22)",
-  boxShadow: "0 6px 16px rgba(15, 23, 42, 0.12)",
 };
 
 const heroSummaryRow = {
-  display: "grid",
-  gap: 10,
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 6,
   marginTop: 10,
-};
-
-const summarySection = {
-  display: "grid",
-  gap: 6,
-};
-
-const flowDetailSection = {
-  marginTop: 14,
-  display: "grid",
-  gap: 8,
-};
-
-const flowDetailHeader = {
-  fontSize: 12,
-  textTransform: "uppercase" as const,
-  letterSpacing: 1,
-  color: "#94a3b8",
-  fontWeight: "bold",
-};
-
-const flowDetailList = {
-  display: "grid",
-  gap: 8,
-};
-
-const flowDetailCard = {
-  padding: "10px 12px",
-  borderRadius: 16,
-  background: "#ffffff",
-  border: "1px solid #e8ecf3",
-  display: "grid",
-  gap: 4,
-};
-
-const flowDetailTop = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 8,
-  alignItems: "start",
-};
-
-const flowDetailTitle = {
-  fontWeight: 700,
-  color: "#111827",
-};
-
-const flowDetailBadge = {
-  display: "inline-flex",
-  alignItems: "center",
-  minHeight: 24,
-  padding: "4px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: "bold",
-  color: "#475569",
-  background: "#f3f4f6",
-};
-
-const flowDetailMeta = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#334155",
-};
-
-const flowDetailContext = {
-  fontSize: 12,
-  fontWeight: 600,
-  color: "#64748b",
-};
-
-const sectionSummaryLine = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: "rgba(255,255,255,0.9)",
-};
-
-const heroFlowSummaryLine = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: "rgba(255,255,255,0.9)",
-  lineHeight: 1.3,
-};
-
-const heroFlowPreviewRow = {
-  display: "flex",
-  flexWrap: "wrap" as const,
-  gap: 6,
-};
-
-const heroFlowPreviewChip = {
-  display: "inline-flex",
-  alignItems: "center",
-  minHeight: 24,
-  padding: "4px 8px",
-  borderRadius: 999,
-  background: "rgba(255,255,255,0.10)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  color: "#ffffff",
-  fontSize: 11,
-  fontWeight: "bold",
-};
-
-const sectionEyebrow = {
-  fontSize: 11,
-  textTransform: "uppercase" as const,
-  letterSpacing: 1,
-  color: "rgba(255,255,255,0.74)",
-};
-
-const badgeRow = {
-  display: "flex",
-  flexWrap: "wrap" as const,
-  gap: 6,
 };
 
 const baseBadge = {
@@ -1062,37 +713,6 @@ const overviewCaption = {
   fontWeight: 600,
 };
 
-const overviewMetaList = {
-  display: "grid",
-  gap: 5,
-};
-
-const overviewMetaRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 8,
-};
-
-const overviewMetaLabel = {
-  fontSize: 11,
-  color: "#64748b",
-  fontWeight: 600,
-};
-
-const overviewMetaValue = {
-  fontSize: 12,
-  color: "#111827",
-  fontWeight: "bold",
-  textAlign: "right" as const,
-};
-
-const overviewWarmupCaption = {
-  fontSize: 11,
-  color: "#94a3b8",
-  fontWeight: 600,
-};
-
 const overviewBadgeRow = {
   display: "flex",
   flexWrap: "wrap" as const,
@@ -1112,10 +732,8 @@ const detailsButton = {
 };
 
 const setRow = {
-  padding: "10px 10px 9px",
-  borderRadius: 14,
-  background: "#ffffff",
-  border: "1px solid #e8ecf3",
+  paddingTop: 8,
+  borderTop: "1px solid #edf2f7",
 };
 
 const setHeaderRow = {
@@ -1133,43 +751,24 @@ const setLabel = {
   textTransform: "uppercase" as const,
 };
 
-const setMetaList = {
-  marginTop: 8,
-  display: "grid",
-  gap: 5,
-};
-
-const setMetaRow = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 10,
-};
-
-const setMetaLabel = {
-  fontSize: 11,
-  color: "#64748b",
-  fontWeight: 700,
-};
-
-const todayValueInline = {
-  fontSize: 14,
+const todayValue = {
+  marginTop: 7,
+  fontSize: 15,
   fontWeight: "bold",
   color: "#111827",
 };
 
-const comparisonValue = {
-  fontSize: 12,
+const comparisonLine = {
+  marginTop: 4,
+  fontSize: 13,
   color: "#475569",
-  fontWeight: 600,
-  textAlign: "right" as const,
 };
 
-const deltaValue = {
-  fontSize: 12,
-  fontWeight: 700,
+const deltaLine = {
+  marginTop: 5,
+  fontSize: 13,
+  fontWeight: 600,
   color: "#1f2937",
-  textAlign: "right" as const,
 };
 
 const actionStack = {
@@ -1259,28 +858,27 @@ const compactRowsStack = {
   gap: 6,
 };
 
-const compactFlowDetailCard = {
-  padding: "10px 11px",
-};
-
 const compactOverviewTopSet = {
   fontSize: 18,
 };
 
 const compactSetRow = {
-  padding: "9px 9px 8px",
+  paddingTop: 6,
 };
 
-const compactTodayValueInline = {
-  fontSize: 13,
+const compactTodayValue = {
+  marginTop: 6,
+  fontSize: 14,
 };
 
-const compactComparisonValue = {
-  fontSize: 11,
+const compactComparisonLine = {
+  marginTop: 3,
+  fontSize: 12,
 };
 
-const compactDeltaValue = {
-  fontSize: 11,
+const compactDeltaLine = {
+  marginTop: 4,
+  fontSize: 12,
 };
 
 const compactActionStack = {

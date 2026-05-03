@@ -2,10 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  clearActiveWorkoutState,
-  setActiveWorkoutState,
-} from "@/lib/activeWorkout";
 
 import {
   getBestMatchingSet,
@@ -15,7 +11,6 @@ import {
   getProgress,
   getTopSet,
   saveSet,
-  saveWorkoutEvent,
   type SetType,
 } from "@/lib/workoutEngine";
 import {
@@ -27,14 +22,7 @@ import {
   setRestOverlayState,
   stopRestOverlay,
 } from "@/lib/restPictureInPicture";
-import {
-  type ExercisePlanBlock,
-  getDefaultWeightConfig,
-  type PausePlanBlock,
-  type StretchPlanBlock,
-  type TrainingPlanBlock,
-  type WarmupPlanBlock,
-} from "@/lib/trainingModel";
+import { getDefaultWeightConfig } from "@/lib/trainingModel";
 import { type WorkoutExercise, type WorkoutType } from "@/lib/workoutPlan";
 import { getExerciseLabel } from "@/lib/workoutUi";
 
@@ -54,12 +42,10 @@ type WorkoutScreenProps = {
   workoutType: WorkoutType;
   workoutLabel: string;
   exercises: WorkoutExercise[];
-  dayBlocks?: TrainingPlanBlock[];
   planId?: string;
   planName?: string;
   dayId?: string;
   dayName?: string;
-  resumeHref?: string;
   theme: WorkoutTheme;
 };
 
@@ -67,12 +53,10 @@ export function WorkoutScreen({
   workoutType,
   workoutLabel,
   exercises,
-  dayBlocks = [],
   planId,
   planName,
   dayId,
   dayName,
-  resumeHref,
   theme,
 }: WorkoutScreenProps) {
   const router = useRouter();
@@ -80,6 +64,7 @@ export function WorkoutScreen({
   const [exerciseIndex, setExerciseIndex] = useState(0);
   const [setIndex, setSetIndex] = useState(0);
   const [sessionId, setSessionId] = useState(0);
+  const [showPlanModal, setShowPlanModal] = useState(false);
 
   const [weight, setWeight] = useState(40);
   const [reps, setReps] = useState(10);
@@ -95,51 +80,19 @@ export function WorkoutScreen({
   const [isResting, setIsResting] = useState(false);
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
   const [workoutPausedAt, setWorkoutPausedAt] = useState<number | null>(null);
-  const [activeFlowBlock, setActiveFlowBlock] = useState<
-    PausePlanBlock | StretchPlanBlock | null
-  >(null);
-  const [pendingFlowBlocks, setPendingFlowBlocks] = useState<
-    Array<PausePlanBlock | StretchPlanBlock>
-  >([]);
-  const [flowSequenceIndex, setFlowSequenceIndex] = useState(0);
-  const [flowSequenceTotal, setFlowSequenceTotal] = useState(0);
-  const [flowBlockEndsAt, setFlowBlockEndsAt] = useState<number | null>(null);
-  const [flowNextAction, setFlowNextAction] = useState<
-    "start-current" | "next-exercise" | "finish-workout" | null
-  >(null);
-  const [completedFlowBlockIds, setCompletedFlowBlockIds] = useState<string[]>([]);
 
   const [startTime, setStartTime] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [setStartedAt, setSetStartedAt] = useState(0);
   const [compactMode, setCompactMode] = useState(false);
-  const [showPlanDetails, setShowPlanDetails] = useState(false);
   const lastGetReadySecondRef = useRef<number | null>(null);
 
   const currentExercise = exercises[exerciseIndex];
-  const currentWarmupRounds = getWarmupRoundsForExercise(
-    currentExercise.id,
-    dayBlocks
-  );
-  const currentWarmupRestSeconds = getWarmupRestForExercise(
-    currentExercise.id,
-    dayBlocks,
-    Math.max(45, Math.round(currentExercise.restSeconds / 2))
-  );
-  const currentTotalSets = currentExercise.sets + currentWarmupRounds;
-  const currentSetNumber = getInternalSetNumber(setIndex, currentWarmupRounds);
-  const currentSetRestSeconds =
-    currentSetNumber <= 0 ? currentWarmupRestSeconds : currentExercise.restSeconds;
   const weightConfig = getDefaultWeightConfig(currentExercise.name);
   const weightSteps = weightConfig.quickSteps;
-  const totalSets = currentTotalSets;
+  const totalSets = currentExercise.sets + 1;
   const previousSet = previousSets[setIndex] ?? null;
   const isWorkoutPaused = workoutPausedAt !== null;
-  const isFlowBlockActive = activeFlowBlock !== null;
-  const activeFlowContext = activeFlowBlock
-    ? getFlowBlockExerciseContext(activeFlowBlock.id, dayBlocks)
-    : null;
-  const activeFlowContextLabel = getFlowBlockContextLabel(activeFlowContext);
 
   useEffect(() => {
     const now = Date.now();
@@ -149,13 +102,6 @@ export function WorkoutScreen({
     setSetStartedAt(now);
     setRestEndsAt(null);
     setWorkoutPausedAt(null);
-    setActiveFlowBlock(null);
-    setPendingFlowBlocks([]);
-    setFlowSequenceIndex(0);
-    setFlowSequenceTotal(0);
-    setFlowBlockEndsAt(null);
-    setFlowNextAction(null);
-    setCompletedFlowBlockIds([]);
   }, [exercises]);
 
   useEffect(() => {
@@ -194,10 +140,9 @@ export function WorkoutScreen({
       const history: Array<SetType | null> = [];
 
       for (let i = 0; i < totalSets; i += 1) {
-        const internalSetNumber = getInternalSetNumber(i, currentWarmupRounds);
         const last = await getLastSetForExercise(
           currentExercise.name,
-          internalSetNumber,
+          i,
           workoutType
         );
         history.push(last);
@@ -210,13 +155,13 @@ export function WorkoutScreen({
       );
       const previousMatchingSet = await getPreviousMatchingSet(
         currentExercise.name,
-        currentSetNumber,
+        setIndex,
         workoutType,
         activeSessionId
       );
       const bestSet = await getBestMatchingSet(
         currentExercise.name,
-        currentSetNumber,
+        setIndex,
         workoutType
       );
 
@@ -236,14 +181,7 @@ export function WorkoutScreen({
     }
 
     init();
-  }, [
-    currentExercise,
-    currentSetNumber,
-    currentWarmupRounds,
-    sessionId,
-    totalSets,
-    workoutType,
-  ]);
+  }, [currentExercise, sessionId, setIndex, totalSets, workoutType]);
 
   function handleRepsChange(delta: number) {
     if (loading || isResting || isWorkoutPaused) {
@@ -279,103 +217,15 @@ export function WorkoutScreen({
     return normalizeWeight(nextWeight) !== normalizeWeight(weight);
   }
 
-  function activateFlowBlocks(
-    blocks: Array<PausePlanBlock | StretchPlanBlock>,
-    nextAction: "start-current" | "next-exercise" | "finish-workout"
-  ) {
-    if (blocks.length === 0) {
-      return false;
-    }
-
-    const [firstBlock, ...remainingBlocks] = blocks;
-    const now = Date.now();
-    const durationSeconds = getFlowBlockDuration(firstBlock);
-
-    setActiveFlowBlock(firstBlock);
-    setPendingFlowBlocks(remainingBlocks);
-    setFlowSequenceIndex(1);
-    setFlowSequenceTotal(blocks.length);
-    setFlowNextAction(nextAction);
-    setFlowBlockEndsAt(now + durationSeconds * 1000);
-    setSetStartedAt(now);
-    return true;
-  }
-
-  function finishFlowSequence() {
-    setActiveFlowBlock(null);
-    setPendingFlowBlocks([]);
-    setFlowSequenceIndex(0);
-    setFlowSequenceTotal(0);
-    setFlowBlockEndsAt(null);
-    const nextAction = flowNextAction;
-    setFlowNextAction(null);
-    setCurrentTime(Date.now());
-
-    if (nextAction === "start-current") {
-      setSetStartedAt(Date.now());
-      return;
-    }
-
-    if (nextAction === "next-exercise") {
-      if (exerciseIndex < exercises.length - 1) {
-        setExerciseIndex((current) => current + 1);
-        setSetIndex(0);
-        setSetStartedAt(Date.now());
-      }
-      return;
-    }
-
-    if (nextAction === "finish-workout" && sessionId !== 0) {
-      navigateToSummary(router, sessionId);
-    }
-  }
-
-  function advanceFlowBlock() {
-    if (!activeFlowBlock) {
-      return;
-    }
-
-    void saveWorkoutEvent({
-      label: activeFlowBlock.label,
-      contextLabel: activeFlowContextLabel || undefined,
-      durationSeconds: getFlowBlockDuration(activeFlowBlock),
-      eventType: activeFlowBlock.type,
-      scope: activeFlowBlock.type === "pause" ? activeFlowBlock.scope : undefined,
-      sessionId,
-      type: workoutType,
-      planId,
-      planName,
-      dayId,
-      dayName,
-    });
-
-    setCompletedFlowBlockIds((current) =>
-      current.includes(activeFlowBlock.id) ? current : [...current, activeFlowBlock.id]
-    );
-
-    if (pendingFlowBlocks.length > 0) {
-      const [nextBlock, ...remainingBlocks] = pendingFlowBlocks;
-      const now = Date.now();
-      const durationSeconds = getFlowBlockDuration(nextBlock);
-      setActiveFlowBlock(nextBlock);
-      setPendingFlowBlocks(remainingBlocks);
-      setFlowSequenceIndex((current) => current + 1);
-      setFlowBlockEndsAt(now + durationSeconds * 1000);
-      setSetStartedAt(now);
-      return;
-    }
-
-    finishFlowSequence();
-  }
-
   function handleNext() {
-    if (isWorkoutPaused) {
-      return;
-    }
-
-    if (activeFlowBlock) {
-      advanceFlowBlock();
-      return;
+    if (workoutPausedAt) {
+      const resumedAt = Date.now();
+      const pausedDuration = resumedAt - workoutPausedAt;
+      setStartTime((current) => current + pausedDuration);
+      setSetStartedAt((current) => current + pausedDuration);
+      setRestEndsAt((current) => (current ? current + pausedDuration : current));
+      setCurrentTime(resumedAt);
+      setWorkoutPausedAt(null);
     }
 
     void stopRestOverlay();
@@ -386,25 +236,14 @@ export function WorkoutScreen({
 
     const nextSet = setIndex + 1;
 
-    if (nextSet < currentTotalSets) {
+    if (nextSet < totalSets) {
       setSetIndex(nextSet);
       setSetStartedAt(Date.now());
       return;
     }
 
-    const followingBlocks = getFollowingFlowBlocks(currentExercise.id, dayBlocks);
-    const hasNextExercise = exerciseIndex < exercises.length - 1;
-
-    if (
-      activateFlowBlocks(
-        followingBlocks,
-        hasNextExercise ? "next-exercise" : "finish-workout"
-      )
-    ) {
-      return;
-    }
-
-    if (hasNextExercise) {
+    if (exerciseIndex < exercises.length - 1) {
+      const nextExercise = exercises[exerciseIndex + 1];
       setExerciseIndex((current) => current + 1);
       setSetIndex(0);
       setSetStartedAt(Date.now());
@@ -427,29 +266,6 @@ export function WorkoutScreen({
       handleNext();
     }
   }, [currentTime, isResting, restEndsAt, isWorkoutPaused]);
-
-  useEffect(() => {
-    if (sessionId === 0 || activeFlowBlock || isResting) {
-      return;
-    }
-
-    const leadingBlocks = getLeadingFlowBlocks(dayBlocks);
-    if (leadingBlocks.length === 0) {
-      return;
-    }
-
-    activateFlowBlocks(leadingBlocks, "start-current");
-  }, [activeFlowBlock, dayBlocks, isResting, sessionId]);
-
-  useEffect(() => {
-    if (!activeFlowBlock || !flowBlockEndsAt || isWorkoutPaused) {
-      return;
-    }
-
-    if (currentTime >= flowBlockEndsAt) {
-      advanceFlowBlock();
-    }
-  }, [activeFlowBlock, currentTime, flowBlockEndsAt, isWorkoutPaused]);
 
   useEffect(() => {
     return () => {
@@ -515,7 +331,7 @@ export function WorkoutScreen({
         exercise: currentExercise.name,
         weight,
         reps,
-        set: currentSetNumber,
+        set: setIndex,
         sessionId,
         type: workoutType,
         planId,
@@ -530,7 +346,7 @@ export function WorkoutScreen({
           exercise: currentExercise.name,
           weight,
           reps,
-          set: currentSetNumber,
+          set: setIndex,
           sessionId,
           timestamp: savedAt,
           type: workoutType,
@@ -548,7 +364,7 @@ export function WorkoutScreen({
           exercise: currentExercise.name,
           weight,
           reps,
-          set: currentSetNumber,
+          set: setIndex,
           sessionId,
           timestamp: savedAt,
           type: workoutType,
@@ -559,12 +375,12 @@ export function WorkoutScreen({
         },
       ]);
 
-      const nextRestEndsAt = savedAt + currentSetRestSeconds * 1000;
+      const nextRestEndsAt = savedAt + currentExercise.restSeconds * 1000;
       setRestEndsAt(nextRestEndsAt);
       setIsResting(true);
       await scheduleRestNotification(
         getExerciseLabel(currentExercise.name),
-        currentSetRestSeconds
+        currentExercise.restSeconds
       );
     } catch (error) {
       console.error(error);
@@ -613,48 +429,27 @@ export function WorkoutScreen({
   const activeSetDuration = formatDuration(
     Math.max(0, effectiveNow - setStartedAt)
   );
-  const flowBlockTime = Math.max(
-    0,
-    Math.ceil(((flowBlockEndsAt ?? effectiveNow) - effectiveNow) / 1000)
-  );
   const restTime = Math.max(
     0,
     Math.ceil(((restEndsAt ?? effectiveNow) - effectiveNow) / 1000)
   );
-  const totalWorkoutSets = exercises.reduce(
-    (sum, exercise) =>
-      sum + exercise.sets + getWarmupRoundsForExercise(exercise.id, dayBlocks),
-    0
-  );
-  const completedSetCountBeforeCurrent = exercises
-    .slice(0, exerciseIndex)
-    .reduce(
-      (sum, exercise) =>
-        sum + exercise.sets + getWarmupRoundsForExercise(exercise.id, dayBlocks),
-      0
-    );
   const progressPercent = Math.round(
-    (((completedSetCountBeforeCurrent + setIndex + 1) / totalWorkoutSets) || 0) *
+    (((exerciseIndex * totalSets) + setIndex + 1) /
+      (exercises.length * totalSets)) *
       100
   );
   const restProgress = Math.max(
     0,
-    Math.min(100, (restTime / currentSetRestSeconds) * 100)
+    Math.min(100, (restTime / currentExercise.restSeconds) * 100)
   );
   const visualCountdown =
-    !isWorkoutPaused &&
-    ((isResting && restTime > 0 && restTime <= 3 && restTime) ||
-      (isFlowBlockActive && flowBlockTime > 0 && flowBlockTime <= 3 && flowBlockTime) ||
-      null);
+    isResting && !isWorkoutPaused && restTime > 0 && restTime <= 3 ? restTime : null;
   const lastSavedSet = loggedSets[loggedSets.length - 1] ?? null;
   const previousExercise = exerciseIndex > 0 ? exercises[exerciseIndex - 1] : null;
   const previousExerciseSets = previousExercise
     ? loggedSets.filter((set) => set.exercise === previousExercise.name)
     : [];
   const previousExerciseTopSet = getTopSet(previousExerciseSets);
-  const previousExerciseTotalSets = previousExercise
-    ? previousExercise.sets + getWarmupRoundsForExercise(previousExercise.id, dayBlocks)
-    : 0;
   const currentExerciseProgress = exercises[exerciseIndex]
     ? loggedSets.filter((set) => set.exercise === exercises[exerciseIndex].name)
     : [];
@@ -666,158 +461,39 @@ export function WorkoutScreen({
     return {
       exercise,
       completed: savedSetsForExercise.length,
-      total: exercise.sets + getWarmupRoundsForExercise(exercise.id, dayBlocks),
+      total: exercise.sets + 1,
       topSet: getTopSet(savedSetsForExercise),
     };
   });
-  const activeExerciseId = currentExercise?.id ?? null;
-  const currentExerciseBlock =
-    dayBlocks.find(
-      (block): block is ExercisePlanBlock =>
-        block.type === "exercise" && block.exerciseId === activeExerciseId
-    ) ?? null;
-  const activeBlockId =
-    activeFlowBlock?.id ??
-    ((currentSetNumber <= 0
-      ? dayBlocks.find(
-          (block) =>
-            block.type === "warmup" && block.parentExerciseId === activeExerciseId
-        )?.id
-      : null) ??
-    dayBlocks.find(
-      (block) =>
-        block.type === "exercise" && block.exerciseId === activeExerciseId
-    )?.id ??
-    null);
-  const dayBlocksProgress = dayBlocks.map((block) => {
-    if (block.type === "exercise") {
-      const savedSetsForExercise = loggedSets.filter(
-        (set) => set.exercise === block.exerciseId && set.set > 0
-      );
-
-      return {
-        ...block,
-        doneLabel: `${savedSetsForExercise.length}/${block.sets}`,
-        done: savedSetsForExercise.length > 0,
-      };
-    }
-
-    if (block.type === "warmup") {
-      const parentExercise = exercises.find(
-        (exercise) => exercise.id === block.parentExerciseId
-      );
-      const savedSetsForExercise = parentExercise
-        ? loggedSets.filter(
-            (set) => set.exercise === parentExercise.name && set.set <= 0
-          )
-        : [];
-      const warmupsDone = Math.min(savedSetsForExercise.length, block.rounds);
-
-      return {
-        ...block,
-        doneLabel: `${warmupsDone}/${block.rounds}`,
-        done: warmupsDone > 0,
-      };
-    }
-
-    if (block.type === "stretch") {
-      return {
-        ...block,
-        doneLabel: `${block.rounds} Runden`,
-        done: completedFlowBlockIds.includes(block.id),
-      };
-    }
-
-    return {
-      ...block,
-      doneLabel: formatRest(block.seconds),
-      done: completedFlowBlockIds.includes(block.id),
-    };
-  });
-  const shouldShowPlanDetails =
-    showPlanDetails || isResting || isFlowBlockActive || isWorkoutPaused;
-  const totalCompletedSets = dayProgress.reduce((sum, entry) => sum + entry.completed, 0);
-  const totalPlannedSets = dayProgress.reduce((sum, entry) => sum + entry.total, 0);
-  const activeDayProgress = dayProgress[exerciseIndex] ?? null;
-  const lastLoggedExerciseSet =
-    loggedSets
-      .filter((set) => set.exercise === currentExercise.name)
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .at(-1) ?? null;
-  const comparisonStageLabel = formatSetStageLabel(
-    setIndex,
-    currentWarmupRounds,
-    currentExercise.sets
-  );
-  const screenStateLabel = getScreenStateLabel({
-    isWorkoutPaused,
-    isResting,
-    activeFlowBlock,
-    currentSetNumber,
-  });
-  const nextStepLabel = getNextStepLabel({
-    isWorkoutPaused,
-    isResting,
-    activeFlowBlock,
-    pendingFlowBlocks,
-    flowNextAction,
-    setIndex,
-    currentWarmupRounds,
-    currentExercise,
-    currentExerciseIndex: exerciseIndex,
-    currentExerciseSetCount: currentExercise.sets,
-    currentTotalSets,
-    exercises,
-    dayBlocks,
-  });
-  const flowSequenceLabel =
-    activeFlowBlock && flowSequenceTotal > 0
-      ? `Block ${flowSequenceIndex}/${flowSequenceTotal}`
-      : null;
-  const upcomingFlowBlocks = pendingFlowBlocks.slice(0, 3);
 
   useEffect(() => {
-    if (!resumeHref || sessionId === 0) {
-      return;
-    }
-
-    setActiveWorkoutState({
-      href: resumeHref,
-      workoutLabel,
-      planName,
-      dayName,
-      stateLabel: screenStateLabel,
-      updatedAt: Date.now(),
-    });
-  }, [dayName, planName, resumeHref, screenStateLabel, sessionId, workoutLabel]);
-
-  function handleBack() {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-      return;
-    }
-
-    window.location.href = "/index.html";
-  }
-
-  useEffect(() => {
-    if ((!isResting && !isFlowBlockActive) || isWorkoutPaused) {
+    if (!isResting || isWorkoutPaused) {
       lastGetReadySecondRef.current = null;
       return;
     }
 
-    const triggerSecond = isFlowBlockActive ? flowBlockTime : restTime;
-
-    if (triggerSecond === 10 && lastGetReadySecondRef.current !== triggerSecond) {
-      lastGetReadySecondRef.current = triggerSecond;
+    if (restTime === 10 && lastGetReadySecondRef.current !== restTime) {
+      lastGetReadySecondRef.current = restTime;
       playGetReadyTone();
       return;
     }
 
-    if (triggerSecond > 10) {
+    if (restTime > 10) {
       lastGetReadySecondRef.current = null;
     }
-  }, [flowBlockTime, isFlowBlockActive, isResting, isWorkoutPaused, restTime]);
+  }, [isResting, isWorkoutPaused, restTime]);
+
+  const referenceSet = lastTrainingSet ?? previousSet ?? bestMatchingSet;
+  const referenceLabel = lastTrainingSet
+    ? "Letztes Training"
+    : previousSet
+    ? "Letzter Satz"
+    : bestMatchingSet
+    ? "Bester Satz"
+    : null;
+
+  const totalCompleted = dayProgress.reduce((s, e) => s + e.completed, 0);
+  const totalSetsAll = dayProgress.reduce((s, e) => s + e.total, 0);
 
   return (
     <div style={{ ...screen, background: theme.background }}>
@@ -829,600 +505,183 @@ export function WorkoutScreen({
           boxShadow: theme.shadow,
         }}
       >
-        <div style={{ ...topRow, ...(compactMode ? compactTopRow : null) }}>
+        {/* NAV */}
+        <div style={topRow}>
           <div style={topActions}>
-            <button style={backButton} onClick={handleBack}>
-              ← Zurück
-            </button>
+            <a href="/index.html" style={backLink}>← Home</a>
+            <span style={durationChip}>{workoutDuration}</span>
           </div>
           <div style={topActions}>
-            <a href="/index.html" style={homeLink}>
-              Start
-            </a>
+            <button style={planButton} onClick={() => setShowPlanModal(true)}>
+              ☰ {totalCompleted}/{totalSetsAll}
+            </button>
             <button style={controlButton} onClick={() => void toggleWorkoutPause()}>
-              {isWorkoutPaused ? "Training fortsetzen" : "Training pausieren"}
+              {isWorkoutPaused ? "▶" : "⏸"}
             </button>
           </div>
         </div>
 
-        <div style={{ ...contextRow, ...(compactMode ? compactContextRow : null) }}>
-          <div style={contextMeta}>
-            <span>{planName ?? workoutLabel}</span>
-            <span>{dayName ?? workoutLabel}</span>
-          </div>
-          <div style={{ ...stateChip, ...(compactMode ? compactStateChip : null) }}>
-            {screenStateLabel}
-          </div>
-        </div>
-
-        {isWorkoutPaused ? (
-          <>
-            <div style={pausedBanner}>Training pausiert</div>
-            <div style={pausedContextCard}>
-              <div style={pausedContextLabel}>Fortsetzung</div>
-              <div style={pausedContextValue}>{nextStepLabel}</div>
-            </div>
-          </>
-        ) : null}
-
+        {/* FORTSCHRITT */}
         <div style={progressHeader}>
           <div style={{ ...progressMeta, color: theme.accent }}>
-            <span>Übung {exerciseIndex + 1}/{exercises.length}</span>
+            <span>Übung {exerciseIndex + 1} / {exercises.length}</span>
             <span>{progressPercent}%</span>
           </div>
           <div style={{ ...progressTrack, background: theme.progressTrack }}>
-            <div
-              style={{
-                ...progressFill,
-                width: `${progressPercent}%`,
-                background: theme.progressFill,
-              }}
-            />
+            <div style={{ ...progressFill, width: `${progressPercent}%`, background: theme.progressFill }} />
           </div>
         </div>
 
-        <div
-          style={{
-            ...badge,
-            ...(compactMode ? compactBadge : null),
-            background: theme.badgeBackground,
-            color: theme.screenBadge,
-          }}
-        >
-          {workoutLabel}
-        </div>
-
-        <h1 style={{ ...title, ...(compactMode ? compactTitle : null), color: theme.accent }}>
-          {activeFlowBlock
-            ? activeFlowBlock.label
-            : getExerciseLabel(currentExercise.name)}
-        </h1>
-
-        <div style={{ ...subtitle, ...(compactMode ? compactSubtitle : null) }}>
-          {activeFlowBlock
-            ? getFlowBlockSubtitle(activeFlowBlock)
-            : formatSetStageLabel(setIndex, currentWarmupRounds, currentExercise.sets)}
-        </div>
-
-        <div style={{ ...transitionCard, ...(compactMode ? compactTransitionCard : null) }}>
-          <div style={transitionColumn}>
-            <div style={transitionLabel}>Jetzt</div>
-            <div style={transitionValue}>{screenStateLabel}</div>
+        {/* ÜBUNG FOKUS */}
+        <div style={exerciseFocus}>
+          <div style={{ ...badge, ...(compactMode ? compactBadge : null), background: theme.badgeBackground, color: theme.screenBadge }}>
+            {workoutLabel} · {setIndex === 0 ? "Warm-up" : `Satz ${setIndex} / ${currentExercise.sets}`}
           </div>
-          <div style={transitionDivider} />
-          <div style={transitionColumn}>
-            <div style={transitionLabel}>Danach</div>
-            <div style={transitionValue}>{nextStepLabel}</div>
-          </div>
-        </div>
-
-        <div style={{ ...metricsRow, ...(compactMode ? compactMetricsRow : null) }}>
-          <div style={{ ...metricCard, ...(compactMode ? compactMetricCard : null) }}>
-            <div style={metricLabel}>Workout</div>
-            <div style={{ ...metricValue, ...(compactMode ? compactMetricValue : null) }}>
-              {workoutDuration}
-            </div>
-          </div>
-          <div
-            style={{
-              ...metricCard,
-              ...(compactMode ? compactMetricCard : null),
-              ...metricCardAccent,
-              background: theme.badgeBackground,
-              border: `1px solid ${theme.border}`,
-            }}
-          >
-            <div style={{ ...metricLabel, color: theme.accent }}>Aktiver Satz</div>
-            <div
-              style={{
-                ...metricValue,
-                ...(compactMode ? compactMetricValue : null),
-                color: theme.accent,
-              }}
-            >
-              {activeSetDuration}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ ...insightGrid, ...(compactMode ? compactInsightGrid : null) }}>
-          {!activeFlowBlock && (lastLoggedExerciseSet || lastTrainingSet || bestMatchingSet) ? (
-            <div
-              style={{
-                ...insightCard,
-                ...(compactMode ? compactInsightCard : null),
-                ...insightWide,
-              }}
-            >
-              <div style={insightLabel}>Vergleich</div>
-              <div style={compareContextLabel}>{comparisonStageLabel}</div>
-              <div style={{ ...compareTiles, ...(compactMode ? compactCompareTiles : null) }}>
-                {lastLoggedExerciseSet ? (
-                  <div style={{ ...compareTile, ...(compactMode ? compactCompareTile : null) }}>
-                    <span style={compareTileLabel}>Letzter Satz</span>
-                    <span style={compareTileValue}>
-                      {formatWeight(lastLoggedExerciseSet.weight)} kg x{" "}
-                      {formatReps(lastLoggedExerciseSet.reps)}
-                    </span>
-                  </div>
-                ) : null}
-                {lastTrainingSet ? (
-                  <div style={{ ...compareTile, ...(compactMode ? compactCompareTile : null) }}>
-                    <span style={compareTileLabel}>Letztes Training</span>
-                    <span style={compareTileValue}>
-                      {formatWeight(lastTrainingSet.weight)} kg x {formatReps(lastTrainingSet.reps)}
-                    </span>
-                  </div>
-                ) : null}
-                {bestMatchingSet ? (
-                  <div style={{ ...compareTile, ...(compactMode ? compactCompareTile : null) }}>
-                    <span style={compareTileLabel}>Bestwert</span>
-                    <span style={compareTileValue}>
-                      {formatWeight(bestMatchingSet.weight)} kg x {formatReps(bestMatchingSet.reps)}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
-          <div
-            style={{
-              ...insightCard,
-              ...(compactMode ? compactInsightCard : null),
-              ...insightWide,
-            }}
-          >
-            <div style={insightLabel}>Plan</div>
-            {activeFlowBlock ? (
-              <div style={{ ...compactMeta, ...(compactMode ? compactMetaTight : null) }}>
-                <span>{getFlowBlockMeta(activeFlowBlock)}</span>
-                {activeFlowContextLabel ? (
-                  <span>{activeFlowContextLabel}</span>
-                ) : null}
-                {currentExercise ? (
-                  <span>Nächste Übung: {getExerciseLabel(currentExercise.name)}</span>
-                ) : null}
-              </div>
-            ) : (
-              <div style={{ ...compactMeta, ...(compactMode ? compactMetaTight : null) }}>
-                {currentExerciseBlock ? (
-                  <span>{getExerciseTraitSummary(currentExerciseBlock)}</span>
-                ) : null}
-                <span>
-                  {currentExercise.minReps}-{currentExercise.maxReps} Wdh.
+          <h1 style={{ ...title, ...(compactMode ? compactTitle : null), color: theme.accent }}>
+            {getExerciseLabel(currentExercise.name)}
+          </h1>
+          <div style={exerciseInfoRow}>
+            <span>{currentExercise.minReps}–{currentExercise.maxReps} Wdh.</span>
+            <span style={exerciseInfoDot}>·</span>
+            <span>{formatRest(currentExercise.restSeconds)} Pause</span>
+            {referenceSet && referenceLabel ? (
+              <>
+                <span style={exerciseInfoDot}>·</span>
+                <span style={{ color: "#64748b" }}>
+                  {referenceLabel}: <strong>{formatWeight(referenceSet.weight)} kg × {formatReps(referenceSet.reps)}</strong>
                 </span>
-                <span>{formatRest(currentExercise.restSeconds)}</span>
-                {currentTop ? (
-                  <span>
-                    Top {formatWeight(currentTop.weight)} x {formatReps(currentTop.reps)}
-                  </span>
-                ) : null}
-                {progress &&
-                (progress.weight !== 0 || progress.reps !== 0) ? (
-                  <span style={{ color: getDeltaColor(progress.weight || progress.reps) }}>
-                    {formatProgress(progress)}
-                  </span>
-                ) : null}
-              </div>
-            )}
+              </>
+            ) : null}
+            {progress && (progress.weight !== 0 || progress.reps !== 0) ? (
+              <>
+                <span style={exerciseInfoDot}>·</span>
+                <span style={{ color: getDeltaColor(progress.weight || progress.reps), fontWeight: "bold" }}>
+                  {formatProgress(progress)}
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
 
-        <div style={{ ...planOverviewCard, ...(compactMode ? compactPlanOverviewCard : null) }}>
-          <div style={overviewHeaderRow}>
-            <div style={insightLabel}>Heutiger Plan</div>
-            <div style={overviewHeaderActions}>
-              <div style={overviewSummary}>
-                {totalCompletedSets} / {totalPlannedSets} Sätze
-              </div>
-              <button
-                style={planToggleButton}
-                onClick={() => setShowPlanDetails((current) => !current)}
-              >
-                {shouldShowPlanDetails ? "Weniger" : "Details"}
-              </button>
-            </div>
-          </div>
-          {activeDayProgress ? (
-            <div style={planFocusRow}>
-              <div style={planFocusText}>
-                <div style={planFocusTitle}>
-                  {getExerciseLabel(activeDayProgress.exercise.name)}
-                </div>
-                <div style={planFocusMeta}>
-                  Aktuell {activeDayProgress.completed}/{activeDayProgress.total} Sätze
-                </div>
-              </div>
-              <div style={planOverviewDots}>
-                {Array.from({ length: activeDayProgress.total }).map((_, dotIndex) => (
-                  <span
-                    key={`${activeDayProgress.exercise.id}-${dotIndex}`}
-                    style={{
-                      ...planOverviewDot,
-                      ...(dotIndex < activeDayProgress.completed ? completedPlanOverviewDot : null),
-                      ...activePlanOverviewDot,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {shouldShowPlanDetails ? (
-            <>
-              <div style={planOverviewList}>
-                {dayProgress.map((entry, index) => (
-                  <div
-                    key={`${entry.exercise.id}-${index}`}
-                    style={{
-                      ...planOverviewItem,
-                      ...(index === exerciseIndex ? activePlanOverviewItem : null),
-                    }}
-                  >
-                    <div style={planOverviewTop}>
-                      <span style={planOverviewName}>
-                        {getExerciseLabel(entry.exercise.name)}
-                      </span>
-                      <span style={planOverviewCount}>
-                        {entry.completed}/{entry.total}
-                      </span>
-                    </div>
-                    <div style={planOverviewDots}>
-                      {Array.from({ length: entry.total }).map((_, dotIndex) => (
-                        <span
-                          key={`${entry.exercise.id}-${dotIndex}`}
-                          style={{
-                            ...planOverviewDot,
-                            ...(dotIndex < entry.completed ? completedPlanOverviewDot : null),
-                            ...(index === exerciseIndex ? activePlanOverviewDot : null),
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {dayBlocksProgress.length > 0 ? (
-                <div style={planBlocksSection}>
-                  <div style={overviewHeaderRow}>
-                    <div style={insightLabel}>Ablauf</div>
-                    <div style={overviewSummary}>{dayBlocksProgress.length} Blöcke</div>
-                  </div>
-                  <div style={planBlocksList}>
-                    {dayBlocksProgress.map((block) => (
-                      <div
-                        key={block.id}
-                        style={{
-                          ...planBlockChip,
-                          ...(block.id === activeBlockId ? activePlanBlockChip : null),
-                          ...(block.done ? completedPlanBlockChip : null),
-                        }}
-                        >
-                          <span style={planBlockType}>{getPlanBlockTypeLabel(block.type)}</span>
-                          <span style={planBlockName}>{block.label}</span>
-                        <span style={planBlockMeta}>
-                          {getPlanBlockSummary(block)} · {block.doneLabel}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+        {/* PAUSE-HINWEIS */}
+        {isWorkoutPaused ? (
+          <div style={pausedBanner}>⏸ Pausiert – ▶ oben zum Fortsetzen</div>
+        ) : null}
 
-        {activeFlowBlock ? (
-          <div
-            style={{
-              ...restCard,
-              ...(compactMode ? compactRestCard : null),
-              background: theme.badgeBackground,
-              border: `1px solid ${theme.border}`,
-            }}
-          >
-            <div style={{ ...restLabel, color: theme.accent }}>
-              {activeFlowBlock.type === "stretch"
-                ? "Dehnen"
-                : activeFlowBlock.scope === "workout"
-                  ? "Workout-Pause"
-                  : "Pauseblock"}
-            </div>
-            {flowSequenceLabel ? (
-              <div style={flowSequenceMeta}>{flowSequenceLabel}</div>
-            ) : null}
-            <div style={{ ...restTimer, ...(compactMode ? compactRestTimer : null) }}>
-              {formatRestTimer(flowBlockTime)}
-            </div>
-            {visualCountdown ? (
-              <div style={countdownOverlay}>{visualCountdown}</div>
-            ) : null}
-            <div style={{ ...progressTrack, background: theme.progressTrack }}>
-              <div
-                style={{
-                  ...progressFill,
-                  width: `${Math.max(
-                    0,
-                    Math.min(
-                      100,
-                      (flowBlockTime / getFlowBlockDuration(activeFlowBlock)) * 100
-                    )
-                  )}%`,
-                  background: theme.restFill,
-                }}
-              />
-            </div>
-            <div style={{ ...restContextCard, ...(compactMode ? compactRestContextCard : null) }}>
-              <div style={insightLabel}>Aktueller Block</div>
-              <div style={restContextValue}>{activeFlowBlock.label}</div>
-              <div style={restContextMeta}>{getFlowBlockMeta(activeFlowBlock)}</div>
-              {activeFlowContextLabel ? (
-                <div style={restContextMeta}>{activeFlowContextLabel}</div>
-              ) : null}
-              {pendingFlowBlocks.length > 0 ? (
-                <div style={flowPreviewSection}>
-                  <div style={insightLabel}>Als Nächstes</div>
-                  <div style={flowPreviewRow}>
-                    {upcomingFlowBlocks.map((block) => (
-                      <span key={block.id} style={flowPreviewChip}>
-                        {block.label}
-                      </span>
-                    ))}
-                    {pendingFlowBlocks.length > upcomingFlowBlocks.length ? (
-                      <span style={flowPreviewMoreChip}>
-                        +{pendingFlowBlocks.length - upcomingFlowBlocks.length}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <div style={restContextMeta}>Danach: {nextStepLabel}</div>
-              )}
-            </div>
-            <button
-              style={{ ...continueButton, ...(compactMode ? compactContinueButton : null) }}
-              onClick={handleNext}
-            >
-              Weiter
-            </button>
-          </div>
-        ) : !isResting ? (
+        {/* AKTIV oder REST – füllt den restlichen Platz */}
+        {!isResting ? (
           <div style={{ ...activeStack, ...(compactMode ? compactActiveStack : null) }}>
             <div style={{ ...weightBox, ...(compactMode ? compactWeightBox : null) }}>
               {formatWeight(weight)} kg
             </div>
-
             <div style={sectionLabel}>Gewicht</div>
             <div style={weightControls}>
               <div style={{ ...weightRow, ...(compactMode ? compactWeightRow : null) }}>
                 {weightSteps.map((step) => (
-                  <button
-                    key={`minus-${step}`}
-                    style={{
-                      ...miniButton,
-                      ...(compactMode ? compactMiniButton : null),
-                      ...getWeightStepStyle(step),
-                      ...(canChangeWeight(-step) ? null : disabledButton),
-                    }}
-                    onClick={() => changeWeight(-step)}
-                    disabled={!canChangeWeight(-step)}
-                  >
+                  <button key={`minus-${step}`} style={{ ...miniButton, ...(compactMode ? compactMiniButton : null), ...getWeightStepStyle(step), ...(canChangeWeight(-step) ? null : disabledButton) }} onClick={() => changeWeight(-step)} disabled={!canChangeWeight(-step)}>
                     -{formatWeight(step)}
                   </button>
                 ))}
               </div>
               <div style={{ ...weightRow, ...(compactMode ? compactWeightRow : null) }}>
-                {weightSteps
-                  .slice()
-                  .reverse()
-                  .map((step) => (
-                    <button
-                      key={`plus-${step}`}
-                      style={{
-                        ...miniButton,
-                        ...(compactMode ? compactMiniButton : null),
-                        ...getWeightStepStyle(step),
-                        ...(canChangeWeight(step) ? null : disabledButton),
-                      }}
-                      onClick={() => changeWeight(step)}
-                      disabled={!canChangeWeight(step)}
-                    >
-                      +{formatWeight(step)}
-                    </button>
-                  ))}
-              </div>
-            </div>
-
-            <div style={sectionLabel}>Wiederholungen</div>
-            <div style={{ ...repsGrid, ...(compactMode ? compactRepsGrid : null) }}>
-              <button
-                style={{ ...sideButton, ...(compactMode ? compactSideButton : null) }}
-                onClick={() => handleRepsChange(-1)}
-              >
-                -1
-              </button>
-              <button
-                style={{ ...sideButton, ...(compactMode ? compactSideButton : null) }}
-                onClick={() => handleRepsChange(-0.5)}
-              >
-                -0.5
-              </button>
-              <button style={{ ...saveButton, ...(compactMode ? compactSaveButton : null) }} onClick={save}>
-                <span style={{ ...saveButtonValue, ...(compactMode ? compactSaveButtonValue : null) }}>
-                  {formatReps(reps)}
-                </span>
-                <span style={{ ...saveButtonLabel, ...(compactMode ? compactSaveButtonLabel : null) }}>
-                  Satz speichern
-                </span>
-              </button>
-              <button
-                style={{ ...sideButton, ...(compactMode ? compactSideButton : null) }}
-                onClick={() => handleRepsChange(0.5)}
-              >
-                +0.5
-              </button>
-              <button
-                style={{ ...sideButton, ...(compactMode ? compactSideButton : null) }}
-                onClick={() => handleRepsChange(1)}
-              >
-                +1
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              ...restCard,
-              ...(compactMode ? compactRestCard : null),
-              background: theme.badgeBackground,
-              border: `1px solid ${theme.border}`,
-            }}
-          >
-            <div style={{ ...restLabel, color: theme.accent }}>Pause</div>
-            <div style={{ ...restTimer, ...(compactMode ? compactRestTimer : null) }}>
-              {formatRestTimer(restTime)}
-            </div>
-            {visualCountdown ? (
-              <div style={countdownOverlay}>{visualCountdown}</div>
-            ) : null}
-            <div style={{ ...progressTrack, background: theme.progressTrack }}>
-              <div
-                style={{
-                  ...progressFill,
-                  width: `${restProgress}%`,
-                  background: theme.restFill,
-                }}
-              />
-            </div>
-            {lastSavedSet ? (
-              <div style={{ ...restContextCard, ...(compactMode ? compactRestContextCard : null) }}>
-                <div style={insightLabel}>Zuletzt gespeichert</div>
-                <div style={restContextValue}>
-                  {getExerciseLabel(lastSavedSet.exercise)} · {formatWeight(lastSavedSet.weight)} kg x{" "}
-                  {formatReps(lastSavedSet.reps)}
-                </div>
-                <div style={restSetRow}>
-                  {Array.from({
-                    length: currentTotalSets,
-                  }).map((_, index) => (
-                    <span
-                      key={`current-rest-set-${index}`}
-                      style={{
-                        ...restSetDot,
-                        ...(index < currentExerciseProgress.length ? restSetDotDone : null),
-                      }}
-                    />
-                  ))}
-                </div>
-                <div style={restContextMeta}>
-                  Aktuelle Übung: {currentExerciseProgress.length}/{currentTotalSets} Sätze
-                </div>
-                {previousExercise && previousExerciseSets.length > 0 ? (
-                  <div style={previousExerciseCard}>
-                    <div style={insightLabel}>Vorherige Übung</div>
-                    <div style={restContextValue}>
-                      {getExerciseLabel(previousExercise.name)}
-                    </div>
-                    <div style={restSetRow}>
-                      {Array.from({
-                        length: previousExerciseTotalSets,
-                      }).map((_, index) => (
-                        <span
-                          key={`previous-rest-set-${index}`}
-                          style={{
-                            ...restSetDot,
-                            ...(index < previousExerciseSets.length ? restSetDotDone : null),
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <div style={restContextMeta}>
-                      {previousExerciseSets.length}/{previousExerciseTotalSets} Sätze erledigt
-                    </div>
-                    {previousExerciseTopSet ? (
-                      <div style={restContextMeta}>
-                        Top: {formatWeight(previousExerciseTopSet.weight)} kg x{" "}
-                        {formatReps(previousExerciseTopSet.reps)}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            <div style={restWeightLabel}>Nächstes Gewicht</div>
-            <div style={{ ...restWeightValue, ...(compactMode ? compactRestWeightValue : null) }}>
-              {formatWeight(weight)} kg
-            </div>
-            <div style={weightControls}>
-              <div style={{ ...restWeightRow, ...(compactMode ? compactRestWeightRow : null) }}>
-                {weightSteps.map((step) => (
-                  <button
-                    key={`rest-minus-${step}`}
-                    style={{
-                      ...restWeightButton,
-                      ...(compactMode ? compactRestWeightButton : null),
-                      ...getWeightStepStyle(step),
-                      ...(canChangeWeight(-step) ? null : disabledButton),
-                    }}
-                    onClick={() => changeWeight(-step)}
-                    disabled={!canChangeWeight(-step)}
-                  >
-                    -{formatWeight(step)}
+                {weightSteps.slice().reverse().map((step) => (
+                  <button key={`plus-${step}`} style={{ ...miniButton, ...(compactMode ? compactMiniButton : null), ...getWeightStepStyle(step), ...(canChangeWeight(step) ? null : disabledButton) }} onClick={() => changeWeight(step)} disabled={!canChangeWeight(step)}>
+                    +{formatWeight(step)}
                   </button>
                 ))}
               </div>
-              <div style={{ ...restWeightRow, ...(compactMode ? compactRestWeightRow : null) }}>
-                {weightSteps
-                  .slice()
-                  .reverse()
-                  .map((step) => (
-                    <button
-                      key={`rest-plus-${step}`}
-                      style={{
-                        ...restWeightButton,
-                        ...(compactMode ? compactRestWeightButton : null),
-                        ...getWeightStepStyle(step),
-                        ...(canChangeWeight(step) ? null : disabledButton),
-                      }}
-                      onClick={() => changeWeight(step)}
-                      disabled={!canChangeWeight(step)}
-                    >
+            </div>
+            <div style={sectionLabel}>Wiederholungen</div>
+            <div style={{ ...repsGrid, ...(compactMode ? compactRepsGrid : null) }}>
+              <button style={{ ...sideButton, ...(compactMode ? compactSideButton : null) }} onClick={() => handleRepsChange(-1)}>-1</button>
+              <button style={{ ...sideButton, ...(compactMode ? compactSideButton : null) }} onClick={() => handleRepsChange(-0.5)}>-½</button>
+              <button style={{ ...saveButton, ...(compactMode ? compactSaveButton : null) }} onClick={save}>
+                <span style={{ ...saveButtonValue, ...(compactMode ? compactSaveButtonValue : null) }}>{formatReps(reps)}</span>
+                <span style={{ ...saveButtonLabel, ...(compactMode ? compactSaveButtonLabel : null) }}>Satz speichern</span>
+              </button>
+              <button style={{ ...sideButton, ...(compactMode ? compactSideButton : null) }} onClick={() => handleRepsChange(0.5)}>+½</button>
+              <button style={{ ...sideButton, ...(compactMode ? compactSideButton : null) }} onClick={() => handleRepsChange(1)}>+1</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ ...restCard, ...(compactMode ? compactRestCard : null), background: theme.badgeBackground, border: `1px solid ${theme.border}` }}>
+            <div style={{ ...restLabel, color: theme.accent }}>Pause</div>
+            <div style={{ ...restTimer, ...(compactMode ? compactRestTimer : null) }}>
+              {visualCountdown ? <span style={countdownNumber}>{visualCountdown}</span> : formatRestTimer(restTime)}
+            </div>
+            <div style={{ ...progressTrack, background: theme.progressTrack }}>
+              <div style={{ ...progressFill, width: `${restProgress}%`, background: theme.restFill }} />
+            </div>
+            {lastSavedSet ? (
+              <div style={restSavedRow}>
+                <span style={restSavedLabel}>Gespeichert</span>
+                <span style={restSavedValue}>
+                  {getExerciseLabel(lastSavedSet.exercise)} · {formatWeight(lastSavedSet.weight)} kg × {formatReps(lastSavedSet.reps)}
+                </span>
+                <div style={restSetRow}>
+                  {Array.from({ length: currentExercise.sets + 1 }).map((_, i) => (
+                    <span key={`rd-${i}`} style={{ ...restSetDot, ...(i < currentExerciseProgress.length ? restSetDotDone : null) }} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div style={restWeightSection}>
+              <div style={restWeightLabel}>Nächster Satz · {formatWeight(weight)} kg</div>
+              <div style={weightControls}>
+                <div style={{ ...restWeightRow, ...(compactMode ? compactRestWeightRow : null) }}>
+                  {weightSteps.map((step) => (
+                    <button key={`rm-${step}`} style={{ ...restWeightButton, ...(compactMode ? compactRestWeightButton : null), ...(canChangeWeight(-step) ? null : disabledButton) }} onClick={() => changeWeight(-step)} disabled={!canChangeWeight(-step)}>
+                      -{formatWeight(step)}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ ...restWeightRow, ...(compactMode ? compactRestWeightRow : null) }}>
+                  {weightSteps.slice().reverse().map((step) => (
+                    <button key={`rp-${step}`} style={{ ...restWeightButton, ...(compactMode ? compactRestWeightButton : null), ...(canChangeWeight(step) ? null : disabledButton) }} onClick={() => changeWeight(step)} disabled={!canChangeWeight(step)}>
                       +{formatWeight(step)}
                     </button>
                   ))}
+                </div>
               </div>
             </div>
-            <button
-              style={{ ...continueButton, ...(compactMode ? compactContinueButton : null) }}
-              onClick={handleNext}
-            >
-              Weiter
+            <button style={{ ...continueButton, ...(compactMode ? compactContinueButton : null) }} onClick={handleNext}>
+              Weiter →
             </button>
           </div>
         )}
 
         {loading ? <p style={loadingText}>Speichere...</p> : null}
       </div>
+
+      {/* PLAN MODAL */}
+      {showPlanModal ? (
+        <div style={modalOverlay} onClick={() => setShowPlanModal(false)}>
+          <div style={modalSheet} onClick={(e) => e.stopPropagation()}>
+            <div style={modalHeader}>
+              <span style={modalTitle}>Heutiger Plan</span>
+              <span style={modalMeta}>{totalCompleted} / {totalSetsAll} Sätze</span>
+              <button style={modalClose} onClick={() => setShowPlanModal(false)}>✕</button>
+            </div>
+            <div style={modalList}>
+              {dayProgress.map((entry, index) => (
+                <div key={`mp-${entry.exercise.id}-${index}`} style={{ ...modalItem, ...(index === exerciseIndex ? modalItemActive : null) }}>
+                  <div style={modalItemLeft}>
+                    <span style={{ ...modalItemName, ...(index === exerciseIndex ? { color: theme.accent } : null) }}>
+                      {index === exerciseIndex ? "▶ " : ""}{getExerciseLabel(entry.exercise.name)}
+                    </span>
+                    <span style={modalItemMeta}>{entry.completed} / {entry.total} Sätze</span>
+                  </div>
+                  <div style={modalDots}>
+                    {Array.from({ length: entry.total }).map((_, di) => (
+                      <span key={`md-${di}`} style={{ ...modalDot, ...(di < entry.completed ? modalDotDone : null), ...(index === exerciseIndex ? { borderColor: theme.border } : null) }} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1430,26 +689,27 @@ export function WorkoutScreen({
 const screen = {
   display: "flex",
   justifyContent: "center",
-  minHeight: "100dvh",
+  height: "100dvh",
+  overflow: "hidden" as const,
   padding: "8px",
 };
 
 const card = {
   width: "100%",
   maxWidth: 430,
-  minHeight: "calc(100dvh - 16px)",
+  height: "calc(100dvh - 16px)",
   borderRadius: 28,
-  padding: "8px 8px 10px",
-  background: "rgba(255,255,255,0.94)",
+  padding: "10px 10px 12px",
+  background: "rgba(255,255,255,0.96)",
   backdropFilter: "blur(14px)",
-  display: "grid",
-  gridTemplateRows: "auto auto auto auto auto auto auto 1fr auto",
-  alignContent: "start" as const,
-  gap: 6,
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 8,
+  overflow: "hidden" as const,
 };
 
 const progressHeader = {
-  marginBottom: 2,
+  marginBottom: 0,
 };
 
 const topRow = {
@@ -1459,103 +719,190 @@ const topRow = {
   gap: 8,
 };
 
-const compactTopRow = {
-  gap: 6,
-};
-
 const topActions = {
   display: "flex",
   alignItems: "center",
-  gap: 5,
-};
-
-const contextRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 8,
-};
-
-const compactContextRow = {
   gap: 6,
 };
 
-const contextMeta = {
-  display: "flex",
-  flexWrap: "wrap" as const,
-  gap: 6,
-  fontSize: 11,
-  color: "#64748b",
-  fontWeight: 600,
-};
-
-const stateChip = {
-  minHeight: 26,
-  padding: "4px 10px",
+const controlButton = {
+  minHeight: 32,
+  padding: "6px 12px",
   borderRadius: 999,
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "#f8fafc",
-  border: "1px solid #dde5f0",
-  color: "#0f172a",
-  fontSize: 11,
-  fontWeight: "bold",
-  whiteSpace: "nowrap" as const,
-};
-
-const compactStateChip = {
-  minHeight: 24,
-  padding: "3px 8px",
-  fontSize: 10,
-};
-
-const controlButton = {
-  minHeight: 28,
-  padding: "5px 9px",
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "end",
   border: "1px solid #dde5f0",
   background: "#111827",
   color: "#ffffff",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: "bold",
+  cursor: "pointer",
 };
 
-const homeLink = {
-  minHeight: 28,
-  padding: "5px 8px",
+const backLink = {
+  minHeight: 32,
+  padding: "6px 11px",
   borderRadius: 999,
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
   textDecoration: "none",
-  background: "#f8fafc",
+  background: "#f1f5f9",
   border: "1px solid #dde5f0",
   color: "#111827",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: "bold",
 };
 
-const backButton = {
-  minHeight: 28,
-  padding: "5px 9px",
+const durationChip = {
+  fontSize: 12,
+  fontWeight: "bold",
+  color: "#6b7280",
+  padding: "4px 8px",
+  background: "#f1f5f9",
+  borderRadius: 999,
+  border: "1px solid #e2e8f0",
+};
+
+const planButton = {
+  minHeight: 32,
+  padding: "6px 10px",
   borderRadius: 999,
   display: "inline-flex",
   alignItems: "center",
-  justifyContent: "center",
-  background: "#ffffff",
-  border: "1px solid #d6dbe5",
-  color: "#111827",
+  gap: 4,
+  border: "1px solid #dde5f0",
+  background: "#f1f5f9",
+  color: "#374151",
   fontSize: 12,
   fontWeight: "bold",
+  cursor: "pointer",
+};
+
+const modalOverlay = {
+  position: "fixed" as const,
+  inset: 0,
+  background: "rgba(0,0,0,0.45)",
+  zIndex: 100,
+  display: "flex",
+  alignItems: "flex-end",
+  justifyContent: "center",
+};
+
+const modalSheet = {
+  width: "100%",
+  maxWidth: 430,
+  maxHeight: "80dvh",
+  background: "#fff",
+  borderRadius: "24px 24px 0 0",
+  display: "flex",
+  flexDirection: "column" as const,
+  overflow: "hidden" as const,
+};
+
+const modalHeader = {
+  display: "flex",
+  alignItems: "center",
+  padding: "14px 16px 10px",
+  borderBottom: "1px solid #f1f5f9",
+  gap: 8,
+  flexShrink: 0,
+};
+
+const modalTitle = {
+  fontSize: 15,
+  fontWeight: "bold",
+  color: "#111827",
+  flex: 1,
+};
+
+const modalMeta = {
+  fontSize: 12,
+  color: "#6b7280",
+  fontWeight: "600",
+};
+
+const modalClose = {
+  width: 28,
+  height: 28,
+  borderRadius: 999,
+  border: "none",
+  background: "#f1f5f9",
+  color: "#374151",
+  fontSize: 13,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+};
+
+const modalList = {
+  overflowY: "auto" as const,
+  padding: "8px 12px 20px",
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 6,
+};
+
+const modalItem = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "10px 10px",
+  borderRadius: 12,
+  background: "#f9fafb",
+  border: "1px solid transparent",
+};
+
+const modalItemActive = {
+  background: "#f0f7ff",
+  border: "1px solid #bfdbfe",
+};
+
+const modalItemLeft = {
+  flex: 1,
+  minWidth: 0,
+};
+
+const modalItemName = {
+  fontSize: 13,
+  fontWeight: "bold",
+  color: "#111827",
+  display: "block",
+  whiteSpace: "nowrap" as const,
+  overflow: "hidden" as const,
+  textOverflow: "ellipsis" as const,
+};
+
+const modalItemMeta = {
+  fontSize: 11,
+  color: "#6b7280",
+  display: "block",
+  marginTop: 2,
+};
+
+const modalDots = {
+  display: "flex",
+  gap: 4,
+  flexShrink: 0,
+};
+
+const modalDot = {
+  width: 10,
+  height: 10,
+  borderRadius: 999,
+  background: "#e5e7eb",
+  border: "1px solid transparent",
+};
+
+const modalDotDone = {
+  background: "#22c55e",
 };
 
 const pausedBanner = {
-  minHeight: 32,
-  padding: "6px 12px",
+  padding: "8px 12px",
   borderRadius: 12,
   background: "#fff7ed",
   border: "1px solid #fed7aa",
@@ -1565,30 +912,6 @@ const pausedBanner = {
   textAlign: "center" as const,
 };
 
-const pausedContextCard = {
-  padding: "8px 10px",
-  borderRadius: 12,
-  background: "#fffaf5",
-  border: "1px solid #fed7aa",
-  display: "grid",
-  gap: 3,
-};
-
-const pausedContextLabel = {
-  fontSize: 10,
-  textTransform: "uppercase" as const,
-  letterSpacing: 0.8,
-  color: "#9a3412",
-  fontWeight: 700,
-};
-
-const pausedContextValue = {
-  fontSize: 13,
-  color: "#7c2d12",
-  fontWeight: "bold",
-  lineHeight: 1.3,
-};
-
 const progressMeta = {
   display: "flex",
   justifyContent: "space-between",
@@ -1596,12 +919,12 @@ const progressMeta = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   opacity: 0.82,
+  marginBottom: 4,
 };
 
 const progressTrack = {
-  marginTop: 5,
   width: "100%",
-  height: 9,
+  height: 8,
   borderRadius: 999,
   overflow: "hidden" as const,
 };
@@ -1611,359 +934,42 @@ const progressFill = {
   borderRadius: 999,
 };
 
+const exerciseFocus = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 6,
+};
+
+const exerciseInfoRow = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 4,
+  fontSize: 12,
+  color: "#374151",
+  alignItems: "center",
+};
+
+const exerciseInfoDot = {
+  color: "#d1d5db",
+};
+
 const badge = {
   display: "inline-flex",
   alignItems: "center",
-  minHeight: 28,
-  padding: "5px 11px",
+  minHeight: 26,
+  padding: "4px 10px",
   borderRadius: 999,
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: "bold",
-  letterSpacing: 1,
-  justifySelf: "start" as const,
+  letterSpacing: 0.8,
+  alignSelf: "flex-start" as const,
 };
 
 const title = {
-  fontSize: 22,
+  fontSize: 24,
   fontWeight: "bold",
-  textAlign: "center" as const,
-  lineHeight: 1,
+  lineHeight: 1.1,
   margin: 0,
-};
-
-const subtitle = {
-  textAlign: "center" as const,
-  fontSize: 14,
-  fontWeight: "bold",
-  color: "#1f2937",
-};
-
-const transitionCard = {
-  display: "grid",
-  gridTemplateColumns: "1fr auto 1fr",
-  alignItems: "center",
-  gap: 8,
-  padding: "6px 9px",
-  borderRadius: 13,
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-};
-
-const transitionColumn = {
-  display: "grid",
-  gap: 2,
-};
-
-const transitionLabel = {
-  fontSize: 10,
-  textTransform: "uppercase" as const,
-  letterSpacing: 0.8,
-  color: "#64748b",
-  fontWeight: 600,
-};
-
-const transitionValue = {
-  fontSize: 12,
-  color: "#111827",
-  fontWeight: "bold",
-  lineHeight: 1.25,
-};
-
-const transitionDivider = {
-  width: 1,
-  alignSelf: "stretch" as const,
-  background: "#dbe4f0",
-};
-
-const metricsRow = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 8,
-};
-
-const metricCard = {
-  padding: "8px 10px",
-  borderRadius: 15,
-  background: "#f6f7fb",
-};
-
-const metricCardAccent = {
-  border: "1px solid transparent",
-};
-
-const metricLabel = {
-  fontSize: 11,
-  textTransform: "uppercase" as const,
-  letterSpacing: 1,
-  color: "#6b7280",
-};
-
-const metricValue = {
-  marginTop: 4,
-  fontSize: 15,
-  fontWeight: "bold",
-  color: "#111827",
-};
-
-const insightGrid = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 8,
-};
-
-const insightCard = {
-  padding: "8px 10px",
-  borderRadius: 13,
-  background: "#f9fafb",
-  border: "1px solid #e7ebf2",
-};
-
-const insightWide = {
-  gridColumn: "1 / -1",
-};
-
-const insightLabel = {
-  fontSize: 11,
-  textTransform: "uppercase" as const,
-  letterSpacing: 1,
-  color: "#6b7280",
-};
-
-const insightValue = {
-  marginTop: 4,
-  fontSize: 13,
-  fontWeight: "bold",
-  color: "#111827",
-};
-
-const compactMeta = {
-  display: "flex",
-  flexWrap: "wrap" as const,
-  gap: 6,
-  marginTop: 4,
-  fontSize: 11,
-  fontWeight: 600,
-  color: "#475569",
-};
-
-const compareContextLabel = {
-  marginTop: 4,
-  fontSize: 10,
-  color: "#64748b",
-  fontWeight: 600,
-};
-
-const compareTiles = {
-  display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 6,
-  marginTop: 4,
-};
-
-const compareTile = {
-  display: "grid",
-  gap: 4,
-  padding: "7px 8px",
-  borderRadius: 11,
-  background: "#ffffff",
-  border: "1px solid #e7ebf2",
-};
-
-const compactCompareTiles = {
-  gap: 5,
-};
-
-const compactCompareTile = {
-  gap: 3,
-  padding: "6px 7px",
-};
-
-const compareTileLabel = {
-  fontSize: 10,
-  color: "#64748b",
-  fontWeight: 600,
-  textTransform: "uppercase" as const,
-  letterSpacing: 0.7,
-};
-
-const compareTileValue = {
-  fontSize: 12,
-  fontWeight: "bold",
-  color: "#111827",
-  lineHeight: 1.25,
-};
-
-const planOverviewCard = {
-  padding: "8px 10px",
-  borderRadius: 13,
-  background: "#f9fafb",
-  border: "1px solid #e7ebf2",
-  display: "grid",
-  gap: 7,
-};
-
-const overviewHeaderRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 8,
-};
-
-const overviewHeaderActions = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-};
-
-const overviewSummary = {
-  fontSize: 11,
-  fontWeight: "bold",
-  color: "#475569",
-};
-
-const planToggleButton = {
-  minHeight: 28,
-  padding: "4px 10px",
-  borderRadius: 999,
-  border: "1px solid #d7e0ec",
-  background: "#ffffff",
-  color: "#0f172a",
-  fontSize: 11,
-  fontWeight: "bold",
-};
-
-const planFocusRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 10,
-  padding: "6px 8px",
-  borderRadius: 11,
-  background: "#ffffff",
-  border: "1px solid #e7ebf2",
-};
-
-const planFocusText = {
-  display: "grid",
-  gap: 2,
-  minWidth: 0,
-};
-
-const planFocusTitle = {
-  fontSize: 13,
-  fontWeight: "bold",
-  color: "#111827",
-};
-
-const planFocusMeta = {
-  fontSize: 11,
-  color: "#64748b",
-};
-
-const planOverviewList = {
-  display: "grid",
-  gap: 6,
-};
-
-const planBlocksSection = {
-  display: "grid",
-  gap: 6,
-};
-
-const planBlocksList = {
-  display: "flex",
-  flexWrap: "wrap" as const,
-  gap: 6,
-};
-
-const planBlockChip = {
-  display: "grid",
-  gap: 2,
-  minWidth: 104,
-  padding: "7px 8px",
-  borderRadius: 12,
-  background: "#ffffff",
-  border: "1px solid #e7ebf2",
-};
-
-const activePlanBlockChip = {
-  border: "1px solid #d7e6ff",
-  background: "#f8fbff",
-  boxShadow: "0 0 0 1px rgba(37, 99, 235, 0.1)",
-};
-
-const completedPlanBlockChip = {
-  background: "#f8fff8",
-};
-
-const planBlockType = {
-  fontSize: 10,
-  textTransform: "uppercase" as const,
-  letterSpacing: 1,
-  color: "#64748b",
-};
-
-const planBlockName = {
-  fontSize: 12,
-  fontWeight: "bold",
-  color: "#111827",
-};
-
-const planBlockMeta = {
-  fontSize: 11,
-  color: "#475569",
-};
-
-const planOverviewItem = {
-  padding: "7px 8px",
-  borderRadius: 11,
-  background: "#ffffff",
-  border: "1px solid #e7ebf2",
-};
-
-const activePlanOverviewItem = {
-  border: "1px solid #d7e6ff",
-  background: "#f8fbff",
-};
-
-const planOverviewTop = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 8,
-};
-
-const planOverviewName = {
-  fontSize: 12,
-  fontWeight: "bold",
-  color: "#111827",
-};
-
-const planOverviewCount = {
-  fontSize: 11,
-  fontWeight: "bold",
-  color: "#64748b",
-};
-
-const planOverviewDots = {
-  display: "flex",
-  gap: 4,
-  marginTop: 5,
-};
-
-const planOverviewDot = {
-  width: 10,
-  height: 10,
-  borderRadius: 999,
-  background: "#e5e7eb",
-};
-
-const completedPlanOverviewDot = {
-  background: "#22c55e",
-};
-
-const activePlanOverviewDot = {
-  boxShadow: "0 0 0 1px rgba(37, 99, 235, 0.18)",
 };
 
 const activeStack = {
@@ -2057,12 +1063,13 @@ const saveButtonLabel = {
 };
 
 const restCard = {
-  display: "grid",
-  alignContent: "start" as const,
-  gap: 6,
-  padding: "9px 8px 8px",
-  borderRadius: 18,
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 10,
+  padding: "12px 10px",
+  borderRadius: 20,
   textAlign: "center" as const,
+  flex: 1,
 };
 
 const restLabel = {
@@ -2071,27 +1078,62 @@ const restLabel = {
   letterSpacing: 1.2,
 };
 
-const flowSequenceMeta = {
-  marginTop: -1,
-  fontSize: 11,
-  fontWeight: 700,
-  color: "#64748b",
-};
-
 const restTimer = {
-  fontSize: 28,
+  fontSize: 46,
   fontWeight: "bold",
   color: "#111827",
   lineHeight: 1,
 };
 
-const countdownOverlay = {
-  fontSize: 54,
-  lineHeight: 1,
-  fontWeight: "bold",
+const countdownNumber = {
   color: "#dc2626",
-  textAlign: "center" as const,
-  letterSpacing: -1,
+};
+
+const restSavedRow = {
+  padding: "8px 10px",
+  borderRadius: 12,
+  background: "rgba(255,255,255,0.7)",
+  border: "1px solid rgba(215,225,239,0.8)",
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 5,
+  textAlign: "left" as const,
+};
+
+const restSavedLabel = {
+  fontSize: 10,
+  textTransform: "uppercase" as const,
+  letterSpacing: 1,
+  color: "#6b7280",
+};
+
+const restSavedValue = {
+  fontSize: 13,
+  fontWeight: "bold",
+  color: "#111827",
+};
+
+const restSetRow = {
+  display: "flex",
+  gap: 5,
+  alignItems: "center",
+};
+
+const restSetDot = {
+  width: 10,
+  height: 10,
+  borderRadius: 999,
+  background: "#e5e7eb",
+};
+
+const restSetDotDone = {
+  background: "#22c55e",
+};
+
+const restWeightSection = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 4,
 };
 
 const restWeightLabel = {
@@ -2107,211 +1149,81 @@ const restWeightValue = {
   color: "#111827",
 };
 
-const restContextCard = {
-  padding: "8px 10px",
-  borderRadius: 12,
-  background: "rgba(255,255,255,0.7)",
-  border: "1px solid rgba(215,225,239,0.8)",
-  display: "grid",
-  gap: 4,
-};
-
-const compactRestContextCard = {
-  padding: "7px 8px",
-  gap: 3,
-};
-
-const restContextValue = {
-  fontSize: 13,
-  fontWeight: "bold",
-  color: "#111827",
-  lineHeight: 1.3,
-};
-
-const restContextMeta = {
-  fontSize: 11,
-  color: "#475569",
-  lineHeight: 1.3,
-};
-
-const flowPreviewSection = {
-  marginTop: 2,
-  display: "grid",
-  gap: 5,
-};
-
-const flowPreviewRow = {
-  display: "flex",
-  flexWrap: "wrap" as const,
-  gap: 5,
-};
-
-const flowPreviewChip = {
-  display: "inline-flex",
-  alignItems: "center",
-  minHeight: 24,
-  padding: "4px 8px",
-  borderRadius: 999,
-  background: "#ffffff",
-  border: "1px solid rgba(215,225,239,0.9)",
-  color: "#334155",
-  fontSize: 11,
-  fontWeight: 700,
-  lineHeight: 1.2,
-};
-
-const flowPreviewMoreChip = {
-  ...flowPreviewChip,
-  background: "#f8fafc",
-  color: "#64748b",
-};
-
-const previousExerciseCard = {
-  marginTop: 2,
-  paddingTop: 6,
-  borderTop: "1px solid rgba(215,225,239,0.9)",
-  display: "grid",
-  gap: 4,
-};
-
-const restSetRow = {
-  display: "flex",
-  gap: 5,
-  alignItems: "center",
-  flexWrap: "wrap" as const,
-};
-
-const restSetDot = {
-  width: 12,
-  height: 12,
-  borderRadius: 999,
-  background: "#e5e7eb",
-};
-
-const restSetDotDone = {
-  background: "#22c55e",
-};
-
 const restWeightRow = {
   display: "grid",
   gridTemplateColumns: "1.35fr 1.15fr 1fr 0.9fr",
-  gap: 6,
-};
-
-const restWeightButton = {
-  minHeight: 38,
-  borderRadius: 12,
-  border: "2px solid #d6dbe5",
-  background: "#fff",
-  color: "#111",
-  fontSize: 14,
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.06)",
-};
-
-const continueButton = {
-  marginTop: 1,
-  justifySelf: "center" as const,
-  padding: "8px 16px",
-  borderRadius: 14,
-  border: "none",
-  background: "#111827",
-  color: "#fff",
-  fontSize: 14,
-  fontWeight: "bold",
-};
-
-const compactCard = {
-  minHeight: "calc(100dvh - 16px)",
   gap: 5,
 };
 
+const restWeightButton = {
+  minHeight: 36,
+  borderRadius: 10,
+  border: "1px solid #d6dbe5",
+  background: "#fff",
+  color: "#111",
+  fontSize: 13,
+};
+
+const continueButton = {
+  width: "100%",
+  padding: "14px",
+  borderRadius: 16,
+  border: "none",
+  background: "#111827",
+  color: "#fff",
+  fontSize: 16,
+  fontWeight: "bold",
+  cursor: "pointer",
+};
+
+
+const compactCard = {
+  gap: 6,
+};
+
 const compactBadge = {
-  minHeight: 26,
-  padding: "4px 10px",
-  fontSize: 11,
+  fontSize: 10,
+  padding: "3px 8px",
 };
 
 const compactTitle = {
   fontSize: 20,
 };
 
-const compactSubtitle = {
-  fontSize: 13,
-};
-
-const compactTransitionCard = {
-  padding: "6px 8px",
-  gap: 6,
-};
-
-const compactMetricsRow = {
-  gap: 6,
-};
-
-const compactMetricCard = {
-  padding: "8px 10px",
-};
-
-const compactMetricValue = {
-  fontSize: 14,
-};
-
-const compactInsightGrid = {
-  gap: 6,
-};
-
-const compactInsightCard = {
-  padding: "7px 9px",
-};
-
-const compactInsightValue = {
-  fontSize: 12,
-};
-
-const compactMetaTight = {
-  gap: 5,
-  fontSize: 10,
-};
-
-const compactPlanOverviewCard = {
-  gap: 6,
-  padding: "7px 9px",
-};
-
 const compactActiveStack = {
-  gap: 5,
+  gap: 4,
 };
 
 const compactWeightBox = {
-  fontSize: 34,
+  fontSize: 32,
 };
 
 const compactWeightRow = {
-  gap: 5,
+  gap: 4,
 };
 
 const compactMiniButton = {
-  minHeight: 44,
-  fontSize: 15,
+  minHeight: 40,
+  fontSize: 14,
 };
 
 const compactRepsGrid = {
   gridTemplateColumns: "44px 44px minmax(0, 1fr) 44px 44px",
-  gap: 5,
+  gap: 4,
 };
 
 const compactSideButton = {
-  minHeight: 52,
-  fontSize: 14,
+  minHeight: 50,
+  fontSize: 13,
 };
 
 const compactSaveButton = {
-  minHeight: 86,
-  borderRadius: 18,
+  minHeight: 82,
+  borderRadius: 16,
 };
 
 const compactSaveButtonValue = {
-  fontSize: 28,
+  fontSize: 26,
 };
 
 const compactSaveButtonLabel = {
@@ -2319,30 +1231,30 @@ const compactSaveButtonLabel = {
 };
 
 const compactRestCard = {
-  gap: 6,
-  padding: "9px 8px 8px",
+  gap: 8,
+  padding: "10px 9px",
 };
 
 const compactRestTimer = {
-  fontSize: 24,
+  fontSize: 38,
 };
 
 const compactRestWeightValue = {
-  fontSize: 20,
+  fontSize: 18,
 };
 
 const compactRestWeightRow = {
-  gap: 5,
+  gap: 4,
 };
 
 const compactRestWeightButton = {
-  minHeight: 34,
-  fontSize: 13,
+  minHeight: 32,
+  fontSize: 12,
 };
 
 const compactContinueButton = {
-  padding: "7px 14px",
-  fontSize: 13,
+  padding: "12px",
+  fontSize: 15,
 };
 
 const disabledButton = {
@@ -2447,366 +1359,6 @@ function getWeightStepStyle(step: number) {
   };
 }
 
-function getPlanBlockTypeLabel(type: TrainingPlanBlock["type"]) {
-  if (type === "exercise") {
-    return "Übung";
-  }
-
-  if (type === "warmup") {
-    return "Aufwärmen";
-  }
-
-  if (type === "stretch") {
-    return "Dehnen";
-  }
-
-  return "Pause";
-}
-
-function getExerciseKindLabel(kind: ExercisePlanBlock["exerciseKind"]) {
-  return kind === "compound" ? "Grundübung" : "Isolation";
-}
-
-function getExerciseTraitSummary(block: ExercisePlanBlock | null) {
-  if (!block) {
-    return "";
-  }
-
-  const parts = [getExerciseKindLabel(block.exerciseKind), block.category];
-
-  if (block.weight.allowNegative) {
-    parts.push("Gegengewicht");
-  }
-
-  return parts.join(" · ");
-}
-
-function getPlanBlockSummary(block: TrainingPlanBlock) {
-  if (block.type === "exercise") {
-    return getExerciseTraitSummary(block);
-  }
-
-  if (block.type === "warmup") {
-    return "Vorbereitung";
-  }
-
-  if (block.type === "stretch") {
-    return block.category;
-  }
-
-  return block.scope === "workout" ? "Workout" : "Zwischenblock";
-}
-
-function getLeadingFlowBlocks(dayBlocks: TrainingPlanBlock[]) {
-  const blocks: Array<PausePlanBlock | StretchPlanBlock> = [];
-
-  for (const block of dayBlocks) {
-    if (block.type === "exercise" || block.type === "warmup") {
-      break;
-    }
-
-    if (block.type === "stretch" || block.type === "pause") {
-      blocks.push(block);
-    }
-  }
-
-  return blocks;
-}
-
-function getFollowingFlowBlocks(
-  exerciseId: string,
-  dayBlocks: TrainingPlanBlock[]
-) {
-  const exerciseIndex = dayBlocks.findIndex(
-    (block) => block.type === "exercise" && block.exerciseId === exerciseId
-  );
-
-  if (exerciseIndex === -1) {
-    return [];
-  }
-
-  const blocks: Array<PausePlanBlock | StretchPlanBlock> = [];
-
-  for (let index = exerciseIndex + 1; index < dayBlocks.length; index += 1) {
-    const block = dayBlocks[index];
-
-    if (block.type === "exercise" || block.type === "warmup") {
-      break;
-    }
-
-    if (block.type === "stretch" || block.type === "pause") {
-      blocks.push(block);
-    }
-  }
-
-  return blocks;
-}
-
-function getWarmupRoundsForExercise(
-  exerciseId: string,
-  dayBlocks: TrainingPlanBlock[]
-) {
-  const warmupBlock = dayBlocks.find(
-    (block): block is WarmupPlanBlock =>
-      block.type === "warmup" && block.parentExerciseId === exerciseId
-  );
-
-  return (
-    warmupBlock?.rounds ?? 1
-  );
-}
-
-function getWarmupRestForExercise(
-  exerciseId: string,
-  dayBlocks: TrainingPlanBlock[],
-  fallbackRestSeconds: number
-) {
-  const warmupBlock = dayBlocks.find(
-    (block): block is WarmupPlanBlock =>
-      block.type === "warmup" && block.parentExerciseId === exerciseId
-  );
-
-  return (
-    warmupBlock?.restSeconds ?? fallbackRestSeconds
-  );
-}
-
-function getInternalSetNumber(setIndex: number, warmupRounds: number) {
-  return setIndex - warmupRounds + 1;
-}
-
-function formatSetStageLabel(
-  setIndex: number,
-  warmupRounds: number,
-  workSets: number
-) {
-  if (setIndex < warmupRounds) {
-    return `Aufwärmen ${setIndex + 1}/${warmupRounds}`;
-  }
-
-  return `Satz ${setIndex - warmupRounds + 1}/${workSets}`;
-}
-
-function getFlowBlockDuration(block: PausePlanBlock | StretchPlanBlock) {
-  if (block.type === "stretch") {
-    return block.holdSeconds * block.rounds;
-  }
-
-  return block.seconds;
-}
-
-function getFlowBlockSubtitle(block: PausePlanBlock | StretchPlanBlock) {
-  if (block.type === "stretch") {
-    return `Dehnen · ${block.rounds} Runden`;
-  }
-
-  return block.scope === "workout" ? "Workout-Pause" : "Pauseblock";
-}
-
-function getFlowBlockMeta(block: PausePlanBlock | StretchPlanBlock) {
-  if (block.type === "stretch") {
-    return `${block.rounds} Runden · ${block.holdSeconds} Sek`;
-  }
-
-  return `${formatRest(block.seconds)} · ${
-    block.scope === "workout" ? "Workout" : "Zwischenblock"
-  }`;
-}
-
-function getFlowBlockExerciseContext(
-  blockId: string,
-  dayBlocks: TrainingPlanBlock[]
-) {
-  const blockIndex = dayBlocks.findIndex((block) => block.id === blockId);
-
-  if (blockIndex === -1) {
-    return null;
-  }
-
-  let previousExercise: TrainingPlanBlock | null = null;
-  for (let index = blockIndex - 1; index >= 0; index -= 1) {
-    const block = dayBlocks[index];
-    if (block.type === "exercise") {
-      previousExercise = block;
-      break;
-    }
-  }
-
-  let nextExercise: TrainingPlanBlock | null = null;
-  for (let index = blockIndex + 1; index < dayBlocks.length; index += 1) {
-    const block = dayBlocks[index];
-    if (block.type === "exercise") {
-      nextExercise = block;
-      break;
-    }
-  }
-
-  return {
-    previousExercise:
-      previousExercise?.type === "exercise" ? previousExercise.label : null,
-    nextExercise: nextExercise?.type === "exercise" ? nextExercise.label : null,
-  };
-}
-
-function getFlowBlockContextLabel(
-  context:
-    | {
-        previousExercise: string | null;
-        nextExercise: string | null;
-      }
-    | null
-) {
-  if (!context) {
-    return "";
-  }
-
-  if (context.previousExercise && context.nextExercise) {
-    return `Zwischen ${context.previousExercise} und ${context.nextExercise}`;
-  }
-
-  if (context.nextExercise) {
-    return `Vor ${context.nextExercise}`;
-  }
-
-  if (context.previousExercise) {
-    return `Nach ${context.previousExercise}`;
-  }
-
-  return "";
-}
-
-function getScreenStateLabel({
-  isWorkoutPaused,
-  isResting,
-  activeFlowBlock,
-  currentSetNumber,
-}: {
-  isWorkoutPaused: boolean;
-  isResting: boolean;
-  activeFlowBlock: PausePlanBlock | StretchPlanBlock | null;
-  currentSetNumber: number;
-}) {
-  if (isWorkoutPaused) {
-    return "Training pausiert";
-  }
-
-  if (activeFlowBlock) {
-    return activeFlowBlock.type === "stretch"
-      ? "Dehnen"
-      : activeFlowBlock.scope === "workout"
-        ? "Workout-Pause"
-        : "Pauseblock";
-  }
-
-  if (isResting) {
-    return "Satzpause";
-  }
-
-  if (currentSetNumber <= 0) {
-    return "Aufwärmen";
-  }
-
-  return "Aktiver Satz";
-}
-
-function getNextStepLabel({
-  isWorkoutPaused,
-  isResting,
-  activeFlowBlock,
-  pendingFlowBlocks,
-  flowNextAction,
-  setIndex,
-  currentWarmupRounds,
-  currentExercise,
-  currentExerciseIndex,
-  currentExerciseSetCount,
-  currentTotalSets,
-  exercises,
-  dayBlocks,
-}: {
-  isWorkoutPaused: boolean;
-  isResting: boolean;
-  activeFlowBlock: PausePlanBlock | StretchPlanBlock | null;
-  pendingFlowBlocks: Array<PausePlanBlock | StretchPlanBlock>;
-  flowNextAction: "start-current" | "next-exercise" | "finish-workout" | null;
-  setIndex: number;
-  currentWarmupRounds: number;
-  currentExercise: WorkoutExercise;
-  currentExerciseIndex: number;
-  currentExerciseSetCount: number;
-  currentTotalSets: number;
-  exercises: WorkoutExercise[];
-  dayBlocks: TrainingPlanBlock[];
-}) {
-  if (isWorkoutPaused) {
-    if (activeFlowBlock) {
-      return `${activeFlowBlock.label} fortsetzen`;
-    }
-
-    if (isResting) {
-      return "Satzpause fortsetzen";
-    }
-
-    return "Training fortsetzen";
-  }
-
-  if (activeFlowBlock) {
-    if (pendingFlowBlocks.length > 0) {
-      return pendingFlowBlocks[0].label;
-    }
-
-    if (flowNextAction === "start-current") {
-      return describeExerciseStart(currentExercise, currentWarmupRounds);
-    }
-
-    if (flowNextAction === "next-exercise") {
-      const nextExercise = exercises[currentExerciseIndex + 1];
-      if (!nextExercise) {
-        return "Übersicht";
-      }
-
-      const warmups = getWarmupRoundsForExercise(nextExercise.id, dayBlocks);
-      return describeExerciseStart(nextExercise, warmups);
-    }
-
-    return "Übersicht";
-  }
-
-  if (isResting) {
-    if (setIndex + 1 < currentTotalSets) {
-      return formatSetStageLabel(
-        setIndex + 1,
-        currentWarmupRounds,
-        currentExerciseSetCount
-      );
-    }
-
-    const followingBlocks = getFollowingFlowBlocks(currentExercise.id, dayBlocks);
-    if (followingBlocks.length > 0) {
-      return followingBlocks[0].label;
-    }
-
-    const nextExercise = exercises[currentExerciseIndex + 1];
-    if (!nextExercise) {
-      return "Übersicht";
-    }
-
-    const warmups = getWarmupRoundsForExercise(nextExercise.id, dayBlocks);
-    return describeExerciseStart(nextExercise, warmups);
-  }
-
-  return "Nach Speichern: Satzpause";
-}
-
-function describeExerciseStart(exercise: WorkoutExercise, warmupRounds: number) {
-  const stage =
-    warmupRounds > 0
-      ? formatSetStageLabel(0, warmupRounds, exercise.sets)
-      : formatSetStageLabel(0, 0, exercise.sets);
-
-  return `${getExerciseLabel(exercise.name)} · ${stage}`;
-}
-
 function playGetReadyTone() {
   if (typeof window === "undefined") {
     return;
@@ -2871,7 +1423,6 @@ function navigateToSummary(
   router: ReturnType<typeof useRouter>,
   sessionId: number
 ) {
-  clearActiveWorkoutState();
   const target = `/workout/summary/index.html?sessionId=${sessionId}`;
 
   if (typeof window !== "undefined") {
