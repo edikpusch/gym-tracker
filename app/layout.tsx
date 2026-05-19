@@ -19,6 +19,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({
@@ -50,4 +52,7 @@ const appWrapper: React.CSSProperties = {
   minHeight: "100dvh",
   display: "flex",
   flexDirection: "column",
+  boxSizing: "border-box",
+  paddingRight: "env(safe-area-inset-right)",
+  paddingLeft: "env(safe-area-inset-left)",
 };

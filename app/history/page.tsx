@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -6,13 +6,16 @@ import {
   deleteWorkoutSession,
   getAllSets,
   getTopSet,
+  isLoggedSetEntry,
   type SetType,
+  type WorkoutLogEntry,
 } from "@/lib/workoutEngine";
 import { getActivePlanId, getTrainingPlan } from "@/lib/trainingPlans";
 import { getExerciseLabel } from "@/lib/workoutUi";
 
 type SessionExerciseSummary = {
   exercise: string;
+  exerciseId: string;
   topSet: SetType | null;
   previousTopSet: SetType | null;
 };
@@ -27,7 +30,7 @@ type SessionCard = {
   date: string;
   weekday: string;
   duration: number;
-  sets: SetType[];
+  sets: WorkoutLogEntry[];
   summaries: SessionExerciseSummary[];
 };
 
@@ -35,6 +38,12 @@ export default function HistoryPage() {
   const [sessions, setSessions] = useState<SessionCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(
+    null
+  );
+  const [expandedSetListSessionId, setExpandedSetListSessionId] = useState<string | null>(
+    null
+  );
+  const [expandedExerciseKey, setExpandedExerciseKey] = useState<string | null>(
     null
   );
   const [activePlanId, setActivePlanIdState] = useState("my-plan");
@@ -81,7 +90,7 @@ export default function HistoryPage() {
       setLoading(true);
 
       const sets = await getAllSets();
-      const grouped = sets.reduce<Record<string, SetType[]>>((acc, current) => {
+      const grouped = sets.reduce<Record<string, WorkoutLogEntry[]>>((acc, current) => {
         const key = String(current.sessionId);
         acc[key] ??= [];
         acc[key].push(current);
@@ -104,9 +113,9 @@ export default function HistoryPage() {
           return {
             sessionId,
             timestamp: first.timestamp,
-            type: first.type || detectWorkoutType(orderedSets),
+            type: first.type || detectWorkoutType(orderedSets.filter(isLoggedSetEntry)),
             typeLabel:
-              first.dayName || first.type || detectWorkoutType(orderedSets),
+              first.dayName || first.type || detectWorkoutType(orderedSets.filter(isLoggedSetEntry)),
             planId: first.planId || fallbackPlan.id,
             planName: first.planName || fallbackPlan.name,
             date: date.toLocaleDateString("de-DE", {
@@ -133,8 +142,9 @@ export default function HistoryPage() {
 
       for (let index = sortedSessionEntries.length - 1; index >= 0; index -= 1) {
         const session = sortedSessionEntries[index];
+        const sessionSetEntries = session.sets.filter(isLoggedSetEntry);
         const summaries = buildExerciseSummaries(
-          session.sets,
+          sessionSetEntries,
           session.type,
           exerciseHistory
         );
@@ -142,7 +152,7 @@ export default function HistoryPage() {
         summaries.forEach((summary) => {
           if (summary.topSet) {
             exerciseHistory.set(
-              getHistoryKey(session.type, summary.exercise),
+              getHistoryKey(session.type, summary.exercise, summary.exerciseId),
               summary.topSet
             );
           }
@@ -180,6 +190,14 @@ export default function HistoryPage() {
 
     if (expandedSessionId === sessionId) {
       setExpandedSessionId(null);
+    }
+
+    if (expandedSetListSessionId === sessionId) {
+      setExpandedSetListSessionId(null);
+    }
+
+    if (expandedExerciseKey?.startsWith(`${sessionId}:`)) {
+      setExpandedExerciseKey(null);
     }
 
     await loadSessions();
@@ -265,13 +283,19 @@ export default function HistoryPage() {
               <div style={cardButtonStack}>
                 <button
                   style={toggleButton}
-                  onClick={() =>
-                    setExpandedSessionId((current) =>
-                      current === session.sessionId ? null : session.sessionId
-                    )
-                  }
+                  onClick={() => {
+                    setExpandedSessionId((current) => {
+                      const next = current === session.sessionId ? null : session.sessionId;
+                      if (!next) {
+                        setExpandedSetListSessionId((setListCurrent) =>
+                          setListCurrent === session.sessionId ? null : setListCurrent
+                        );
+                      }
+                      return next;
+                    });
+                  }}
                 >
-                  {expandedSessionId === session.sessionId ? "Sätze" : "Details"}
+                  {expandedSessionId === session.sessionId ? "Übersicht" : "Details"}
                 </button>
                 <button
                   style={deleteButton}
@@ -288,11 +312,43 @@ export default function HistoryPage() {
                 ...(compactMode ? compactSummaryGrid : null),
               }}
             >
-              {session.summaries.map((summary) => (
+              {(expandedSessionId === session.sessionId
+                ? session.summaries
+                : session.summaries.slice(0, 2)
+              ).map((summary) => (
+                (() => {
+                  const summaryKey = `${session.sessionId}:${summary.exerciseId}`;
+                  return (
                 <div
-                  key={`${session.sessionId}-${summary.exercise}`}
-                  style={{ ...summaryCard, ...(compactMode ? compactSummaryCard : null) }}
+                  key={summaryKey}
+                  style={{
+                    ...summaryCard,
+                    ...(compactMode ? compactSummaryCard : null),
+                    ...(expandedExerciseKey === summaryKey
+                      ? expandedSummaryCard
+                      : null),
+                  }}
+                  onClick={() =>
+                    setExpandedExerciseKey((current) =>
+                      current === summaryKey
+                        ? null
+                        : summaryKey
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setExpandedExerciseKey((current) =>
+                        current === summaryKey
+                          ? null
+                          : summaryKey
+                      );
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                 >
+                  <div style={summaryCardHeader}>
                   <div
                     style={{
                       ...summaryExercise,
@@ -300,6 +356,12 @@ export default function HistoryPage() {
                     }}
                   >
                     {getExerciseLabel(summary.exercise)}
+                  </div>
+                    <span style={summaryCardChevron}>
+                      {expandedExerciseKey === summaryKey
+                        ? "v"
+                        : ">"}
+                    </span>
                   </div>
                   {summary.topSet ? (
                     <div
@@ -316,11 +378,66 @@ export default function HistoryPage() {
                       {getComparisonArrow(summary)} {getComparisonLabel(summary)}
                     </span>
                   </div>
+                  {expandedExerciseKey === summaryKey ? (
+                    <div style={summarySetList}>
+                      {session.sets
+                        .filter(
+                          (set) =>
+                            isLoggedSetEntry(set) &&
+                            (set.exerciseId
+                              ? set.exerciseId === summary.exerciseId
+                              : set.exercise === summary.exercise)
+                        )
+                        .sort((a, b) => a.set - b.set)
+                        .map((set, index) => (
+                          <div
+                            key={`${summaryKey}-${set.timestamp}-${index}`}
+                            style={summarySetRow}
+                          >
+                            <span style={summarySetLabel}>
+                              {labelSet(set.set)}
+                            </span>
+                            <span style={summarySetValue}>
+                              {set.weight} kg x {set.reps}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  ) : null}
                 </div>
+                  );
+                })()
               ))}
+              {expandedSessionId !== session.sessionId &&
+              session.summaries.length > 2 ? (
+                <button
+                  style={moreSummariesCard}
+                  onClick={() => setExpandedSessionId(session.sessionId)}
+                >
+                  +{session.summaries.length - 2} weitere Übungen
+                </button>
+              ) : null}
             </div>
 
             {expandedSessionId === session.sessionId ? (
+              <div style={sessionDetailActions}>
+                <button
+                  style={sessionDetailButton}
+                  onClick={() =>
+                    setExpandedSetListSessionId((current) =>
+                      current === session.sessionId ? null : session.sessionId
+                    )
+                  }
+                >
+                  {expandedSetListSessionId === session.sessionId
+                    ? "Satzliste ausblenden"
+                    : "Alle Sätze anzeigen"}
+                </button>
+              </div>
+            ) : null}
+
+            {expandedSessionId === session.sessionId &&
+            expandedSetListSessionId === session.sessionId ? (
               <div style={setList}>
                 {session.sets.map((set, index) => (
                   <div
@@ -349,17 +466,18 @@ export default function HistoryPage() {
 }
 
 const screen = {
-  minHeight: "100dvh",
-  padding: "10px 10px 32px",
+  minHeight: "100%",
+  padding: "10px 10px calc(26px + env(safe-area-inset-bottom))",
   background: "radial-gradient(circle at top, #dde6f5 0%, #f3f5f9 42%, #fbfbfd 100%)",
   fontFamily: "sans-serif",
+  boxSizing: "border-box" as const,
 };
 
 const shell = {
   maxWidth: 460,
   margin: "0 auto",
   padding: "12px",
-  borderRadius: 28,
+  borderRadius: 30,
   background: "rgba(255,255,255,0.96)",
   border: "1px solid rgba(148, 163, 184, 0.14)",
   boxShadow: "0 24px 60px rgba(17, 24, 39, 0.08)",
@@ -370,7 +488,7 @@ const headerRow = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 12,
-  marginBottom: 12,
+  marginBottom: 10,
 };
 
 const brandPill = {
@@ -419,15 +537,15 @@ const eyebrow = {
 
 const title = {
   marginTop: 4,
-  fontSize: 26,
-  fontWeight: "bold",
+  fontSize: 28,
+  fontWeight: 800,
   color: "#111827",
 };
 
 const headerCopy = {
   marginTop: 4,
   fontSize: 13,
-  fontWeight: 600,
+  fontWeight: 700,
   color: "#475569",
 };
 
@@ -435,17 +553,18 @@ const filterRow = {
   display: "flex",
   gap: 8,
   marginBottom: 12,
+  flexWrap: "wrap" as const,
 };
 
 const filterButton = {
-  minHeight: 32,
-  padding: "6px 12px",
+  minHeight: 36,
+  padding: "8px 14px",
   borderRadius: 999,
   border: "1px solid #d7e1ef",
   background: "#f8fafc",
   color: "#374151",
-  fontSize: 12,
-  fontWeight: "bold",
+  fontSize: 13,
+  fontWeight: 800,
   cursor: "pointer",
 };
 
@@ -462,9 +581,9 @@ const emptyText = {
 };
 
 const emptyState = {
-  marginTop: 20,
-  padding: "18px 16px",
-  borderRadius: 22,
+  marginTop: 16,
+  padding: "16px 14px",
+  borderRadius: 20,
   background: "#f8fafc",
   border: "1px solid #e6ebf2",
 };
@@ -482,10 +601,11 @@ const emptyCopy = {
 
 const card = {
   marginTop: 10,
-  padding: "12px 14px",
-  borderRadius: 18,
-  background: "#f8fafc",
+  padding: "14px 14px",
+  borderRadius: 20,
+  background: "linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%)",
   border: "1px solid #e5ebf4",
+  boxShadow: "0 14px 28px rgba(15, 23, 42, 0.05)",
 };
 
 const cardTop = {
@@ -503,13 +623,13 @@ const cardButtonStack = {
 };
 
 const cardDate = {
-  fontWeight: "bold",
-  fontSize: 14,
+  fontWeight: 800,
+  fontSize: 15,
   color: "#111827",
 };
 
 const cardMetaLine = {
-  marginTop: 3,
+  marginTop: 4,
   fontSize: 12,
   color: "#64748b",
 };
@@ -518,14 +638,14 @@ const sessionCompareRow = {
   display: "flex",
   flexWrap: "wrap" as const,
   gap: 6,
-  marginTop: 8,
+  marginTop: 6,
 };
 
 const summaryGrid = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
+  display: "flex",
+  flexDirection: "column" as const,
   gap: 10,
-  marginTop: 14,
+  marginTop: 12,
 };
 
 const summaryCard = {
@@ -533,19 +653,54 @@ const summaryCard = {
   borderRadius: 18,
   background: "#ffffff",
   border: "1px solid #e8ecf3",
-  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.04)",
+  boxShadow: "0 12px 22px rgba(15, 23, 42, 0.04)",
+  width: "100%",
+  cursor: "pointer",
+};
+
+const expandedSummaryCard = {
+  border: "1px solid #cfe0ff",
+  boxShadow: "0 12px 26px rgba(59, 130, 246, 0.08)",
+};
+
+const summaryCardHeader = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+};
+
+const summaryCardChevron = {
+  fontSize: 15,
+  fontWeight: "bold",
+  color: "#64748b",
+};
+
+const moreSummariesCard = {
+  minHeight: 74,
+  borderRadius: 18,
+  border: "1px dashed #cbd5e1",
+  background: "#f8fafc",
+  color: "#475569",
+  fontSize: 15,
+  fontWeight: 800,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "0 18px",
+  width: "100%",
 };
 
 const summaryExercise = {
-  fontSize: 14,
-  fontWeight: "bold",
+  fontSize: 15,
+  fontWeight: 800,
   color: "#111827",
 };
 
 const summaryTopSet = {
   marginTop: 6,
-  fontSize: 18,
-  fontWeight: "bold",
+  fontSize: 20,
+  fontWeight: 800,
   color: "#111827",
 };
 
@@ -554,14 +709,39 @@ const summaryBadgeRow = {
   display: "flex",
 };
 
+const summarySetList = {
+  marginTop: 8,
+  display: "grid",
+  gap: 6,
+};
+
+const summarySetRow = {
+  paddingTop: 6,
+  borderTop: "1px solid #edf2f7",
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  fontSize: 14,
+};
+
+const summarySetLabel = {
+  color: "#64748b",
+  fontWeight: 700,
+};
+
+const summarySetValue = {
+  color: "#111827",
+  fontWeight: 700,
+};
+
 const baseBadge = {
   display: "inline-flex",
   alignItems: "center",
-  minHeight: 28,
-  padding: "6px 10px",
+  minHeight: 30,
+  padding: "6px 12px",
   borderRadius: 999,
   fontSize: 12,
-  fontWeight: "bold",
+  fontWeight: 800,
 };
 
 const successBadge = {
@@ -582,11 +762,29 @@ const neutralBadge = {
   background: "#f3f4f6",
 };
 
+const sessionDetailActions = {
+  marginTop: 10,
+  display: "flex",
+  justifyContent: "flex-start",
+};
+
+const sessionDetailButton = {
+  minHeight: 40,
+  padding: "0 14px",
+  borderRadius: 999,
+  border: "1px solid #d7e1ef",
+  background: "#ffffff",
+  color: "#111827",
+  fontSize: 13,
+  fontWeight: 800,
+  boxShadow: "0 4px 12px rgba(15, 23, 42, 0.05)",
+};
+
 const setList = {
-  marginTop: 14,
+  marginTop: 12,
   display: "flex",
   flexDirection: "column" as const,
-  gap: 8,
+  gap: 6,
 };
 
 const setRow = {
@@ -594,7 +792,7 @@ const setRow = {
   justifyContent: "space-between",
   gap: 12,
   fontSize: 14,
-  paddingTop: 8,
+  paddingTop: 6,
   borderTop: "1px solid #eceff5",
 };
 
@@ -610,10 +808,10 @@ const toggleButton = {
   border: "1px solid #d7e1ef",
   background: "#f8fafc",
   color: "#374151",
-  fontWeight: "bold",
-  fontSize: 11,
+  fontWeight: 800,
+  fontSize: 12,
   borderRadius: 999,
-  padding: "5px 9px",
+  padding: "7px 11px",
   cursor: "pointer",
 };
 
@@ -621,15 +819,15 @@ const deleteButton = {
   border: "1px solid #fecdd3",
   background: "#fff1f2",
   color: "#b91c1c",
-  fontWeight: "bold",
-  fontSize: 11,
+  fontWeight: 800,
+  fontSize: 12,
   borderRadius: 999,
-  padding: "5px 9px",
+  padding: "7px 11px",
   cursor: "pointer",
 };
 
 const bottomRow = {
-  marginTop: 16,
+  marginTop: 12,
   display: "flex",
   justifyContent: "center",
 };
@@ -637,7 +835,7 @@ const bottomRow = {
 const bottomLink = {
   display: "inline-flex",
   alignItems: "center",
-  minHeight: 40,
+  minHeight: 44,
   padding: "8px 20px",
   borderRadius: 999,
   fontSize: 13,
@@ -680,7 +878,7 @@ const compactSummaryGrid = {
 };
 
 const compactSummaryCard = {
-  padding: "10px 10px 8px",
+  padding: "9px 9px 8px",
 };
 
 const compactSummaryExercise = {
@@ -697,21 +895,25 @@ function buildExerciseSummaries(
   exerciseHistory: Map<string, SetType>
 ) {
   const grouped = sets.reduce<Record<string, SetType[]>>((acc, current) => {
-    acc[current.exercise] ??= [];
-    acc[current.exercise].push(current);
+    const key = current.exerciseId ?? current.exercise;
+    acc[key] ??= [];
+    acc[key].push(current);
     return acc;
   }, {});
 
-  return Object.entries(grouped).map(([exercise, exerciseSets]) => ({
-    exercise,
+  return Object.entries(grouped).map(([exerciseId, exerciseSets]) => ({
+    exercise: exerciseSets[0]?.exercise ?? "",
+    exerciseId,
     topSet: getTopSet(exerciseSets),
     previousTopSet:
-      exerciseHistory.get(getHistoryKey(sessionType, exercise)) ?? null,
+      exerciseHistory.get(
+        getHistoryKey(sessionType, exerciseSets[0]?.exercise ?? "", exerciseId)
+      ) ?? null,
   }));
 }
 
-function getHistoryKey(sessionType: string, exercise: string) {
-  return `${sessionType}:${exercise}`;
+function getHistoryKey(sessionType: string, exercise: string, exerciseId?: string) {
+  return `${sessionType}:${exerciseId ?? exercise}`;
 }
 
 function getComparisonArrow(summary: SessionExerciseSummary) {
@@ -849,3 +1051,4 @@ function capitalize(value: string) {
   if (!value) return value;
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
+

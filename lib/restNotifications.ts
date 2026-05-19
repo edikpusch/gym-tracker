@@ -10,6 +10,10 @@ function isNativeApp() {
   return Capacitor.isNativePlatform();
 }
 
+function isAndroid() {
+  return Capacitor.getPlatform() === "android";
+}
+
 async function ensurePermission() {
   if (!isNativeApp()) {
     return false;
@@ -25,7 +29,7 @@ async function ensurePermission() {
 }
 
 async function ensureChannel() {
-  if (!isNativeApp() || channelReady) {
+  if (!isAndroid() || channelReady) {
     return;
   }
 
@@ -58,20 +62,26 @@ export async function scheduleRestNotification(
   await ensureChannel();
   await clearRestNotification();
 
+  const notification = {
+    id: REST_NOTIFICATION_ID,
+    title: "Pause beendet",
+    body: `${exerciseLabel} ist wieder dran.`,
+    schedule: {
+      at: new Date(Date.now() + seconds * 1000),
+      allowWhileIdle: true,
+    },
+    ongoing: false,
+    autoCancel: true,
+  };
+
   await LocalNotifications.schedule({
     notifications: [
-      {
-        id: REST_NOTIFICATION_ID,
-        title: "Pause beendet",
-        body: `${exerciseLabel} ist wieder dran.`,
-        channelId: REST_CHANNEL_ID,
-        schedule: {
-          at: new Date(Date.now() + seconds * 1000),
-          allowWhileIdle: true,
-        },
-        ongoing: false,
-        autoCancel: true,
-      },
+      isAndroid()
+        ? {
+            ...notification,
+            channelId: REST_CHANNEL_ID,
+          }
+        : notification,
     ],
   });
 }

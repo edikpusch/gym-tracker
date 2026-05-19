@@ -1,12 +1,13 @@
 import { getAllWorkoutDays } from "@/lib/workoutPlan";
 
-const STORAGE_KEY = "gym-tracker-sets";
+export const WORKOUT_LOG_KEY = "gym-tracker-sets";
 const PLAN_VERSION_KEY = "gym-tracker-plan-version";
 const PLAN_VERSION = "2026-04-23-plan-v2";
 
 export type SetType = {
   eventType?: "set";
   exercise: string;
+  exerciseId?: string;
   weight: number;
   reps: number;
   set: number;
@@ -79,7 +80,7 @@ function readStoredSets(): WorkoutLogEntry[] {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(WORKOUT_LOG_KEY);
 
     if (!raw) {
       return [];
@@ -103,7 +104,7 @@ function writeStoredSets(sets: WorkoutLogEntry[]) {
   }
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sets));
+    window.localStorage.setItem(WORKOUT_LOG_KEY, JSON.stringify(sets));
   } catch (error) {
     console.error("Local set storage could not be written:", error);
   }
@@ -121,7 +122,7 @@ export function ensureCurrentPlanStorage() {
       return;
     }
 
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(WORKOUT_LOG_KEY);
     window.localStorage.setItem(PLAN_VERSION_KEY, PLAN_VERSION);
   } catch (error) {
     console.error("Local plan storage could not be updated:", error);
@@ -186,6 +187,18 @@ export async function getSessionSetEntries(sessionId: number): Promise<SetType[]
 
 function getStoredSetEntries() {
   return readStoredSets().filter(isLoggedSetEntry);
+}
+
+function matchesExerciseInstance(
+  set: SetType,
+  exercise: string,
+  exerciseId?: string
+) {
+  if (exerciseId) {
+    return set.exerciseId === exerciseId;
+  }
+
+  return set.exercise === exercise;
 }
 
 export async function saveWorkoutEvent({
@@ -259,12 +272,13 @@ export async function deleteWorkoutSession(
 export async function getLastSetForExercise(
   exercise: string,
   setNumber: number,
-  workoutType?: string
+  workoutType?: string,
+  exerciseId?: string
 ): Promise<SetType | null> {
   const match = getStoredSetEntries()
     .filter(
       (set) =>
-        set.exercise === exercise &&
+        matchesExerciseInstance(set, exercise, exerciseId) &&
         set.set === setNumber &&
         (!workoutType || set.type === workoutType)
     )
@@ -277,12 +291,13 @@ export async function getPreviousMatchingSet(
   exercise: string,
   setNumber: number,
   workoutType: string | undefined,
-  currentSessionId: number
+  currentSessionId: number,
+  exerciseId?: string
 ): Promise<SetType | null> {
   const match = getStoredSetEntries()
     .filter(
       (set) =>
-        set.exercise === exercise &&
+        matchesExerciseInstance(set, exercise, exerciseId) &&
         set.set === setNumber &&
         set.sessionId !== currentSessionId &&
         (!workoutType || set.type === workoutType)
@@ -295,11 +310,12 @@ export async function getPreviousMatchingSet(
 export async function getBestMatchingSet(
   exercise: string,
   setNumber: number,
-  workoutType?: string
+  workoutType?: string,
+  exerciseId?: string
 ): Promise<SetType | null> {
   const matches = getStoredSetEntries().filter(
     (set) =>
-      set.exercise === exercise &&
+      matchesExerciseInstance(set, exercise, exerciseId) &&
       set.set === setNumber &&
       (!workoutType || set.type === workoutType)
   );
@@ -324,12 +340,13 @@ export async function getBestMatchingSet(
 export async function getLastSessionForExercise(
   exercise: string,
   currentSessionId: number,
-  workoutType?: string
+  workoutType?: string,
+  exerciseId?: string
 ): Promise<SetType[]> {
   const all = getStoredSetEntries()
     .filter(
       (set) =>
-        set.exercise === exercise &&
+        matchesExerciseInstance(set, exercise, exerciseId) &&
         (!workoutType || set.type === workoutType)
     )
     .sort((a, b) => b.timestamp - a.timestamp);
@@ -456,6 +473,7 @@ export function getCoachDecision(exercise: string, sets: SetType[]) {
 
 export async function saveSet({
   exercise,
+  exerciseId,
   weight,
   reps,
   set,
@@ -467,6 +485,7 @@ export async function saveSet({
   dayName,
 }: {
   exercise: string;
+  exerciseId?: string;
   weight: number;
   reps: number;
   set: number;
@@ -485,6 +504,7 @@ export async function saveSet({
   const nextSet: SetType = {
     eventType: "set",
     exercise,
+    exerciseId,
     weight,
     reps,
     set,

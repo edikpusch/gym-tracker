@@ -1,6 +1,11 @@
 import { getExerciseCatalogEntry, type ExerciseKind } from "@/lib/trainingCatalog";
 
-export type PlanBlockType = "exercise" | "warmup" | "stretch" | "pause";
+export type PlanBlockType =
+  | "exercise"
+  | "warmup"
+  | "stretch"
+  | "pause"
+  | "note";
 
 export type WeightStep = 5 | 2.5 | 1 | 0.5;
 
@@ -63,11 +68,21 @@ export type PausePlanBlock = {
   scope: "exercise" | "workout";
 };
 
+export type NotePlanBlock = {
+  id: string;
+  type: "note";
+  label: string;
+  notes: string;
+};
+
 export type TrainingPlanBlock =
   | ExercisePlanBlock
   | WarmupPlanBlock
   | StretchPlanBlock
-  | PausePlanBlock;
+  | PausePlanBlock
+  | NotePlanBlock;
+
+export type PlanBlock = TrainingPlanBlock;
 
 export const DEFAULT_WEIGHT_STEPS: WeightStep[] = [5, 2.5, 1, 0.5];
 export const DEFAULT_WEIGHT_CONFIG: WeightConfig = {
@@ -193,7 +208,11 @@ export function syncDayBlocks(
   }
 
   existingBlocks.forEach((block) => {
-    if (block.type === "stretch" || block.type === "pause") {
+    if (
+      block.type === "stretch" ||
+      block.type === "pause" ||
+      block.type === "note"
+    ) {
       blocks.push(block);
       return;
     }

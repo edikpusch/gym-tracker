@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { clearActiveWorkoutState } from "@/lib/activeWorkout";
 
 import {
   getBestMatchingSet,
@@ -9,6 +10,7 @@ import {
   getSetComparison,
   getSetsBySession,
   getTopSet,
+  isLoggedSetEntry,
   type SetComparisonKind,
   type SetType,
 } from "@/lib/workoutEngine";
@@ -25,6 +27,7 @@ type SummaryRow = {
 
 type ExerciseSummary = {
   exercise: string;
+  exerciseId: string;
   rows: SummaryRow[];
 };
 
@@ -44,6 +47,7 @@ function SummaryContent() {
   const [exerciseData, setExerciseData] = useState<ExerciseSummary[]>([]);
   const [compactMode, setCompactMode] = useState(false);
   const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
+  const [showAllExercises, setShowAllExercises] = useState(false);
 
   const params = useSearchParams();
   const sessionIdParam = params.get("sessionId");
@@ -51,6 +55,10 @@ function SummaryContent() {
     sessionIdParam && !isNaN(Number(sessionIdParam))
       ? Number(sessionIdParam)
       : null;
+
+  useEffect(() => {
+    clearActiveWorkoutState();
+  }, []);
 
   useEffect(() => {
     async function loadSession() {
@@ -61,7 +69,8 @@ function SummaryContent() {
 
       try {
         const data = await getSetsBySession(sessionId);
-        const workSets = data.filter((set) => set.set > 0);
+        const loggedSets = data.filter(isLoggedSetEntry);
+        const workSets = loggedSets.filter((set) => set.set > 0);
         const first = data[0];
         const workoutType = first?.type;
 
@@ -90,16 +99,18 @@ function SummaryContent() {
 
         const grouped = new Map<string, SetType[]>();
         workSets.forEach((set) => {
-          if (!grouped.has(set.exercise)) {
-            grouped.set(set.exercise, []);
+          const key = set.exerciseId ?? set.exercise;
+          if (!grouped.has(key)) {
+            grouped.set(key, []);
           }
-          grouped.get(set.exercise)!.push(set);
+          grouped.get(key)!.push(set);
         });
 
         const result: ExerciseSummary[] = [];
 
-        for (const [exercise, currentSets] of grouped.entries()) {
+        for (const [exerciseId, currentSets] of grouped.entries()) {
           const sortedSets = [...currentSets].sort((a, b) => a.set - b.set);
+          const exercise = sortedSets[0]?.exercise ?? "";
 
           const rows = await Promise.all(
             sortedSets.map(async (current) => {
@@ -107,12 +118,14 @@ function SummaryContent() {
                 exercise,
                 current.set,
                 workoutType,
-                sessionId
+                sessionId,
+                current.exerciseId
               );
               const best = await getBestMatchingSet(
                 exercise,
                 current.set,
-                workoutType
+                workoutType,
+                current.exerciseId
               );
 
               return {
@@ -127,6 +140,7 @@ function SummaryContent() {
 
           result.push({
             exercise,
+            exerciseId,
             rows,
           });
         }
@@ -157,6 +171,10 @@ function SummaryContent() {
   }, []);
 
   const stats = useMemo(() => getSummaryStats(exerciseData), [exerciseData]);
+  const visibleExercises = useMemo(
+    () => (showAllExercises ? exerciseData : exerciseData.slice(0, 3)),
+    [exerciseData, showAllExercises]
+  );
 
   return (
     <div style={screen}>
@@ -228,18 +246,42 @@ function SummaryContent() {
                 ...(compactMode ? compactExerciseGrid : null),
               }}
             >
-              {exerciseData.map((exercise) => (
+              {visibleExercises.map((exercise) => (
                 <div
-                  key={exercise.exercise}
-                  style={{ ...card, ...(compactMode ? compactCard : null) }}
+                  key={exercise.exerciseId}
+                  style={{
+                    ...card,
+                    ...(compactMode ? compactCard : null),
+                    ...(expandedExercise === exercise.exerciseId ? expandedCard : null),
+                  }}
+                  onClick={() =>
+                    setExpandedExercise((current) =>
+                      current === exercise.exerciseId ? null : exercise.exerciseId
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setExpandedExercise((current) =>
+                        current === exercise.exerciseId ? null : exercise.exerciseId
+                      );
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                 >
-                  <div
-                    style={{
-                      ...exerciseTitle,
-                      ...(compactMode ? compactExerciseTitle : null),
-                    }}
-                  >
-                    {getExerciseLabel(exercise.exercise)}
+                  <div style={cardHeaderRow}>
+                    <div
+                      style={{
+                        ...exerciseTitle,
+                        ...(compactMode ? compactExerciseTitle : null),
+                      }}
+                    >
+                      {getExerciseLabel(exercise.exercise)}
+                    </div>
+                    <span style={cardChevron}>
+                      {expandedExercise === exercise.exerciseId ? "v" : ">"}
+                    </span>
                   </div>
 
                   <div style={overviewBlock}>
@@ -254,24 +296,14 @@ function SummaryContent() {
                     <div style={overviewCaption}>Bester Satz heute</div>
                     <div style={overviewBadgeRow}>
                       {getExerciseStats(exercise.rows).map((item) => (
-                        <span key={`${exercise.exercise}-${item.label}`} style={item.style}>
+                        <span key={`${exercise.exerciseId}-${item.label}`} style={item.style}>
                           {item.text}
                         </span>
                       ))}
                     </div>
-                    <button
-                      style={detailsButton}
-                      onClick={() =>
-                        setExpandedExercise((current) =>
-                          current === exercise.exercise ? null : exercise.exercise
-                        )
-                      }
-                    >
-                      {expandedExercise === exercise.exercise ? "Details zu" : "Sätze"}
-                    </button>
                   </div>
 
-                  {expandedExercise === exercise.exercise ? (
+                  {expandedExercise === exercise.exerciseId ? (
                     <div
                       style={{
                         ...rowsStack,
@@ -280,7 +312,7 @@ function SummaryContent() {
                     >
                       {exercise.rows.map((row) => (
                         <div
-                          key={`${exercise.exercise}-${row.setNumber}`}
+                          key={`${exercise.exerciseId}-${row.setNumber}`}
                           style={{ ...setRow, ...(compactMode ? compactSetRow : null) }}
                         >
                           <div style={setHeaderRow}>
@@ -329,6 +361,14 @@ function SummaryContent() {
                   ) : null}
                 </div>
               ))}
+              {!showAllExercises && exerciseData.length > 3 ? (
+                <button
+                  style={moreExercisesCard}
+                  onClick={() => setShowAllExercises(true)}
+                >
+                  +{exerciseData.length - 3} weitere Übungen anzeigen
+                </button>
+              ) : null}
             </div>
           </div>
         )}
@@ -441,7 +481,7 @@ function formatDelta(comparison: ReturnType<typeof getSetComparison>) {
     parts.push(`${formatSignedNumber(comparison.reps)} Wdh.`);
   }
 
-  return parts.join(" / ");
+  return parts.join(" · ");
 }
 
 function formatSignedNumber(value: number) {
@@ -483,11 +523,12 @@ function getStatusBadgeStyle(kind: SetComparisonKind | undefined) {
 }
 
 const screen = {
-  height: "100dvh",
+  height: "100%",
   padding: "10px",
   overflow: "hidden" as const,
   background: "radial-gradient(circle at top, #dde6f5 0%, #f3f5f9 42%, #fbfbfd 100%)",
   fontFamily: "sans-serif",
+  boxSizing: "border-box" as const,
 };
 
 const shell = {
@@ -495,13 +536,13 @@ const shell = {
   height: "100%",
   margin: "0 auto",
   padding: "12px",
-  borderRadius: 28,
+  borderRadius: 30,
   background: "rgba(255,255,255,0.96)",
   boxShadow: "0 24px 60px rgba(17, 24, 39, 0.08)",
   border: "1px solid rgba(148, 163, 184, 0.14)",
   display: "grid",
   gridTemplateRows: "auto auto 1fr auto",
-  gap: 10,
+  gap: 8,
   overflow: "hidden" as const,
 };
 
@@ -553,7 +594,7 @@ const eyebrow = {
 };
 
 const hero = {
-  padding: "14px 16px",
+  padding: "16px 16px",
   borderRadius: 24,
   background: "linear-gradient(135deg, #111827 0%, #1f2937 100%)",
   color: "#fff",
@@ -568,15 +609,15 @@ const heroTopRow = {
 };
 
 const title = {
-  fontSize: 22,
-  fontWeight: "bold",
+  fontSize: 26,
+  fontWeight: 800,
   lineHeight: 1.1,
 };
 
 const metaLine = {
   marginTop: 6,
   fontSize: 13,
-  fontWeight: 600,
+  fontWeight: 700,
   color: "rgba(255,255,255,0.74)",
 };
 
@@ -595,8 +636,8 @@ const statLabel = {
 };
 
 const statValue = {
-  fontSize: 22,
-  fontWeight: "bold",
+  fontSize: 24,
+  fontWeight: 800,
 };
 
 const backButton = {
@@ -617,18 +658,18 @@ const backButton = {
 const heroSummaryRow = {
   display: "flex",
   flexWrap: "wrap" as const,
-  gap: 6,
+  gap: 8,
   marginTop: 10,
 };
 
 const baseBadge = {
   display: "inline-flex",
   alignItems: "center",
-  minHeight: 28,
-  padding: "6px 10px",
+  minHeight: 30,
+  padding: "6px 12px",
   borderRadius: 999,
   fontSize: 12,
-  fontWeight: "bold",
+  fontWeight: 800,
 };
 
 const successBadge = {
@@ -664,75 +705,99 @@ const contentScroll = {
   overflowY: "auto" as const,
   minHeight: 0,
   paddingRight: 2,
+  paddingBottom: "calc(8px + env(safe-area-inset-bottom))",
 };
 
 const exerciseGrid = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 8,
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 10,
   alignContent: "start" as const,
 };
 
 const card = {
   padding: 12,
   border: "1px solid #e8ecf3",
-  borderRadius: 18,
+  borderRadius: 20,
   background: "rgba(255,255,255,0.96)",
-  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+  boxShadow: "0 14px 28px rgba(15, 23, 42, 0.05)",
+  width: "100%",
+  cursor: "pointer",
+};
+
+const expandedCard = {
+  border: "1px solid #cfe0ff",
+  boxShadow: "0 14px 30px rgba(59, 130, 246, 0.08)",
+};
+
+const cardHeaderRow = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+};
+
+const cardChevron = {
+  fontSize: 16,
+  fontWeight: "bold",
+  color: "#64748b",
 };
 
 const exerciseTitle = {
-  fontWeight: "bold",
-  fontSize: 15,
+  fontWeight: 800,
+  fontSize: 17,
   lineHeight: 1.15,
   color: "#111827",
 };
 
 const rowsStack = {
-  marginTop: 10,
+  marginTop: 8,
   display: "grid",
-  gap: 8,
+  gap: 6,
+};
+
+const moreExercisesCard = {
+  minHeight: 76,
+  width: "100%",
+  borderRadius: 20,
+  border: "1px dashed #cbd5e1",
+  background: "#f8fafc",
+  color: "#475569",
+  fontSize: 15,
+  fontWeight: 800,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "0 18px",
 };
 
 const overviewBlock = {
-  marginTop: 10,
+  marginTop: 8,
   display: "grid",
-  gap: 8,
+  gap: 6,
 };
 
 const overviewTopSet = {
   fontSize: 20,
-  fontWeight: "bold",
+  fontWeight: 800,
   color: "#111827",
   lineHeight: 1.05,
 };
 
 const overviewCaption = {
-  fontSize: 12,
+  fontSize: 13,
   color: "#64748b",
-  fontWeight: 600,
+  fontWeight: 700,
 };
 
 const overviewBadgeRow = {
   display: "flex",
   flexWrap: "wrap" as const,
-  gap: 6,
-};
-
-const detailsButton = {
-  minHeight: 34,
-  padding: "7px 12px",
-  borderRadius: 999,
-  border: "1px solid #dde5f0",
-  background: "#f8fafc",
-  color: "#111827",
-  fontSize: 12,
-  fontWeight: "bold",
-  justifySelf: "start" as const,
+  gap: 8,
 };
 
 const setRow = {
-  paddingTop: 8,
+  paddingTop: 6,
   borderTop: "1px solid #edf2f7",
 };
 
@@ -745,16 +810,16 @@ const setHeaderRow = {
 
 const setLabel = {
   fontSize: 12,
-  fontWeight: "bold",
+  fontWeight: 800,
   letterSpacing: 0.3,
   color: "#475569",
   textTransform: "uppercase" as const,
 };
 
 const todayValue = {
-  marginTop: 7,
-  fontSize: 15,
-  fontWeight: "bold",
+  marginTop: 6,
+  fontSize: 16,
+  fontWeight: 800,
   color: "#111827",
 };
 
@@ -767,7 +832,7 @@ const comparisonLine = {
 const deltaLine = {
   marginTop: 5,
   fontSize: 13,
-  fontWeight: 600,
+  fontWeight: 700,
   color: "#1f2937",
 };
 
@@ -775,23 +840,24 @@ const actionStack = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: 10,
+  paddingBottom: "calc(4px + env(safe-area-inset-bottom))",
 };
 
 const primaryButton = {
-  minHeight: 48,
-  borderRadius: 18,
+  minHeight: 54,
+  borderRadius: 20,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   textDecoration: "none",
   color: "#fff",
   background: "#111827",
-  fontWeight: "bold",
+  fontWeight: 800,
   boxShadow: "0 14px 32px rgba(17, 24, 39, 0.12)",
 };
 
 const secondaryButton = {
-  minHeight: 48,
+  minHeight: 50,
   borderRadius: 18,
   display: "flex",
   alignItems: "center",
@@ -845,8 +911,8 @@ const compactExerciseGrid = {
 };
 
 const compactCard = {
-  padding: 10,
-  borderRadius: 16,
+  padding: 9,
+  borderRadius: 14,
 };
 
 const compactExerciseTitle = {
@@ -854,8 +920,8 @@ const compactExerciseTitle = {
 };
 
 const compactRowsStack = {
-  marginTop: 8,
-  gap: 6,
+  marginTop: 6,
+  gap: 5,
 };
 
 const compactOverviewTopSet = {
@@ -884,3 +950,4 @@ const compactDeltaLine = {
 const compactActionStack = {
   gap: 8,
 };
+

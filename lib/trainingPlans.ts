@@ -1,7 +1,8 @@
-import { getExerciseCatalogEntry } from "@/lib/trainingCatalog";
+import { getExerciseCatalogEntry, getSuggestedExerciseSetup } from "@/lib/trainingCatalog";
 import {
   buildExerciseBlock,
   buildWarmupBlock,
+  type NotePlanBlock,
   syncDayBlocks,
   type PausePlanBlock,
   type StretchPlanBlock,
@@ -996,6 +997,73 @@ export function duplicateTrainingPlan(planId: string) {
   return copy;
 }
 
+type NewTrainingDayDraft = {
+  name: string;
+  slot?: PlanRouteSlot;
+  color?: string;
+  exercises: ExerciseDraft[];
+};
+
+type NewTrainingPlanDraft = {
+  name: string;
+  accent?: string;
+  days: NewTrainingDayDraft[];
+};
+
+const DEFAULT_DAY_COLORS: Record<PlanRouteSlot, string> = {
+  push: "#dc2626",
+  pull: "#2563eb",
+  mixed: "#16a34a",
+};
+
+export function createTrainingPlan(draft: NewTrainingPlanDraft) {
+  const name = draft.name.trim();
+  if (!name || !draft.days.length) {
+    return null;
+  }
+
+  const customPlans = readCustomPlans();
+  const newPlanId = createCustomPlanId();
+
+  const nextPlan: TrainingPlan = normalizeTrainingPlan({
+    id: newPlanId,
+    name,
+    description: draft.days.map((day) => day.name.trim()).join(" / "),
+    accent: draft.accent ?? "#111827",
+    origin: "custom",
+    days: draft.days.map((day, index) => {
+      const slot: PlanRouteSlot =
+        day.slot ?? (index === 0 ? "push" : index === 1 ? "pull" : "mixed");
+      const color = day.color ?? DEFAULT_DAY_COLORS[slot];
+      const exercises = day.exercises.map((exercise) => {
+        const normalized = normalizeExerciseDraft(exercise);
+        const suggested = getSuggestedExerciseSetup(normalized.name);
+
+        return {
+          id: createExerciseId(normalized.name),
+          name: normalized.name,
+          sets: normalized.sets || suggested.sets,
+          minReps: normalized.minReps || suggested.minReps,
+          maxReps: normalized.maxReps || suggested.maxReps,
+          restSeconds: normalized.restSeconds || suggested.restSeconds,
+        };
+      });
+
+      return {
+        id: `${newPlanId}-${slot}-${index}`,
+        name: day.name.trim() || `Tag ${String.fromCharCode(65 + index)}`,
+        slot,
+        color,
+        exercises,
+      };
+    }),
+  });
+
+  customPlans.unshift(nextPlan);
+  writeCustomPlans(customPlans);
+  return nextPlan;
+}
+
 export function deleteTrainingPlan(planId: string) {
   const customPlans = readCustomPlans();
   const nextPlans = customPlans.filter((plan) => plan.id !== planId);
@@ -1086,6 +1154,33 @@ export function renameTrainingDay(
   });
 }
 
+export function addTrainingDay(
+  planId: string,
+  draft: { name: string; slot?: PlanRouteSlot; color?: string }
+) {
+  const trimmed = draft.name.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return updateCustomPlan(planId, (plan) => {
+    const index = plan.days.length;
+    const slot: PlanRouteSlot =
+      draft.slot ?? (index === 0 ? "push" : index === 1 ? "pull" : "mixed");
+    const color = draft.color ?? DEFAULT_DAY_COLORS[slot];
+
+    plan.days.push({
+      id: `${plan.id}-${slot}-${Date.now()}`,
+      name: trimmed,
+      slot,
+      color,
+      exercises: [],
+    });
+
+    return plan;
+  });
+}
+
 type ExerciseDraft = {
   name: string;
   sets: number;
@@ -1130,6 +1225,11 @@ type PauseDraft = {
   scope: "exercise" | "workout";
 };
 
+type NoteDraft = {
+  label?: string;
+  notes: string;
+};
+
 function insertBlocksAfter(
   blocks: TrainingPlanBlock[],
   newBlocks: TrainingPlanBlock[],
@@ -1167,13 +1267,33 @@ export function addTrainingExercise(
       return null;
     }
 
+    const blocks = day.blocks ?? syncDayBlocks(day.exercises);
     const exercise = {
       id: createExerciseId(draft.name),
       ...normalizeExerciseDraft(draft),
     };
-    day.exercises.push(exercise);
+    const insertAfterExerciseId =
+      blocks.find(
+        (block): block is Extract<TrainingPlanBlock, { type: "exercise" }> =>
+          block.type === "exercise" && block.id === insertAfterBlockId
+      )?.exerciseId ??
+      blocks.find(
+        (block): block is Extract<TrainingPlanBlock, { type: "warmup" }> =>
+          block.type === "warmup" && block.id === insertAfterBlockId
+      )?.parentExerciseId ??
+      null;
 
-    const syncedBlocks = syncDayBlocks(day.exercises, day.blocks);
+    const insertAfterExerciseIndex = insertAfterExerciseId
+      ? day.exercises.findIndex((entry) => entry.id === insertAfterExerciseId)
+      : -1;
+
+    if (insertAfterExerciseIndex >= 0) {
+      day.exercises.splice(insertAfterExerciseIndex + 1, 0, exercise);
+    } else {
+      day.exercises.push(exercise);
+    }
+
+    const syncedBlocks = syncDayBlocks(day.exercises, blocks);
     const insertedBlocks = syncedBlocks.filter(
       (block) =>
         (block.type === "exercise" && block.exerciseId === exercise.id) ||
@@ -1439,6 +1559,72 @@ export function updatePauseBlock(
   });
 }
 
+export function addNoteBlock(
+  planId: string,
+  dayId: string,
+  draft: NoteDraft,
+  insertAfterBlockId?: string | null
+) {
+  if (!draft.notes.trim()) {
+    return null;
+  }
+
+  return updateCustomPlan(planId, (plan) => {
+    const day = plan.days.find((entry) => entry.id === dayId);
+    if (!day) {
+      return null;
+    }
+
+    const blocks = day.blocks ?? syncDayBlocks(day.exercises);
+    const noteBlock: NotePlanBlock = {
+      id: `note:${Date.now()}`,
+      type: "note",
+      label: draft.label?.trim() || "Hinweis",
+      notes: draft.notes.trim(),
+    };
+
+    day.blocks = insertBlocksAfter(blocks, [noteBlock], insertAfterBlockId);
+    return plan;
+  });
+}
+
+export function updateNoteBlock(
+  planId: string,
+  dayId: string,
+  blockId: string,
+  draft: NoteDraft
+) {
+  if (!draft.notes.trim()) {
+    return null;
+  }
+
+  return updateCustomPlan(planId, (plan) => {
+    const day = plan.days.find((entry) => entry.id === dayId);
+    if (!day) {
+      return null;
+    }
+
+    const blocks = day.blocks ?? syncDayBlocks(day.exercises);
+    const index = blocks.findIndex(
+      (block) => block.type === "note" && block.id === blockId
+    );
+
+    if (index === -1) {
+      return null;
+    }
+
+    blocks[index] = {
+      id: blockId,
+      type: "note",
+      label: draft.label?.trim() || "Hinweis",
+      notes: draft.notes.trim(),
+    };
+
+    day.blocks = blocks;
+    return plan;
+  });
+}
+
 export function removeDayBlock(
   planId: string,
   dayId: string,
@@ -1550,6 +1736,16 @@ export function duplicateDayBlock(
       };
 
       day.blocks = insertBlocksAfter(blocks, [duplicateStretch], blockId);
+      return plan;
+    }
+
+    if (sourceBlock.type === "note") {
+      const duplicateNote: NotePlanBlock = {
+        ...sourceBlock,
+        id: `note:${Date.now()}`,
+      };
+
+      day.blocks = insertBlocksAfter(blocks, [duplicateNote], blockId);
       return plan;
     }
 

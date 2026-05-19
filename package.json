@@ -10,7 +10,8 @@
     "lint": "eslint",
     "cap:sync": "node scripts/sync-capacitor.mjs",
     "cap:prepare": "npm run build:capacitor && npm run cap:sync",
-    "cap:open": "npx cap open android"
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
