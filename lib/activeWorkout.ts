@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  getStorageItem,
+  hasAppStorage,
+  removeStorageItem,
+  setStorageItem,
+} from "@/lib/appStorage";
+
 export type ActiveWorkoutState = {
   href: string;
   workoutLabel: string;
@@ -11,13 +18,15 @@ export type ActiveWorkoutState = {
   updatedAt: number;
 };
 
-const ACTIVE_WORKOUT_KEY = "gym-tracker.active-workout";
-const ACTIVE_WORKOUT_SNAPSHOT_KEY = "gym-tracker.active-workout-snapshot";
+export const ACTIVE_WORKOUT_KEY = "gym-tracker.active-workout";
+export const ACTIVE_WORKOUT_SNAPSHOT_KEY = "gym-tracker.active-workout-snapshot";
 
 export type ActiveWorkoutSnapshot = {
   workoutType: string;
   sessionId: number;
   exerciseIndex: number;
+  exerciseInstanceId?: string;
+  exerciseReference?: string;
   setIndex: number;
   weight: number;
   reps: number;
@@ -31,17 +40,13 @@ export type ActiveWorkoutSnapshot = {
   updatedAt: number;
 };
 
-function hasStorage() {
-  return typeof window !== "undefined" && "localStorage" in window;
-}
-
 export function getActiveWorkoutState(): ActiveWorkoutState | null {
-  if (!hasStorage()) {
+  if (!hasAppStorage()) {
     return null;
   }
 
   try {
-    const raw = window.localStorage.getItem(ACTIVE_WORKOUT_KEY);
+    const raw = getStorageItem(ACTIVE_WORKOUT_KEY);
     if (!raw) {
       return null;
     }
@@ -67,20 +72,20 @@ export function getActiveWorkoutState(): ActiveWorkoutState | null {
 }
 
 export function setActiveWorkoutState(state: ActiveWorkoutState) {
-  if (!hasStorage()) {
+  if (!hasAppStorage()) {
     return;
   }
 
-  window.localStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify(state));
+  setStorageItem(ACTIVE_WORKOUT_KEY, JSON.stringify(state));
 }
 
 function getStoredSnapshot(): ActiveWorkoutSnapshot | null {
-  if (!hasStorage()) {
+  if (!hasAppStorage()) {
     return null;
   }
 
   try {
-    const raw = window.localStorage.getItem(ACTIVE_WORKOUT_SNAPSHOT_KEY);
+    const raw = getStorageItem(ACTIVE_WORKOUT_SNAPSHOT_KEY);
     if (!raw) {
       return null;
     }
@@ -90,7 +95,11 @@ function getStoredSnapshot(): ActiveWorkoutSnapshot | null {
       typeof parsed?.workoutType !== "string" ||
       typeof parsed?.sessionId !== "number" ||
       typeof parsed?.exerciseIndex !== "number" ||
-      typeof parsed?.setIndex !== "number"
+      typeof parsed?.setIndex !== "number" ||
+      (parsed.exerciseInstanceId != null &&
+        typeof parsed.exerciseInstanceId !== "string") ||
+      (parsed.exerciseReference != null &&
+        typeof parsed.exerciseReference !== "string")
     ) {
       return null;
     }
@@ -113,21 +122,21 @@ export function getActiveWorkoutSnapshot(
 }
 
 export function setActiveWorkoutSnapshot(snapshot: ActiveWorkoutSnapshot) {
-  if (!hasStorage()) {
+  if (!hasAppStorage()) {
     return;
   }
 
-  window.localStorage.setItem(
+  setStorageItem(
     ACTIVE_WORKOUT_SNAPSHOT_KEY,
     JSON.stringify(snapshot)
   );
 }
 
 export function clearActiveWorkoutState() {
-  if (!hasStorage()) {
+  if (!hasAppStorage()) {
     return;
   }
 
-  window.localStorage.removeItem(ACTIVE_WORKOUT_KEY);
-  window.localStorage.removeItem(ACTIVE_WORKOUT_SNAPSHOT_KEY);
+  removeStorageItem(ACTIVE_WORKOUT_KEY);
+  removeStorageItem(ACTIVE_WORKOUT_SNAPSHOT_KEY);
 }

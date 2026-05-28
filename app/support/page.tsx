@@ -3,9 +3,17 @@
 import { useState } from "react";
 
 import { AppPageFrame } from "@/components/AppPageFrame";
+import { AppBadge } from "@/components/ui/AppBadge";
+import { AppButton } from "@/components/ui/AppButton";
+import { AppCard } from "@/components/ui/AppCard";
+import { NoticeDialog } from "@/components/ui/NoticeDialog";
+import { TextPromptDialog } from "@/components/ui/TextPromptDialog";
+import { appPalette } from "@/lib/theme";
 
 export default function SupportPage() {
   const [showAllFaqs, setShowAllFaqs] = useState(false);
+  const [copySuccessMessage, setCopySuccessMessage] = useState<string | null>(null);
+  const [manualCopyText, setManualCopyText] = useState<string | null>(null);
 
   async function copyFeedbackTemplate() {
     const text = [
@@ -14,14 +22,19 @@ export default function SupportPage() {
       "Was ist passiert?",
       "- ",
       "",
-      "Was hätte passieren sollen?",
+      "Was haette passieren sollen?",
       "- ",
       "",
       `Zeit: ${new Date().toLocaleString("de-DE")}`,
       "Version: 0.1.0",
     ].join("\n");
 
-    await copyTextWithFallback(text, "Feedback-Vorlage kopiert.");
+    await copyTextWithFallback(
+      text,
+      "Feedback-Vorlage kopiert.",
+      setCopySuccessMessage,
+      setManualCopyText
+    );
   }
 
   async function copyBugTemplate() {
@@ -46,7 +59,12 @@ export default function SupportPage() {
       "Version: 0.1.0",
     ].join("\n");
 
-    await copyTextWithFallback(text, "Bug-Vorlage kopiert.");
+    await copyTextWithFallback(
+      text,
+      "Bug-Vorlage kopiert.",
+      setCopySuccessMessage,
+      setManualCopyText
+    );
   }
 
   return (
@@ -54,55 +72,105 @@ export default function SupportPage() {
       activeKey="support"
       eyebrow="Hilfe & Support"
       title="Schnell Hilfe finden"
-      subtitle="Kurze Antworten für die häufigsten Fragen plus fertige Vorlagen für Feedback und Bugs."
+      subtitle="Kurze Antworten fuer haeufige Fragen plus fertige Vorlagen fuer Feedback und Bugs."
     >
-      <section style={sectionCard}>
-        <div style={sectionTitle}>Häufige Fragen</div>
+      <AppCard style={sectionCard}>
+        <div style={sectionHead}>
+          <div style={sectionTitle}>Haeufige Fragen</div>
+          <AppBadge variant="template">
+            {showAllFaqs ? FAQS.length : Math.min(2, FAQS.length)}
+          </AppBadge>
+        </div>
         {(showAllFaqs ? FAQS : FAQS.slice(0, 2)).map((faq) => (
           <FaqCard key={faq.question} question={faq.question} answer={faq.answer} />
         ))}
         {FAQS.length > 2 ? (
-          <button
+          <AppButton
+            block
+            variant="secondary"
             style={moreButton}
             onClick={() => setShowAllFaqs((current) => !current)}
           >
             {showAllFaqs ? "Weniger Fragen anzeigen" : "Weitere Fragen anzeigen"}
-          </button>
+          </AppButton>
         ) : null}
-      </section>
+      </AppCard>
 
-      <section style={sectionCard}>
-        <div style={sectionTitle}>Feedback & Bugs</div>
-        <button style={primaryButton} onClick={() => void copyFeedbackTemplate()}>
+      <AppCard style={sectionCard}>
+        <div style={sectionHead}>
+          <div style={sectionTitle}>Feedback & Bugs</div>
+          <AppBadge variant="active">Support</AppBadge>
+        </div>
+        <AppButton
+          block
+          variant="primary"
+          style={primaryButton}
+          onClick={() => void copyFeedbackTemplate()}
+        >
           Feedback-Vorlage kopieren
-        </button>
-        <button style={ghostButton} onClick={() => void copyBugTemplate()}>
+        </AppButton>
+        <AppButton
+          block
+          variant="secondary"
+          style={ghostButton}
+          onClick={() => void copyBugTemplate()}
+        >
           Bug-Vorlage kopieren
-        </button>
-      </section>
+        </AppButton>
+      </AppCard>
 
-      <section style={sectionCard}>
-        <div style={sectionTitle}>App-Info</div>
+      <AppCard style={sectionCard}>
+        <div style={sectionHead}>
+          <div style={sectionTitle}>App-Info</div>
+          <AppBadge variant="custom">0.1.0</AppBadge>
+        </div>
         <div style={infoRow}>
           <span style={infoLabel}>Version</span>
           <span style={infoValue}>0.1.0</span>
         </div>
         <div style={infoRow}>
           <span style={infoLabel}>Build</span>
-          <span style={infoValue}>2026-05-10</span>
+          <span style={infoValue}>2026-05-28</span>
         </div>
-      </section>
+      </AppCard>
+
+      <NoticeDialog
+        open={Boolean(copySuccessMessage)}
+        title="Kopiert"
+        body={copySuccessMessage ?? ""}
+        onClose={() => setCopySuccessMessage(null)}
+      />
+
+      <TextPromptDialog
+        open={Boolean(manualCopyText)}
+        title="Text manuell kopieren"
+        body="Das automatische Kopieren war auf diesem Geraet nicht moeglich. Du kannst den Text hier direkt markieren und kopieren."
+        label="Vorlage"
+        value={manualCopyText ?? ""}
+        readOnly
+        multiline
+        confirmLabel="Fertig"
+        cancelLabel="Schliessen"
+        onChange={() => {}}
+        onCancel={() => setManualCopyText(null)}
+        onConfirm={() => setManualCopyText(null)}
+      />
     </AppPageFrame>
   );
 }
 
-async function copyTextWithFallback(text: string, successMessage: string) {
+async function copyTextWithFallback(
+  text: string,
+  successMessage: string,
+  onSuccess: (message: string | null) => void,
+  onManualCopy: (text: string | null) => void
+) {
   try {
     await navigator.clipboard.writeText(text);
-    window.alert(successMessage);
+    onSuccess(successMessage);
   } catch (error) {
     console.error("Clipboard copy failed:", error);
-    window.prompt("Text kopieren:", text);
+    onManualCopy(text);
   }
 }
 
@@ -114,10 +182,10 @@ function FaqCard({
   answer: string;
 }) {
   return (
-    <div style={faqCard}>
+    <AppCard variant="soft" style={faqCard}>
       <div style={faqQuestion}>{question}</div>
       <div style={faqAnswer}>{answer}</div>
-    </div>
+    </AppCard>
   );
 }
 
@@ -125,77 +193,63 @@ const FAQS = [
   {
     question: "Wie starte ich ein Training?",
     answer:
-      "Öffne Training, tippe auf eine Trainingskarte und starte deinen aktuellen Plan direkt über den Tap-Bereich oder den Start-Button.",
+      "Oeffne Training, tippe auf eine Trainingskarte und starte deinen aktuellen Plan direkt ueber den Tap-Bereich oder den Start-Button.",
   },
   {
     question: "Wie bearbeite ich einen Plan?",
     answer:
-      "Öffne Pläne, wähle deinen aktiven Plan oder eine Kopie und bearbeite danach Tage, Übungen, Warm-up, Dehnen und Pausen direkt im Editor.",
+      "Oeffne Plaene, waehle deinen aktiven Plan oder eine Kopie und bearbeite danach Tage, Uebungen, Warm-up, Dehnen und Pausen direkt im Editor.",
   },
   {
     question: "Wie funktionieren Dehnen und Pausen?",
     answer:
-      "Dehn- und Pauseblöcke sind echte Bestandteile des Workouts. Sie erscheinen im Ablauf, in der Pause und später auch im Verlauf.",
+      "Dehn- und Pausebloecke sind echte Bestandteile des Workouts. Sie erscheinen im Ablauf, in der Pause und spaeter auch im Verlauf.",
   },
 ];
 
 const sectionCard = {
-  padding: "18px 16px",
-  borderRadius: 26,
-  background: "#ffffff",
-  border: "1px solid #e8eef6",
-  boxShadow: "0 22px 36px rgba(15, 23, 42, 0.06)",
+  padding: "16px 14px",
   display: "grid",
+  gap: 10,
+};
+
+const sectionHead = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
   gap: 12,
 };
 
 const sectionTitle = {
   fontSize: 20,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const faqCard = {
-  padding: "14px 14px 16px",
-  borderRadius: 20,
-  background: "#f8fafc",
-  border: "1px solid #e9eef6",
+  padding: "12px 12px 14px",
   display: "grid",
-  gap: 8,
+  gap: 6,
 };
 
 const faqQuestion = {
   fontSize: 16,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const faqAnswer = {
   fontSize: 14,
-  lineHeight: 1.5,
-  color: "#475569",
+  lineHeight: 1.45,
+  color: appPalette.textDefault,
 };
 
 const primaryButton = {
   width: "100%",
-  minHeight: 56,
-  borderRadius: 999,
-  background: "#111827",
-  color: "#ffffff",
-  fontSize: 16,
-  fontWeight: 800,
-  boxShadow: "0 16px 28px rgba(15, 23, 42, 0.16)",
 };
 
 const ghostButton = {
   width: "100%",
-  minHeight: 52,
-  borderRadius: 999,
-  background: "#ffffff",
-  color: "#334155",
-  fontSize: 15,
-  fontWeight: 700,
-  border: "1px solid #e2e8f0",
 };
 
 const infoRow = {
@@ -203,29 +257,22 @@ const infoRow = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: 12,
-  padding: "10px 0",
-  borderTop: "1px solid #eef2f7",
+  padding: "9px 0",
+  borderTop: `1px solid ${appPalette.borderSoft}`,
 };
 
 const infoLabel = {
   fontSize: 14,
   fontWeight: 700,
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const infoValue = {
   fontSize: 15,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const moreButton = {
   width: "100%",
-  minHeight: 50,
-  borderRadius: 999,
-  background: "#ffffff",
-  color: "#0f172a",
-  fontSize: 14,
-  fontWeight: 800,
-  border: "1px solid #dce5f0",
 };

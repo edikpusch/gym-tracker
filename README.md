@@ -20,7 +20,7 @@ Useful commands:
 
 1. `npm run build:capacitor`
 2. `npm run cap:sync`
-3. `npm run cap:open`
+3. `npm run cap:open:android`
 
 Notes:
 
@@ -30,20 +30,39 @@ Notes:
 
 ## iOS App (Capacitor)
 
-The project is now prepared so the same static export can also be synced into an iOS Capacitor shell.
+The project is prepared so the same static export can also be synced into an iOS Capacitor shell.
 
 Useful commands:
 
 1. `npm run build:capacitor`
-2. `npm run cap:sync`
-3. `npm run cap:open:ios`
+2. `npm run cap:add:ios`
+3. `npm run cap:sync`
+4. `npm run cap:open:ios`
 
 Notes:
 
+- `@capacitor/ios` and `@capacitor/preferences` are already part of the project dependencies
 - The iOS project will live in `ios/` after running `npx cap add ios` on a Mac
 - Building, signing, simulator testing and deployment for iPhone still require `macOS` with `Xcode`
 - Safe-area handling for notch and home-indicator is enabled in the app layout
 - Rest timer notifications now avoid Android-only channel settings when running on iOS
+- App data is prepared for native storage mirroring via Capacitor Preferences
+
+### Mac handoff steps
+
+When you have temporary access to a Mac:
+
+1. Clone or open this project on the Mac
+2. Run `npm install`
+3. Run `npm run build:capacitor`
+4. Run `npm run cap:add:ios` once
+5. Run `npm run cap:sync`
+6. Open Xcode with `npm run cap:open:ios`
+7. Configure signing, test on a real iPhone, then create a TestFlight/App Store build
+
+Detailed first-run checklist:
+
+- `docs/IOS_FIRST_RUN_CHECKLIST.md`
 
 ## Getting Started
 

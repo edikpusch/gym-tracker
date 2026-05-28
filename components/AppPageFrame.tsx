@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { SideMenu, type SideMenuItem } from "@/components/SideMenu";
 import { getAppPreferences, type MenuSide } from "@/lib/appPreferences";
+import { appChromeBackground, appPalette, uiTheme } from "@/lib/theme";
 
 type AppPageFrameProps = {
   activeKey:
@@ -24,15 +25,15 @@ type AppPageFrameProps = {
 };
 
 const menuItems: Array<Omit<SideMenuItem, "active">> = [
-  { key: "training", label: "Training", icon: "🏋️", href: "/index.html" },
-  { key: "plans", label: "Pläne", icon: "📋", href: "/index.html?sheet=plans" },
-  { key: "exercises", label: "Übungen", icon: "💪", href: "/index.html?sheet=exercises" },
-  { key: "history", label: "Verlauf", icon: "🕘", href: "/history/index.html" },
-  { key: "stats", label: "Statistiken", icon: "◔", href: "/statistics/index.html" },
-  { key: "progress", label: "Fortschritte", icon: "📈", href: "/progress/index.html" },
-  { key: "weight", label: "Gewicht", icon: "⚖️", href: "/weight/index.html" },
-  { key: "settings", label: "Einstellungen", icon: "⚙️", href: "/settings/index.html" },
-  { key: "support", label: "Hilfe & Support", icon: "❔", href: "/support/index.html" },
+  { key: "training", label: "Training", icon: "🏋️", section: "Training", href: "/index.html" },
+  { key: "plans", label: "Pläne", icon: "📋", section: "Training", href: "/index.html?sheet=plans" },
+  { key: "exercises", label: "Übungen", icon: "💪", section: "Training", href: "/exercise/index.html" },
+  { key: "history", label: "Verlauf", icon: "🕘", section: "Analyse", href: "/history/index.html" },
+  { key: "stats", label: "Statistiken", icon: "◔", section: "Analyse", href: "/statistics/index.html" },
+  { key: "progress", label: "Fortschritte", icon: "📈", section: "Analyse", href: "/progress/index.html" },
+  { key: "weight", label: "Gewicht", icon: "⚖️", section: "Analyse", href: "/weight/index.html" },
+  { key: "settings", label: "Einstellungen", icon: "⚙️", section: "System", href: "/settings/index.html" },
+  { key: "support", label: "Hilfe & Support", icon: "❔", section: "System", href: "/support/index.html" },
 ];
 
 export function AppPageFrame({
@@ -44,11 +45,7 @@ export function AppPageFrame({
   actions,
 }: AppPageFrameProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuSide, setMenuSide] = useState<MenuSide>("left");
-
-  useEffect(() => {
-    setMenuSide(getAppPreferences().menuSide);
-  }, []);
+  const [menuSide] = useState<MenuSide>(() => getAppPreferences().menuSide);
 
   return (
     <div style={screen}>
@@ -82,51 +79,55 @@ export function AppPageFrame({
 }
 
 const screen = {
-  minHeight: "100%",
-  background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 24%, #f8fafc 100%)",
+  minHeight: "100dvh",
+  background: appChromeBackground,
   boxSizing: "border-box" as const,
 };
 
 const shell = {
   width: "100%",
   maxWidth: 440,
+  minHeight: `calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))`,
   margin: "0 auto",
-  padding: "12px 12px calc(92px + env(safe-area-inset-bottom))",
+  padding: `calc(${uiTheme.spacing.small}px + env(safe-area-inset-top)) ${uiTheme.spacing.small + 4}px calc(98px + env(safe-area-inset-bottom))`,
   display: "flex",
   flexDirection: "column" as const,
-  gap: 8,
+  gap: uiTheme.spacing.small - 2,
+  boxSizing: "border-box" as const,
 };
 
 const headerRow = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  gap: 12,
+  gap: uiTheme.spacing.base - 4,
+  flexShrink: 0,
 };
 
 const brandPill = {
   display: "inline-flex",
   alignItems: "center",
-  minHeight: 38,
-  padding: "0 14px",
-  borderRadius: 999,
-  background: "#111827",
-  color: "#ffffff",
+  minHeight: uiTheme.touch.compact,
+  padding: `0 ${uiTheme.spacing.base - 2}px`,
+  borderRadius: uiTheme.radius.pill,
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
   fontSize: 14,
   fontWeight: 800,
-  boxShadow: "0 16px 30px rgba(15, 23, 42, 0.14)",
+  boxShadow: uiTheme.shadow.medium,
 };
 
 const headerActions = {
   display: "flex",
   alignItems: "center",
-  gap: 8,
+  gap: uiTheme.spacing.small,
 };
 
 const hero = {
   display: "grid",
-  gap: 3,
-  padding: "2px 2px 2px",
+  gap: uiTheme.spacing.micro - 1,
+  padding: "2px 2px 0",
+  flexShrink: 0,
 };
 
 const heroEyebrow = {
@@ -134,13 +135,13 @@ const heroEyebrow = {
   textTransform: "uppercase" as const,
   letterSpacing: 1.1,
   fontWeight: 800,
-  color: "#94a3b8",
+  color: appPalette.textSoft,
 };
 
 const heroTitle = {
   fontSize: 30,
   lineHeight: 1.02,
-  color: "#0f172a",
+  color: appPalette.textStrong,
   fontWeight: 800,
   margin: 0,
 };
@@ -148,12 +149,14 @@ const heroTitle = {
 const heroSubtitle = {
   fontSize: 13,
   lineHeight: 1.35,
-  color: "#64748b",
+  color: appPalette.textMuted,
   margin: 0,
 };
 
 const content = {
   display: "flex",
   flexDirection: "column" as const,
-  gap: 10,
+  flex: 1,
+  minHeight: 0,
+  gap: uiTheme.spacing.small + 2,
 };

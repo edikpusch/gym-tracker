@@ -4,32 +4,91 @@ import {
   getStretchCatalogSections,
   type ExerciseCatalogEntry,
 } from "@/lib/trainingCatalog";
+import {
+  findCustomExerciseEntry,
+  getCustomExerciseLibraryEntries,
+  type CustomExerciseLibraryEntry,
+} from "@/lib/exerciseLibrary";
 
-export const EXERCISE_LABELS: Record<string, string> = Object.fromEntries(
-  getExerciseCatalogSections()
-    .flatMap((section) => section.items)
-    .map((entry) => [entry.id, entry.label])
-);
+export function getExerciseLibrary() {
+  return getExerciseLibraryWithOptions();
+}
 
-export const EXERCISE_LIBRARY = getExerciseCatalogSections()
-  .flatMap((section) =>
-    section.items.map((entry) => ({
-      value: entry.id,
-      label: entry.label,
-      category: section.category,
-    }))
-  )
-  .sort((a, b) => a.label.localeCompare(b.label, "de-DE"));
+export function getExerciseLibraryWithOptions(options?: {
+  includeArchived?: boolean;
+}) {
+  const systemItems = getExerciseCatalogSections()
+    .flatMap((section) =>
+      section.items.map((entry) => ({
+        value: entry.id,
+        label: entry.label,
+        category: section.category,
+      }))
+    );
+  const customItems = getCustomExerciseLibraryEntries({
+    includeArchived: options?.includeArchived ?? false,
+  }).map((entry) => ({
+    value: entry.id,
+    label: entry.label,
+    category: entry.category,
+  }));
 
-export const EXERCISE_LIBRARY_GROUPS = getExerciseCatalogSections().map(
-  (section) => ({
+  return [...systemItems, ...customItems]
+    .sort((a, b) => a.label.localeCompare(b.label, "de-DE"));
+}
+
+export function getExerciseLibraryGroups() {
+  return getExerciseLibraryGroupsWithOptions();
+}
+
+export function getExerciseLibraryGroupsWithOptions(options?: {
+  includeArchived?: boolean;
+}) {
+  const systemGroups: Array<{
+    category: string;
+    items: Array<{ value: string; label: string }>;
+  }> = getExerciseCatalogSections().map((section) => ({
     category: section.category,
     items: section.items.map((entry) => ({
       value: entry.id,
       label: entry.label,
     })),
-  })
-);
+  }));
+  const customEntries = getCustomExerciseLibraryEntries({
+    includeArchived: options?.includeArchived ?? false,
+  });
+  const customGroups = new Map<string, CustomExerciseLibraryEntry[]>();
+  customEntries.forEach((entry) => {
+    const group = customGroups.get(entry.category) ?? [];
+    group.push(entry);
+    customGroups.set(entry.category, group);
+  });
+
+  customGroups.forEach((entries, category) => {
+    const existing = systemGroups.find((group) => group.category === category);
+    const customItems = entries.map((entry) => ({
+      value: entry.id,
+      label: entry.label,
+    }));
+
+    if (existing) {
+      existing.items = [...existing.items, ...customItems].sort((a, b) =>
+        a.label.localeCompare(b.label, "de-DE")
+      );
+      return;
+    }
+
+    systemGroups.push({
+      category,
+      items: customItems.sort((a, b) => a.label.localeCompare(b.label, "de-DE")),
+    });
+  });
+
+  return systemGroups.sort((a, b) => a.category.localeCompare(b.category, "de-DE"));
+}
+
+export const EXERCISE_LIBRARY = getExerciseLibrary();
+export const EXERCISE_LIBRARY_GROUPS = getExerciseLibraryGroups();
 
 export const STRETCH_LIBRARY = getStretchCatalogSections()
   .flatMap((section) =>
@@ -52,11 +111,17 @@ export const STRETCH_LIBRARY_GROUPS = getStretchCatalogSections().map(
 );
 
 export function getExerciseLabel(exercise: string) {
-  return EXERCISE_LABELS[exercise] ?? fallbackLabel(exercise);
+  return (
+    getExerciseCatalogEntry(exercise)?.label ??
+    findCustomExerciseEntry(exercise)?.label ??
+    fallbackLabel(exercise)
+  );
 }
 
-export function getExerciseMeta(exercise: string): ExerciseCatalogEntry | null {
-  return getExerciseCatalogEntry(exercise);
+export function getExerciseMeta(
+  exercise: string
+): ExerciseCatalogEntry | CustomExerciseLibraryEntry | null {
+  return getExerciseCatalogEntry(exercise) ?? findCustomExerciseEntry(exercise);
 }
 
 function fallbackLabel(value: string) {

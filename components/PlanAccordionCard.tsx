@@ -1,6 +1,10 @@
 "use client";
 
+import { AppBadge } from "@/components/ui/AppBadge";
+import { AppButton } from "@/components/ui/AppButton";
+import { AppCard } from "@/components/ui/AppCard";
 import type { TrainingPlan } from "@/lib/trainingPlans";
+import { appPalette, getSplitTheme, splitThemes, uiTheme, withAlpha } from "@/lib/theme";
 
 type PlanAccordionCardProps = {
   plan: TrainingPlan;
@@ -41,13 +45,27 @@ export function PlanAccordionCard({
   const theme = getPlanCardTheme(plan, isCustom);
 
   return (
-    <div
+    <AppCard
+      variant={expanded ? "theme" : "default"}
+      accentColor={theme.primary}
+      interactive
       style={{
         ...card,
-        borderColor: expanded ? theme.primary : "#e5ebf4",
+        borderColor: expanded
+          ? withAlpha(theme.primary, 0.24)
+          : isActive
+          ? withAlpha(theme.primary, 0.18)
+          : appPalette.borderSoft,
+        background: expanded
+          ? `linear-gradient(180deg, ${theme.soft} 0%, ${withAlpha(appPalette.surface, 0.98)} 100%)`
+          : isActive
+          ? `linear-gradient(180deg, ${withAlpha(theme.primary, 0.04)} 0%, ${withAlpha(appPalette.surface, 0.98)} 100%)`
+          : appPalette.surface,
         boxShadow: expanded
           ? `0 22px 42px ${theme.shadow}`
-          : "0 14px 28px rgba(15, 23, 42, 0.06)",
+          : isActive
+          ? `0 18px 34px ${withAlpha(theme.primary, 0.12)}`
+          : `0 14px 28px ${withAlpha(appPalette.surfaceDark, 0.06)}`,
       }}
     >
       <div
@@ -56,8 +74,10 @@ export function PlanAccordionCard({
         style={{
           ...cardToggle,
           background: expanded
-            ? `linear-gradient(180deg, ${theme.soft} 0%, rgba(255,255,255,0.96) 100%)`
-            : "#ffffff",
+            ? `linear-gradient(180deg, ${theme.soft} 0%, ${withAlpha(appPalette.surface, 0.96)} 100%)`
+            : isActive
+            ? `linear-gradient(180deg, ${withAlpha(theme.primary, 0.035)} 0%, ${appPalette.surface} 100%)`
+            : appPalette.surface,
         }}
         onClick={onToggle}
         onKeyDown={(event) => {
@@ -73,6 +93,7 @@ export function PlanAccordionCard({
               style={{
                 ...accentRail,
                 background: theme.primary,
+                boxShadow: `0 8px 18px ${withAlpha(theme.primary, 0.24)}`,
               }}
             />
             <div style={cardHeaderText}>
@@ -81,10 +102,10 @@ export function PlanAccordionCard({
             </div>
           </div>
           <div style={cardHeaderRight}>
-            {isActive ? <span style={activeBadge}>Aktiv</span> : null}
-            <span style={isCustom ? customBadge : templateBadge}>
+            {isActive ? <AppBadge variant="active">Aktiv</AppBadge> : null}
+            <AppBadge variant={isCustom ? "custom" : "template"}>
               {isCustom ? "Eigener Plan" : "Vorlage"}
-            </span>
+            </AppBadge>
             <button
               type="button"
               style={{
@@ -98,16 +119,24 @@ export function PlanAccordionCard({
                 }
                 onDelete();
               }}
-              aria-label={`Plan ${plan.name} loeschen`}
-              title={canDelete ? "Loeschen" : "Vorlage kann nicht geloescht werden"}
+              aria-label={`Plan ${plan.name} löschen`}
+              title={canDelete ? "Löschen" : "Vorlage kann nicht gelöscht werden"}
               disabled={!canDelete}
             >
               X
             </button>
-            <span style={{ ...chevron, color: theme.primary }}>{expanded ? "^" : "v"}</span>
+            <span
+              style={{
+                ...chevron,
+                color: theme.primary,
+                background: withAlpha(theme.primary, 0.08),
+                transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+              }}
+            >
+              ›
+            </span>
           </div>
         </div>
-
       </div>
 
       {expanded ? (
@@ -126,62 +155,60 @@ export function PlanAccordionCard({
                     <span style={dayName}>{day.name}</span>
                   </div>
                 </div>
-                <div style={dayPreview}>{day.preview || "Noch keine Uebungen"}</div>
+                <div style={dayPreview}>{day.preview || "Noch keine Übungen"}</div>
               </div>
             ))}
           </div>
 
           <div style={actionRow}>
             {!isActive ? (
-              <button
-                type="button"
-                style={primaryAction}
+              <AppButton
+                variant="primary"
                 onClick={(event) => {
                   event.stopPropagation();
                   onUse();
                 }}
               >
                 Verwenden
-              </button>
+              </AppButton>
             ) : null}
 
             {isCustom ? (
-              <button
-                type="button"
-                style={secondaryAction}
+              <AppButton
+                variant="secondary"
                 onClick={(event) => {
                   event.stopPropagation();
                   onEdit();
                 }}
               >
                 Bearbeiten
-              </button>
+              </AppButton>
             ) : null}
 
-            <button
-              type="button"
-              style={secondaryAction}
+            <AppButton
+              variant="secondary"
               onClick={(event) => {
                 event.stopPropagation();
                 onDuplicate();
               }}
             >
               Kopie
-            </button>
+            </AppButton>
 
             {isActive && startHref ? (
-              <a
+              <AppButton
                 href={startHref}
+                variant="secondary"
                 style={startAction}
                 onClick={(event) => event.stopPropagation()}
               >
                 Starten
-              </a>
+              </AppButton>
             ) : null}
           </div>
         </div>
       ) : null}
-    </div>
+    </AppCard>
   );
 }
 
@@ -191,62 +218,50 @@ function getPlanCardTheme(plan: TrainingPlan, isCustom: boolean) {
 
   if (isCustom) {
     return {
-      primary: "#111827",
-      soft: "rgba(239, 68, 68, 0.08)",
-      shadow: "rgba(17, 24, 39, 0.12)",
+      primary: appPalette.surfaceDark,
+      soft: withAlpha(appPalette.danger, 0.08),
+      shadow: withAlpha(appPalette.surfaceDark, 0.12),
     };
   }
 
   if (name.includes("2er")) {
     return {
-      primary: "#7c3aed",
-      soft: "rgba(124, 58, 237, 0.08)",
-      shadow: "rgba(124, 58, 237, 0.14)",
+      primary: splitThemes.pull.primary,
+      soft: withAlpha(splitThemes.pull.primary, 0.08),
+      shadow: withAlpha(splitThemes.pull.primary, 0.14),
     };
   }
 
   if (name.includes("3er")) {
     return {
-      primary: "#ea580c",
-      soft: "rgba(234, 88, 12, 0.08)",
-      shadow: "rgba(234, 88, 12, 0.14)",
+      primary: splitThemes.warmup.primary,
+      soft: withAlpha(splitThemes.warmup.primary, 0.08),
+      shadow: withAlpha(splitThemes.warmup.primary, 0.14),
     };
   }
 
   if (name.includes("push pull legs")) {
+    const pushTheme = getSplitTheme("push");
     return {
-      primary: "#dc2626",
-      soft: "rgba(220, 38, 38, 0.08)",
-      shadow: "rgba(220, 38, 38, 0.14)",
+      primary: pushTheme.primary,
+      soft: withAlpha(pushTheme.primary, 0.08),
+      shadow: withAlpha(pushTheme.primary, 0.14),
     };
   }
 
   return {
-    primary: firstDayColor || "#2563eb",
-    soft: hexToRgba(firstDayColor || "#2563eb", 0.08),
-    shadow: hexToRgba(firstDayColor || "#2563eb", 0.14),
+    primary: firstDayColor || splitThemes.pull.primary,
+    soft: withAlpha(firstDayColor || splitThemes.pull.primary, 0.08),
+    shadow: withAlpha(firstDayColor || splitThemes.pull.primary, 0.14),
   };
 }
 
-function hexToRgba(hex: string, alpha: number) {
-  const value = hex.replace("#", "");
-  if (value.length !== 6) {
-    return `rgba(37, 99, 235, ${alpha})`;
-  }
-
-  const r = Number.parseInt(value.slice(0, 2), 16);
-  const g = Number.parseInt(value.slice(2, 4), 16);
-  const b = Number.parseInt(value.slice(4, 6), 16);
-
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
 const card = {
-  borderRadius: 24,
-  border: "1.5px solid #e5ebf4",
-  background: "#ffffff",
+  borderRadius: uiTheme.radius.large - 4,
+  border: `1.5px solid ${appPalette.borderSoft}`,
+  background: appPalette.surface,
   overflow: "hidden" as const,
-  boxShadow: "0 14px 28px rgba(15, 23, 42, 0.06)",
+  boxShadow: `0 14px 28px ${withAlpha(appPalette.surfaceDark, 0.06)}`,
 };
 
 const cardToggle = {
@@ -257,6 +272,7 @@ const cardToggle = {
   textAlign: "left" as const,
   padding: "20px 20px 16px",
   cursor: "pointer",
+  transition: `background ${uiTheme.motion.quick}`,
 };
 
 const cardHeader = {
@@ -288,14 +304,14 @@ const cardHeaderText = {
 const cardName = {
   fontSize: 28,
   fontWeight: 850,
-  color: "#111827",
+  color: appPalette.textStrong,
   lineHeight: 1.02,
 };
 
 const cardSubtitle = {
   fontSize: 14,
   fontWeight: 700,
-  color: "#64748b",
+  color: appPalette.textMuted,
   lineHeight: 1.4,
 };
 
@@ -307,53 +323,14 @@ const cardHeaderRight = {
   justifyContent: "flex-end",
 };
 
-const activeBadge = {
-  minHeight: 34,
-  padding: "0 14px",
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 13,
-  fontWeight: 800,
-  background: "#111827",
-  color: "#ffffff",
-};
-
-const customBadge = {
-  minHeight: 34,
-  padding: "0 14px",
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 13,
-  fontWeight: 800,
-  background: "rgba(239, 68, 68, 0.1)",
-  color: "#b91c1c",
-};
-
-const templateBadge = {
-  minHeight: 34,
-  padding: "0 14px",
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 13,
-  fontWeight: 800,
-  background: "rgba(59, 130, 246, 0.1)",
-  color: "#2563eb",
-};
-
 const deleteButton = {
   width: 34,
   minWidth: 34,
   height: 34,
   borderRadius: 999,
-  border: "1px solid rgba(248, 113, 113, 0.34)",
-  background: "#fff7f7",
-  color: "#dc2626",
+  border: `1px solid ${withAlpha(appPalette.danger, 0.34)}`,
+  background: withAlpha(appPalette.danger, 0.08),
+  color: appPalette.danger,
   fontSize: 13,
   fontWeight: 900,
   cursor: "pointer",
@@ -365,16 +342,24 @@ const deleteButtonDisabled = {
 };
 
 const chevron = {
-  fontSize: 18,
+  width: 34,
+  minWidth: 34,
+  height: 34,
+  borderRadius: 999,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 22,
   fontWeight: 900,
   lineHeight: 1,
+  transition: `transform ${uiTheme.motion.quick}, background ${uiTheme.motion.quick}`,
 };
-
 
 const expandedContent = {
   display: "grid",
   gap: 16,
   padding: "0 20px 20px",
+  animation: "codex-fade-in 180ms ease",
 };
 
 const dayList = {
@@ -384,8 +369,8 @@ const dayList = {
 
 const dayRow = {
   borderRadius: 20,
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
+  background: appPalette.surfaceMuted,
+  border: `1px solid ${appPalette.borderDefault}`,
   padding: "14px 15px",
   display: "grid",
   gap: 6,
@@ -409,19 +394,19 @@ const dayDot = {
   width: 11,
   height: 11,
   borderRadius: 999,
-  boxShadow: "0 4px 10px rgba(15, 23, 42, 0.12)",
+  boxShadow: `0 4px 10px ${withAlpha(appPalette.surfaceDark, 0.12)}`,
 };
 
 const dayName = {
   fontSize: 15,
   fontWeight: 800,
-  color: "#1e293b",
+  color: appPalette.textStrong,
 };
 
 const dayPreview = {
   fontSize: 14,
   lineHeight: 1.5,
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const actionRow = {
@@ -430,41 +415,8 @@ const actionRow = {
   gap: 10,
 };
 
-const primaryAction = {
-  minHeight: 50,
-  padding: "0 18px",
-  borderRadius: 999,
-  border: "1px solid #111827",
-  background: "#111827",
-  color: "#ffffff",
-  fontSize: 15,
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const secondaryAction = {
-  minHeight: 50,
-  padding: "0 18px",
-  borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: 15,
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
 const startAction = {
-  minHeight: 50,
-  padding: "0 18px",
-  borderRadius: 999,
-  border: "1px solid rgba(22, 163, 74, 0.2)",
-  background: "rgba(22, 163, 74, 0.08)",
-  color: "#15803d",
-  fontSize: 15,
-  fontWeight: 800,
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
+  border: `1px solid ${withAlpha(appPalette.success, 0.2)}`,
+  background: withAlpha(appPalette.success, 0.08),
+  color: appPalette.success,
 };

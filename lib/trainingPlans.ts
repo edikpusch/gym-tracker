@@ -1,7 +1,20 @@
-import { getExerciseCatalogEntry, getSuggestedExerciseSetup } from "@/lib/trainingCatalog";
+import {
+  getStorageItem,
+  hasAppStorage,
+  setStorageItem,
+} from "@/lib/appStorage";
+import { ensureCustomExerciseLibraryEntry } from "@/lib/exerciseLibrary";
+import {
+  getExerciseCatalogEntry,
+  getSuggestedExerciseSetup,
+  resolveExerciseCatalogReference,
+} from "@/lib/trainingCatalog";
+import { getExerciseLabel } from "@/lib/workoutUi";
 import {
   buildExerciseBlock,
   buildWarmupBlock,
+  getDefaultWarmupSets,
+  materializeLegacyWarmupBlocks,
   type NotePlanBlock,
   syncDayBlocks,
   type PausePlanBlock,
@@ -41,6 +54,19 @@ export type TrainingPlan = {
 export const ACTIVE_PLAN_KEY = "gym-tracker-active-plan";
 export const CUSTOM_PLANS_KEY = "gym-tracker-custom-plans";
 export const DEFAULT_PLAN_ID = "my-plan";
+export const RECENT_PLAN_EXERCISES_KEY = "gym-tracker-recent-plan-exercises";
+
+export type DayQualityHint = {
+  tone: "good" | "info" | "warn";
+  label: string;
+  detail: string;
+};
+
+export type DayPlanQuality = {
+  level: "balanced" | "lean" | "dense";
+  summary: string;
+  hints: DayQualityHint[];
+};
 
 function normalizeTrainingExercise(exercise: TrainingExercise): TrainingExercise {
   return {
@@ -54,11 +80,15 @@ function normalizeTrainingExercise(exercise: TrainingExercise): TrainingExercise
 
 function normalizeTrainingDay(day: TrainingDay): TrainingDay {
   const exercises = day.exercises.map(normalizeTrainingExercise);
+  const migratedBlocks = materializeLegacyWarmupBlocks(
+    exercises,
+    day.blocks ?? []
+  );
 
   return {
     ...day,
     exercises,
-    blocks: syncDayBlocks(exercises, day.blocks),
+    blocks: syncDayBlocks(exercises, migratedBlocks),
   };
 }
 
@@ -86,7 +116,10 @@ function buildTemplateDayBlocks(
 
   exercises.forEach((exercise) => {
     const exerciseBlock = buildExerciseBlock(exercise);
-    const warmupBlock = buildWarmupBlock(exerciseBlock);
+    const warmupBlock = buildWarmupBlock({
+      ...exerciseBlock,
+      warmupSets: getDefaultWarmupSets(exerciseBlock.exerciseKind),
+    });
 
     if (warmupBlock) {
       blocks.push(warmupBlock);
@@ -827,10 +860,6 @@ const defaultTrainingPlans = defaultTrainingPlansSource
 
 export const trainingPlans = defaultTrainingPlans;
 
-function canUseStorage() {
-  return typeof window !== "undefined" && "localStorage" in window;
-}
-
 function isTrainingExercise(value: unknown): value is TrainingExercise {
   if (!value || typeof value !== "object") {
     return false;
@@ -881,12 +910,12 @@ function isTrainingPlan(value: unknown): value is TrainingPlan {
 }
 
 function readCustomPlans(): TrainingPlan[] {
-  if (!canUseStorage()) {
+  if (!hasAppStorage()) {
     return [];
   }
 
   try {
-    const raw = window.localStorage.getItem(CUSTOM_PLANS_KEY);
+    const raw = getStorageItem(CUSTOM_PLANS_KEY);
 
     if (!raw) {
       return [];
@@ -910,12 +939,12 @@ function readCustomPlans(): TrainingPlan[] {
 }
 
 function writeCustomPlans(plans: TrainingPlan[]) {
-  if (!canUseStorage()) {
+  if (!hasAppStorage()) {
     return;
   }
 
   try {
-    window.localStorage.setItem(
+    setStorageItem(
       CUSTOM_PLANS_KEY,
       JSON.stringify(plans.map(normalizeTrainingPlan))
     );
@@ -926,6 +955,29 @@ function writeCustomPlans(plans: TrainingPlan[]) {
 
 function clonePlan(plan: TrainingPlan): TrainingPlan {
   return normalizeTrainingPlan(JSON.parse(JSON.stringify(plan)) as TrainingPlan);
+}
+
+function rememberRecentPlanExerciseRef(exerciseRef: string) {
+  if (!hasAppStorage()) {
+    return;
+  }
+
+  const normalizedRef = resolveExerciseCatalogReference(exerciseRef) ?? exerciseRef;
+  if (!normalizedRef) {
+    return;
+  }
+
+  try {
+    const raw = getStorageItem(RECENT_PLAN_EXERCISES_KEY);
+    const current = raw ? (JSON.parse(raw) as unknown) : [];
+    const next = Array.isArray(current)
+      ? [normalizedRef, ...current.filter((entry) => typeof entry === "string" && entry !== normalizedRef)]
+      : [normalizedRef];
+
+    setStorageItem(RECENT_PLAN_EXERCISES_KEY, JSON.stringify(next.slice(0, 12)));
+  } catch (error) {
+    console.error("Recent plan exercises could not be written:", error);
+  }
 }
 
 function createCustomPlanId() {
@@ -952,33 +1004,198 @@ export function getPlanPreview(plan: TrainingPlan) {
   return plan.days.map((day) => day.name).join(" / ");
 }
 
+export function getRecentPlanExerciseRefs(limit = 8) {
+  if (!hasAppStorage()) {
+    return [] as string[];
+  }
+
+  try {
+    const raw = getStorageItem(RECENT_PLAN_EXERCISES_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter((entry): entry is string => typeof entry === "string")
+      .slice(0, Math.max(1, limit));
+  } catch (error) {
+    console.error("Recent plan exercises could not be read:", error);
+    return [];
+  }
+}
+
+export function getDayPlanQuality(dayBlocks: TrainingPlanBlock[]): DayPlanQuality {
+  const counts = {
+    exercise: dayBlocks.filter((block) => block.type === "exercise").length,
+    warmup: dayBlocks.filter((block) => block.type === "warmup").length,
+    stretch: dayBlocks.filter((block) => block.type === "stretch").length,
+    pause: dayBlocks.filter((block) => block.type === "pause").length,
+    note: dayBlocks.filter((block) => block.type === "note").length,
+  };
+
+  const durationMinutes = Math.max(
+    0,
+    Math.round(
+      dayBlocks.reduce((total, block) => {
+        if (block.type === "exercise") return total + block.sets * (block.restSeconds + 45);
+        if (block.type === "warmup") return total + block.rounds * (block.restSeconds + 30);
+        if (block.type === "stretch") return total + block.holdSeconds * block.rounds;
+        if (block.type === "pause") return total + block.seconds;
+        return total + 20;
+      }, 0) / 60
+    )
+  );
+
+  const hints: DayQualityHint[] = [];
+
+  if (counts.exercise === 0) {
+    hints.push({
+      tone: "warn",
+      label: "Noch kein Übungsblock",
+      detail: "Der Tag hat noch keinen eigentlichen Trainingskern. Starte am besten mit einer Übung oder einem schnellen Template.",
+    });
+  }
+
+  if (counts.exercise > 0 && counts.warmup === 0) {
+    hints.push({
+      tone: "info",
+      label: "Kein Warm-up-Block",
+      detail: "Für Technik und Einstieg kann ein expliziter Warm-up-Block vor der ersten Schlüsselübung helfen.",
+    });
+  }
+
+  if (counts.exercise > 0 && counts.stretch === 0) {
+    hints.push({
+      tone: "info",
+      label: "Keine Mobility-Phase",
+      detail: "Ein kurzer Stretch- oder Mobilitätsblock macht den Tag oft runder und klarer im Ablauf.",
+    });
+  }
+
+  if (counts.pause > counts.exercise) {
+    hints.push({
+      tone: "warn",
+      label: "Viele Pausenblöcke",
+      detail: "Der Tag enthält mehr Pausenlogik als Übungen. Prüfe, ob davon alles wirklich sichtbar im Plan stehen muss.",
+    });
+  }
+
+  if (durationMinutes >= 95) {
+    hints.push({
+      tone: "warn",
+      label: "Langer Trainingstag",
+      detail: `Mit ca. ${durationMinutes} Minuten wird der Tag recht dicht. Prüfe, ob du Volumen oder Pausen schlanker staffeln willst.`,
+    });
+  }
+
+  if (counts.exercise >= 3 && counts.warmup > 0 && counts.stretch > 0 && counts.pause <= counts.exercise && durationMinutes > 0 && durationMinutes < 95) {
+    hints.unshift({
+      tone: "good",
+      label: "Runder Ablauf",
+      detail: "Der Tag verbindet Übung, Vorbereitung und Struktur bereits ziemlich ausgewogen.",
+    });
+  }
+
+  const level: DayPlanQuality["level"] =
+    hints.some((hint) => hint.tone === "warn")
+      ? "dense"
+      : hints.some((hint) => hint.tone === "info")
+      ? "lean"
+      : "balanced";
+
+  const summary =
+    level === "balanced"
+      ? "Ausgewogener Trainingstag"
+      : level === "dense"
+      ? "Tag braucht etwas Feinschliff"
+      : "Solide Basis mit Luft nach oben";
+
+  return {
+    level,
+    summary,
+    hints: hints.slice(0, 3),
+  };
+}
+
+export type ExercisePlanUsage = {
+  planId: string;
+  planName: string;
+  dayId: string;
+  dayName: string;
+  slot: PlanRouteSlot;
+  blockCount: number;
+};
+
+export function getExercisePlanUsage(exerciseRef: string): ExercisePlanUsage[] {
+  const normalizedRef =
+    resolveExerciseCatalogReference(exerciseRef) ?? exerciseRef;
+
+  return getAllTrainingPlans()
+    .flatMap((plan) =>
+      plan.days.flatMap((day) => {
+        const matchingExercises = day.exercises.filter((exercise) => {
+          const exerciseReference =
+            resolveExerciseCatalogReference(exercise.name) ?? exercise.name;
+          return exerciseReference === normalizedRef;
+        });
+
+        if (matchingExercises.length === 0) {
+          return [];
+        }
+
+        return [
+          {
+            planId: plan.id,
+            planName: plan.name,
+            dayId: day.id,
+            dayName: day.name,
+            slot: day.slot,
+            blockCount: matchingExercises.length,
+          } satisfies ExercisePlanUsage,
+        ];
+      })
+    )
+    .sort((a, b) => {
+      if (a.planName !== b.planName) {
+        return a.planName.localeCompare(b.planName, "de-DE");
+      }
+
+      return a.dayName.localeCompare(b.dayName, "de-DE");
+    });
+}
+
 export function getActivePlanId() {
-  if (typeof window === "undefined") {
+  if (!hasAppStorage()) {
     return DEFAULT_PLAN_ID;
   }
 
-  const stored = window.localStorage.getItem(ACTIVE_PLAN_KEY);
+  const stored = getStorageItem(ACTIVE_PLAN_KEY);
   return getTrainingPlan(stored).id;
 }
 
 export function setActivePlanId(planId: string) {
-  if (typeof window === "undefined") {
+  if (!hasAppStorage()) {
     return;
   }
 
-  window.localStorage.setItem(ACTIVE_PLAN_KEY, getTrainingPlan(planId).id);
+  setStorageItem(ACTIVE_PLAN_KEY, getTrainingPlan(planId).id);
 }
 
 export function ensureActivePlanSelection() {
-  if (!canUseStorage()) {
+  if (!hasAppStorage()) {
     return;
   }
 
-  const stored = window.localStorage.getItem(ACTIVE_PLAN_KEY);
+  const stored = getStorageItem(ACTIVE_PLAN_KEY);
   const valid = getAllTrainingPlans().some((plan) => plan.id === stored);
 
   if (!valid) {
-    window.localStorage.setItem(ACTIVE_PLAN_KEY, DEFAULT_PLAN_ID);
+    setStorageItem(ACTIVE_PLAN_KEY, DEFAULT_PLAN_ID);
   }
 }
 
@@ -1036,12 +1253,12 @@ export function createTrainingPlan(draft: NewTrainingPlanDraft) {
         day.slot ?? (index === 0 ? "push" : index === 1 ? "pull" : "mixed");
       const color = day.color ?? DEFAULT_DAY_COLORS[slot];
       const exercises = day.exercises.map((exercise) => {
-        const normalized = normalizeExerciseDraft(exercise);
-        const suggested = getSuggestedExerciseSetup(normalized.name);
+        const { normalized, reference } = ensureExerciseReference(exercise);
+        const suggested = getSuggestedExerciseSetup(reference);
 
         return {
-          id: createExerciseId(normalized.name),
-          name: normalized.name,
+          id: createExerciseId(reference),
+          name: reference,
           sets: normalized.sets || suggested.sets,
           minReps: normalized.minReps || suggested.minReps,
           maxReps: normalized.maxReps || suggested.maxReps,
@@ -1074,10 +1291,10 @@ export function deleteTrainingPlan(planId: string) {
 
   writeCustomPlans(nextPlans);
 
-  if (canUseStorage()) {
-    const activePlanId = window.localStorage.getItem(ACTIVE_PLAN_KEY);
+  if (hasAppStorage()) {
+    const activePlanId = getStorageItem(ACTIVE_PLAN_KEY);
     if (activePlanId === planId) {
-      window.localStorage.setItem(ACTIVE_PLAN_KEY, DEFAULT_PLAN_ID);
+      setStorageItem(ACTIVE_PLAN_KEY, DEFAULT_PLAN_ID);
     }
   }
 
@@ -1204,6 +1421,32 @@ function normalizeExerciseDraft(draft: ExerciseDraft) {
   };
 }
 
+function ensureExerciseReference(draft: ExerciseDraft) {
+  const normalized = normalizeExerciseDraft(draft);
+  const existing = getExerciseCatalogEntry(normalized.name);
+  if (existing) {
+    return {
+      normalized,
+      reference: existing.id,
+    };
+  }
+
+  const customEntry = ensureCustomExerciseLibraryEntry({
+    value: normalized.name,
+    defaults: {
+      sets: normalized.sets,
+      minReps: normalized.minReps,
+      maxReps: normalized.maxReps,
+      restSeconds: normalized.restSeconds,
+    },
+  });
+
+  return {
+    normalized,
+    reference: customEntry?.id ?? normalized.name,
+  };
+}
+
 function createExerciseId(name: string) {
   return `${name}-${Date.now()}`;
 }
@@ -1251,6 +1494,102 @@ function insertBlocksAfter(
   ];
 }
 
+function getLinkedBlockGroup(
+  blocks: TrainingPlanBlock[],
+  blockId: string
+) {
+  const index = blocks.findIndex((block) => block.id === blockId);
+  if (index === -1) {
+    return null;
+  }
+
+  const block = blocks[index];
+  if (block.type === "exercise") {
+    const previous = blocks[index - 1];
+    if (
+      previous?.type === "warmup" &&
+      previous.parentExerciseId === block.exerciseId
+    ) {
+      return {
+        start: index - 1,
+        end: index,
+        blocks: [previous, block],
+      };
+    }
+  }
+
+  if (block.type === "warmup") {
+    const next = blocks[index + 1];
+    if (
+      next?.type === "exercise" &&
+      next.exerciseId === block.parentExerciseId
+    ) {
+      return {
+        start: index,
+        end: index + 1,
+        blocks: [block, next],
+      };
+    }
+  }
+
+  return {
+    start: index,
+    end: index,
+    blocks: [block],
+  };
+}
+
+function moveBlockGroupToIndex(
+  blocks: TrainingPlanBlock[],
+  blockId: string,
+  targetIndex: number
+) {
+  const group = getLinkedBlockGroup(blocks, blockId);
+  if (!group) {
+    return null;
+  }
+
+  const remainingBlocks = blocks.filter(
+    (_, index) => index < group.start || index > group.end
+  );
+  const insertIndex =
+    targetIndex <= group.start
+      ? targetIndex
+      : targetIndex > group.end
+        ? targetIndex - group.blocks.length
+        : group.start;
+  const boundedInsertIndex = Math.max(
+    0,
+    Math.min(insertIndex, remainingBlocks.length)
+  );
+
+  return [
+    ...remainingBlocks.slice(0, boundedInsertIndex),
+    ...group.blocks,
+    ...remainingBlocks.slice(boundedInsertIndex),
+  ];
+}
+
+function moveBlockGroupRelative(
+  blocks: TrainingPlanBlock[],
+  blockId: string,
+  targetBlockId: string,
+  position: "before" | "after"
+) {
+  const group = getLinkedBlockGroup(blocks, blockId);
+  if (!group) {
+    return null;
+  }
+
+  const targetIndex = blocks.findIndex((block) => block.id === targetBlockId);
+  if (targetIndex === -1) {
+    return null;
+  }
+
+  const insertionIndex = position === "before" ? targetIndex : targetIndex + 1;
+  return moveBlockGroupToIndex(blocks, blockId, insertionIndex);
+}
+
 export function addTrainingExercise(
   planId: string,
   dayId: string,
@@ -1268,9 +1607,11 @@ export function addTrainingExercise(
     }
 
     const blocks = day.blocks ?? syncDayBlocks(day.exercises);
+    const { normalized, reference } = ensureExerciseReference(draft);
     const exercise = {
-      id: createExerciseId(draft.name),
-      ...normalizeExerciseDraft(draft),
+      id: createExerciseId(reference),
+      ...normalized,
+      name: reference,
     };
     const insertAfterExerciseId =
       blocks.find(
@@ -1295,16 +1636,10 @@ export function addTrainingExercise(
 
     const syncedBlocks = syncDayBlocks(day.exercises, blocks);
     const insertedBlocks = syncedBlocks.filter(
-      (block) =>
-        (block.type === "exercise" && block.exerciseId === exercise.id) ||
-        (block.type === "warmup" && block.parentExerciseId === exercise.id)
+      (block) => block.type === "exercise" && block.exerciseId === exercise.id
     );
     const remainingBlocks = syncedBlocks.filter(
-      (block) =>
-        !(
-          (block.type === "exercise" && block.exerciseId === exercise.id) ||
-          (block.type === "warmup" && block.parentExerciseId === exercise.id)
-        )
+      (block) => !(block.type === "exercise" && block.exerciseId === exercise.id)
     );
 
     day.blocks = insertBlocksAfter(
@@ -1312,6 +1647,7 @@ export function addTrainingExercise(
       insertedBlocks,
       insertAfterBlockId
     );
+    rememberRecentPlanExerciseRef(reference);
     return plan;
   });
 }
@@ -1339,10 +1675,37 @@ export function updateTrainingExercise(
       return null;
     }
 
+    const { normalized, reference } = ensureExerciseReference(draft);
     day.exercises[exerciseIndex] = {
       ...day.exercises[exerciseIndex],
-      ...normalizeExerciseDraft(draft),
+      ...normalized,
+      name: reference,
     };
+
+    const nextLabel = getExerciseCatalogEntry(reference)?.label ?? draft.name;
+    const blocks = day.blocks ?? syncDayBlocks(day.exercises);
+    const exerciseBlock = blocks.find(
+      (block): block is Extract<TrainingPlanBlock, { type: "exercise" }> =>
+        block.type === "exercise" && block.exerciseId === exerciseId
+    );
+    if (exerciseBlock) {
+      exerciseBlock.label = nextLabel;
+      exerciseBlock.exerciseKind =
+        getExerciseCatalogEntry(reference)?.kind ?? exerciseBlock.exerciseKind;
+      exerciseBlock.category =
+        getExerciseCatalogEntry(reference)?.category ?? exerciseBlock.category;
+    }
+
+    const warmupBlock = blocks.find(
+      (block): block is Extract<TrainingPlanBlock, { type: "warmup" }> =>
+        block.type === "warmup" && block.parentExerciseId === exerciseId
+    );
+    if (warmupBlock) {
+      warmupBlock.label = `${nextLabel} Aufwärmen`;
+    }
+
+    day.blocks = blocks;
+    rememberRecentPlanExerciseRef(reference);
     return plan;
   });
 }
@@ -1359,6 +1722,15 @@ export function removeTrainingExercise(
     }
 
     day.exercises = day.exercises.filter((exercise) => exercise.id !== exerciseId);
+    if (day.blocks) {
+      day.blocks = day.blocks.filter(
+        (block) =>
+          !(
+            (block.type === "exercise" && block.exerciseId === exerciseId) ||
+            (block.type === "warmup" && block.parentExerciseId === exerciseId)
+          )
+      );
+    }
     return plan;
   });
 }
@@ -1396,8 +1768,104 @@ export function updateWarmupBlock(
     if (warmupBlock && warmupBlock.type === "warmup") {
       warmupBlock.rounds = rounds;
       warmupBlock.restSeconds = restSeconds;
+    } else if (rounds > 0) {
+      const fallbackLabel = getExerciseCatalogEntry(
+        day.exercises.find((entry) => entry.id === exerciseId)?.name ?? ""
+      )?.label;
+      const nextWarmupBlock = {
+        id: `warmup:${exerciseId}`,
+        type: "warmup" as const,
+        label: fallbackLabel ? `${fallbackLabel} Aufwärmen` : "Warm-up",
+        parentExerciseId: exerciseId,
+        rounds,
+        restSeconds,
+      };
+      const exerciseIndex = blocks.findIndex(
+        (block) => block.type === "exercise" && block.exerciseId === exerciseId
+      );
+      if (exerciseIndex >= 0) {
+        blocks.splice(exerciseIndex, 0, nextWarmupBlock);
+      } else {
+        blocks.push(nextWarmupBlock);
+      }
     }
 
+    day.blocks = blocks;
+    return plan;
+  });
+}
+
+export function addWarmupBlock(
+  planId: string,
+  dayId: string,
+  draft: {
+    exerciseId: string;
+    rounds: number;
+    restSeconds: number;
+  },
+  insertAfterBlockId?: string | null
+) {
+  const rounds = Math.max(0, Math.round(Number(draft.rounds) || 0));
+  const restSeconds = Math.max(15, Math.round(Number(draft.restSeconds) || 45));
+
+  return updateCustomPlan(planId, (plan) => {
+    const day = plan.days.find((entry) => entry.id === dayId);
+    if (!day) {
+      return null;
+    }
+
+    const blocks = [...(day.blocks ?? syncDayBlocks(day.exercises))];
+    const exercise = day.exercises.find((entry) => entry.id === draft.exerciseId);
+    if (!exercise) {
+      return null;
+    }
+
+    const exerciseBlock = blocks.find(
+      (block): block is Extract<TrainingPlanBlock, { type: "exercise" }> =>
+        block.type === "exercise" && block.exerciseId === draft.exerciseId
+    );
+    if (!exerciseBlock) {
+      return null;
+    }
+
+    exerciseBlock.warmupSets = rounds;
+
+    const existingIndex = blocks.findIndex(
+      (block) => block.type === "warmup" && block.parentExerciseId === draft.exerciseId
+    );
+    const existingBlock =
+      existingIndex >= 0 && blocks[existingIndex]?.type === "warmup"
+        ? blocks[existingIndex]
+        : null;
+
+    const entry = getExerciseCatalogEntry(exercise.name);
+    const warmupBlock = {
+      id: existingBlock?.id ?? `warmup:${draft.exerciseId}`,
+      type: "warmup" as const,
+      label: `${entry?.label ?? exercise.name} Aufwärmen`,
+      parentExerciseId: draft.exerciseId,
+      rounds,
+      restSeconds,
+    };
+
+    if (existingIndex >= 0) {
+      blocks.splice(existingIndex, 1);
+    }
+
+    const explicitAnchorIndex = insertAfterBlockId
+      ? blocks.findIndex((block) => block.id === insertAfterBlockId)
+      : -1;
+    const exerciseIndex = blocks.findIndex(
+      (block) => block.type === "exercise" && block.exerciseId === draft.exerciseId
+    );
+
+    const insertIndex =
+      explicitAnchorIndex >= 0
+        ? Math.min(explicitAnchorIndex + 1, blocks.length)
+        : exerciseIndex >= 0
+          ? exerciseIndex
+          : blocks.length;
+    blocks.splice(insertIndex, 0, warmupBlock);
     day.blocks = blocks;
     return plan;
   });
@@ -1637,6 +2105,36 @@ export function removeDayBlock(
     }
 
     const blocks = day.blocks ?? syncDayBlocks(day.exercises);
+    const targetBlock = blocks.find((block) => block.id === blockId);
+    if (!targetBlock) {
+      return plan;
+    }
+
+    if (targetBlock.type === "exercise") {
+      day.exercises = day.exercises.filter(
+        (exercise) => exercise.id !== targetBlock.exerciseId
+      );
+      day.blocks = blocks.filter(
+        (block) =>
+          !(
+            (block.type === "exercise" &&
+              block.exerciseId === targetBlock.exerciseId) ||
+            (block.type === "warmup" &&
+              block.parentExerciseId === targetBlock.exerciseId)
+          )
+      );
+      return plan;
+    }
+
+    if (targetBlock.type === "warmup") {
+      day.blocks = blocks.filter((block) => block.id !== blockId).map((block) =>
+        block.type === "exercise" && block.exerciseId === targetBlock.parentExerciseId
+          ? { ...block, warmupSets: 0 }
+          : block
+      );
+      return plan;
+    }
+
     day.blocks = blocks.filter((block) => block.id !== blockId);
     return plan;
   });
@@ -1655,20 +2153,87 @@ export function moveDayBlock(
     }
 
     const blocks = [...(day.blocks ?? syncDayBlocks(day.exercises))];
-    const index = blocks.findIndex((block) => block.id === blockId);
+    const group = getLinkedBlockGroup(blocks, blockId);
+    if (!group) {
+      return null;
+    }
 
+    const remainingBlocks = blocks.filter(
+      (_, index) => index < group.start || index > group.end
+    );
+    const insertIndex =
+      direction === "up" ? group.start - 1 : group.start + 1;
+
+    if (insertIndex < 0 || insertIndex > remainingBlocks.length) {
+      return plan;
+    }
+
+    day.blocks = [
+      ...remainingBlocks.slice(0, insertIndex),
+      ...group.blocks,
+      ...remainingBlocks.slice(insertIndex),
+    ];
+    return plan;
+  });
+}
+
+export function moveDayBlockToIndex(
+  planId: string,
+  dayId: string,
+  blockId: string,
+  targetIndex: number
+) {
+  return updateCustomPlan(planId, (plan) => {
+    const day = plan.days.find((entry) => entry.id === dayId);
+    if (!day) {
+      return null;
+    }
+
+    const blocks = [...(day.blocks ?? syncDayBlocks(day.exercises))];
+    const index = blocks.findIndex((block) => block.id === blockId);
     if (index === -1) {
       return null;
     }
 
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= blocks.length) {
+    const reorderedBlocks = moveBlockGroupToIndex(blocks, blockId, targetIndex);
+    if (!reorderedBlocks) {
+      return null;
+    }
+
+    day.blocks = reorderedBlocks;
+    return plan;
+  });
+}
+
+export function moveDayBlockRelative(
+  planId: string,
+  dayId: string,
+  blockId: string,
+  targetBlockId: string,
+  position: "before" | "after"
+) {
+  return updateCustomPlan(planId, (plan) => {
+    const day = plan.days.find((entry) => entry.id === dayId);
+    if (!day) {
+      return null;
+    }
+
+    const blocks = [...(day.blocks ?? syncDayBlocks(day.exercises))];
+    if (blockId === targetBlockId) {
       return plan;
     }
 
-    const [moved] = blocks.splice(index, 1);
-    blocks.splice(targetIndex, 0, moved);
-    day.blocks = blocks;
+    const reorderedBlocks = moveBlockGroupRelative(
+      blocks,
+      blockId,
+      targetBlockId,
+      position
+    );
+    if (!reorderedBlocks) {
+      return null;
+    }
+
+    day.blocks = reorderedBlocks;
     return plan;
   });
 }
@@ -1695,6 +2260,10 @@ export function duplicateDayBlock(
       const sourceExercise = day.exercises.find(
         (exercise) => exercise.id === sourceBlock.exerciseId
       );
+      const sourceWarmupBlock = blocks.find(
+        (block): block is Extract<TrainingPlanBlock, { type: "warmup" }> =>
+          block.type === "warmup" && block.parentExerciseId === sourceBlock.exerciseId
+      );
 
       if (!sourceExercise) {
         return null;
@@ -1708,21 +2277,27 @@ export function duplicateDayBlock(
       day.exercises.push(duplicatedExercise);
 
       const syncedBlocks = syncDayBlocks(day.exercises, blocks);
-      const duplicatedBlocks = syncedBlocks.filter(
+      const duplicatedExerciseBlocks = syncedBlocks.filter(
         (block) =>
-          (block.type === "exercise" &&
-            block.exerciseId === duplicatedExercise.id) ||
-          (block.type === "warmup" &&
-            block.parentExerciseId === duplicatedExercise.id)
+          block.type === "exercise" && block.exerciseId === duplicatedExercise.id
       );
+      const duplicatedWarmupBlocks = sourceWarmupBlock
+        ? [
+            {
+              ...sourceWarmupBlock,
+              id: `warmup:${duplicatedExercise.id}`,
+              parentExerciseId: duplicatedExercise.id,
+              label: `${getExerciseLabel(duplicatedExercise.name)} Aufwärmen`,
+            } satisfies Extract<TrainingPlanBlock, { type: "warmup" }>,
+          ]
+        : [];
+      const duplicatedBlocks = [
+        ...duplicatedWarmupBlocks,
+        ...duplicatedExerciseBlocks,
+      ];
       const remainingBlocks = syncedBlocks.filter(
         (block) =>
-          !(
-            (block.type === "exercise" &&
-              block.exerciseId === duplicatedExercise.id) ||
-            (block.type === "warmup" &&
-              block.parentExerciseId === duplicatedExercise.id)
-          )
+          !(block.type === "exercise" && block.exerciseId === duplicatedExercise.id)
       );
 
       day.blocks = insertBlocksAfter(remainingBlocks, duplicatedBlocks, blockId);

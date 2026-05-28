@@ -1,8 +1,14 @@
+"use client";
+
 import { Capacitor } from "@capacitor/core";
 import { LocalNotifications } from "@capacitor/local-notifications";
 
+import { getAppPreferences } from "@/lib/appPreferences";
+
 const REST_NOTIFICATION_ID = 42001;
-const REST_CHANNEL_ID = "rest-timer";
+const REST_CHANNEL_ID_SOUND = "rest-timer-sound-v2";
+const REST_CHANNEL_ID_SILENT = "rest-timer-silent-v2";
+const REST_WARNING_LEAD_MS = 10_000;
 
 let channelReady = false;
 
@@ -34,11 +40,19 @@ async function ensureChannel() {
   }
 
   await LocalNotifications.createChannel({
-    id: REST_CHANNEL_ID,
-    name: "Pausen-Timer",
-    description: "Benachrichtigungen für das Ende deiner Satzpause.",
-    sound: "rest_chime.wav",
+    id: REST_CHANNEL_ID_SOUND,
+    name: "Pausen-Timer Signal",
+    description: "Kräftiges Signal 10 Sekunden vor dem Ende deiner Satzpause.",
     importance: 5,
+    visibility: 1,
+    vibration: true,
+  });
+
+  await LocalNotifications.createChannel({
+    id: REST_CHANNEL_ID_SILENT,
+    name: "Pausen-Timer leise",
+    description: "Stille Benachrichtigungen 10 Sekunden vor dem Ende deiner Satzpause.",
+    importance: 4,
     visibility: 1,
     vibration: true,
   });
@@ -48,7 +62,7 @@ async function ensureChannel() {
 
 export async function scheduleRestNotification(
   exerciseLabel: string,
-  seconds: number
+  restEndsAtMs: number
 ) {
   if (!isNativeApp()) {
     return;
@@ -62,12 +76,20 @@ export async function scheduleRestNotification(
   await ensureChannel();
   await clearRestNotification();
 
+  const triggerAtMs = restEndsAtMs - REST_WARNING_LEAD_MS;
+
+  if (triggerAtMs <= Date.now()) {
+    return;
+  }
+
+  const withTone = getAppPreferences().getReadyTone;
+
   const notification = {
     id: REST_NOTIFICATION_ID,
-    title: "Pause beendet",
-    body: `${exerciseLabel} ist wieder dran.`,
+    title: "Pause endet in 10 Sek.",
+    body: `${exerciseLabel} ist gleich wieder dran.`,
     schedule: {
-      at: new Date(Date.now() + seconds * 1000),
+      at: new Date(triggerAtMs),
       allowWhileIdle: true,
     },
     ongoing: false,
@@ -79,7 +101,7 @@ export async function scheduleRestNotification(
       isAndroid()
         ? {
             ...notification,
-            channelId: REST_CHANNEL_ID,
+            channelId: withTone ? REST_CHANNEL_ID_SOUND : REST_CHANNEL_ID_SILENT,
           }
         : notification,
     ],

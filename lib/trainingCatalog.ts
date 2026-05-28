@@ -1,3 +1,8 @@
+import {
+  findCustomExerciseEntry,
+  getCustomExerciseCatalogEntries,
+} from "@/lib/exerciseLibrary";
+
 export type ExerciseKind = "compound" | "isolation" | "stretch";
 export type ExerciseCategory =
   | "Brust"
@@ -38,11 +43,34 @@ export const EXERCISE_CATALOG: ExerciseCatalogEntry[] = [
   { id: "cable_fly", label: "Cable Fly", category: "Brust", kind: "isolation" },
   { id: "pec_deck", label: "Pec Deck", category: "Brust", kind: "isolation" },
   { id: "smith_benchpress", label: "Smith-Bankdrücken", category: "Brust", kind: "compound" },
-  { id: "incline_chest_press", label: "Schräge Chest Press", category: "Brust", kind: "compound" },
-  { id: "pushups", label: "Push-ups", category: "Brust", kind: "compound", supportsAssistanceWeight: true },
-  { id: "dips", label: "Dips", category: "Brust", kind: "compound", supportsAssistanceWeight: true },
+  {
+    id: "incline_chest_press",
+    label: "Schräge Chest Press",
+    category: "Brust",
+    kind: "compound",
+  },
+  {
+    id: "pushups",
+    label: "Push-ups",
+    category: "Brust",
+    kind: "compound",
+    supportsAssistanceWeight: true,
+  },
+  {
+    id: "dips",
+    label: "Dips",
+    category: "Brust",
+    kind: "compound",
+    supportsAssistanceWeight: true,
+  },
 
-  { id: "pullups", label: "Klimmzüge", category: "Rücken", kind: "compound", supportsAssistanceWeight: true },
+  {
+    id: "pullups",
+    label: "Klimmzüge",
+    category: "Rücken",
+    kind: "compound",
+    supportsAssistanceWeight: true,
+  },
   {
     id: "pullups_wide",
     label: "Klimmzüge breit",
@@ -50,22 +78,48 @@ export const EXERCISE_CATALOG: ExerciseCatalogEntry[] = [
     kind: "compound",
     supportsAssistanceWeight: true,
   },
-  { id: "chinups", label: "Chin-ups", category: "Rücken", kind: "compound", supportsAssistanceWeight: true },
+  {
+    id: "chinups",
+    label: "Chin-ups",
+    category: "Rücken",
+    kind: "compound",
+    supportsAssistanceWeight: true,
+  },
   { id: "rows", label: "Rudern", category: "Rücken", kind: "compound" },
   { id: "seated_row", label: "Kabelrudern", category: "Rücken", kind: "compound" },
-  { id: "chest_supported_row", label: "Chest Supported Row", category: "Rücken", kind: "compound" },
+  {
+    id: "chest_supported_row",
+    label: "Chest Supported Row",
+    category: "Rücken",
+    kind: "compound",
+  },
   { id: "t_bar_row", label: "T-Bar Row", category: "Rücken", kind: "compound" },
   { id: "machine_row", label: "Maschinenrudern", category: "Rücken", kind: "compound" },
   { id: "latpulldown", label: "Latzug", category: "Rücken", kind: "compound" },
   { id: "single_arm_row", label: "Einarmiges Rudern", category: "Rücken", kind: "compound" },
-  { id: "close_grip_latpulldown", label: "Enger Latzug", category: "Rücken", kind: "compound" },
+  {
+    id: "close_grip_latpulldown",
+    label: "Enger Latzug",
+    category: "Rücken",
+    kind: "compound",
+  },
   { id: "back_extension", label: "Back Extension", category: "Rücken", kind: "isolation" },
 
   { id: "shoulderpress", label: "Schulterdrücken", category: "Schultern", kind: "compound" },
-  { id: "machine_shoulder_press", label: "Maschinen-Schulterdrücken", category: "Schultern", kind: "compound" },
+  {
+    id: "machine_shoulder_press",
+    label: "Maschinen-Schulterdrücken",
+    category: "Schultern",
+    kind: "compound",
+  },
   { id: "rear_delt", label: "Hintere Schulter", category: "Schultern", kind: "isolation" },
   { id: "lateral_raise", label: "Seitheben", category: "Schultern", kind: "isolation" },
-  { id: "machine_lateral_raise", label: "Maschinen-Seitheben", category: "Schultern", kind: "isolation" },
+  {
+    id: "machine_lateral_raise",
+    label: "Maschinen-Seitheben",
+    category: "Schultern",
+    kind: "isolation",
+  },
   { id: "front_raise", label: "Frontheben", category: "Schultern", kind: "isolation" },
   { id: "face_pulls", label: "Face Pulls", category: "Schultern", kind: "isolation" },
   { id: "reverse_fly", label: "Reverse Fly", category: "Schultern", kind: "isolation" },
@@ -75,10 +129,26 @@ export const EXERCISE_CATALOG: ExerciseCatalogEntry[] = [
   { id: "hammer_curls", label: "Hammer Curls", category: "Arme", kind: "isolation" },
   { id: "preacher_curl", label: "Preacher Curl", category: "Arme", kind: "isolation" },
   { id: "triceps", label: "Trizeps", category: "Arme", kind: "isolation" },
-  { id: "triceps_pushdown", label: "Trizeps Pushdown", category: "Arme", kind: "isolation" },
-  { id: "overhead_triceps_extension", label: "Overhead Trizeps Extension", category: "Arme", kind: "isolation" },
+  {
+    id: "triceps_pushdown",
+    label: "Trizeps Pushdown",
+    category: "Arme",
+    kind: "isolation",
+  },
+  {
+    id: "overhead_triceps_extension",
+    label: "Overhead Trizeps Extension",
+    category: "Arme",
+    kind: "isolation",
+  },
   { id: "cable_curl", label: "Cable Curl", category: "Arme", kind: "isolation" },
-  { id: "machine_dip", label: "Maschinen-Dips", category: "Arme", kind: "compound", supportsAssistanceWeight: true },
+  {
+    id: "machine_dip",
+    label: "Maschinen-Dips",
+    category: "Arme",
+    kind: "compound",
+    supportsAssistanceWeight: true,
+  },
 
   { id: "squat", label: "Kniebeugen", category: "Beine", kind: "compound" },
   { id: "hack_squat", label: "Hack Squat", category: "Beine", kind: "compound" },
@@ -98,15 +168,40 @@ export const EXERCISE_CATALOG: ExerciseCatalogEntry[] = [
   { id: "hip_thrust", label: "Hip Thrust", category: "Beine", kind: "compound" },
   { id: "glute_bridge", label: "Glute Bridge", category: "Beine", kind: "compound" },
   { id: "legcurl", label: "Beinbeuger", category: "Beine", kind: "isolation" },
-  { id: "seated_legcurl", label: "Sitzender Beinbeuger", category: "Beine", kind: "isolation" },
+  {
+    id: "seated_legcurl",
+    label: "Sitzender Beinbeuger",
+    category: "Beine",
+    kind: "isolation",
+  },
   { id: "leg_extension", label: "Beinstrecker", category: "Beine", kind: "isolation" },
   { id: "calves", label: "Waden", category: "Beine", kind: "isolation" },
-  { id: "seated_calf_raise", label: "Sitzendes Wadenheben", category: "Beine", kind: "isolation" },
-  { id: "abductor_machine", label: "Abduktoren-Maschine", category: "Beine", kind: "isolation" },
-  { id: "adductor_machine", label: "Adduktoren-Maschine", category: "Beine", kind: "isolation" },
+  {
+    id: "seated_calf_raise",
+    label: "Sitzendes Wadenheben",
+    category: "Beine",
+    kind: "isolation",
+  },
+  {
+    id: "abductor_machine",
+    label: "Abduktoren-Maschine",
+    category: "Beine",
+    kind: "isolation",
+  },
+  {
+    id: "adductor_machine",
+    label: "Adduktoren-Maschine",
+    category: "Beine",
+    kind: "isolation",
+  },
 
   { id: "core", label: "Core", category: "Core", kind: "isolation" },
-  { id: "hanging_leg_raises", label: "Hanging Leg Raises", category: "Core", kind: "isolation" },
+  {
+    id: "hanging_leg_raises",
+    label: "Hanging Leg Raises",
+    category: "Core",
+    kind: "isolation",
+  },
   { id: "crunch_machine", label: "Crunch-Maschine", category: "Core", kind: "isolation" },
   { id: "plank", label: "Plank", category: "Core", kind: "isolation" },
   { id: "cable_crunch", label: "Cable Crunch", category: "Core", kind: "isolation" },
@@ -121,26 +216,96 @@ export const EXERCISE_CATALOG: ExerciseCatalogEntry[] = [
   },
 
   { id: "chest_stretch", label: "Brustdehnung", category: "Brust", kind: "stretch" },
-  { id: "doorway_chest_stretch", label: "Türrahmen-Brustdehnung", category: "Brust", kind: "stretch" },
+  {
+    id: "doorway_chest_stretch",
+    label: "Türrahmen-Brustdehnung",
+    category: "Brust",
+    kind: "stretch",
+  },
   { id: "lat_stretch", label: "Lat-Dehnung", category: "Rücken", kind: "stretch" },
   { id: "child_pose", label: "Child Pose", category: "Rücken", kind: "stretch" },
-  { id: "shoulder_mobility", label: "Schulter-Mobilität", category: "Mobilität", kind: "stretch" },
-  { id: "thoracic_rotation", label: "Brustwirbelsäulen-Rotation", category: "Mobilität", kind: "stretch" },
-  { id: "ankle_mobility", label: "Sprunggelenk-Mobilität", category: "Mobilität", kind: "stretch" },
+  {
+    id: "shoulder_mobility",
+    label: "Schulter-Mobilität",
+    category: "Mobilität",
+    kind: "stretch",
+  },
+  {
+    id: "thoracic_rotation",
+    label: "Brustwirbelsäulen-Rotation",
+    category: "Mobilität",
+    kind: "stretch",
+  },
+  {
+    id: "ankle_mobility",
+    label: "Sprunggelenk-Mobilität",
+    category: "Mobilität",
+    kind: "stretch",
+  },
   { id: "cat_cow", label: "Cat-Cow", category: "Mobilität", kind: "stretch" },
-  { id: "worlds_greatest_stretch", label: "World's Greatest Stretch", category: "Mobilität", kind: "stretch" },
-  { id: "band_shoulder_mobility", label: "Band-Schulter-Mobilität", category: "Mobilität", kind: "stretch" },
-  { id: "deep_squat_hold", label: "Tiefe Hocke halten", category: "Mobilität", kind: "stretch" },
-  { id: "hip_flexor_stretch", label: "Hüftbeuger-Dehnung", category: "Hüfte", kind: "stretch" },
+  {
+    id: "worlds_greatest_stretch",
+    label: "World's Greatest Stretch",
+    category: "Mobilität",
+    kind: "stretch",
+  },
+  {
+    id: "band_shoulder_mobility",
+    label: "Band-Schulter-Mobilität",
+    category: "Mobilität",
+    kind: "stretch",
+  },
+  {
+    id: "deep_squat_hold",
+    label: "Tiefe Hocke halten",
+    category: "Mobilität",
+    kind: "stretch",
+  },
+  {
+    id: "hip_flexor_stretch",
+    label: "Hüftbeuger-Dehnung",
+    category: "Hüfte",
+    kind: "stretch",
+  },
   { id: "couch_stretch", label: "Couch Stretch", category: "Hüfte", kind: "stretch" },
   { id: "glute_stretch", label: "Gesäß-Dehnung", category: "Hüfte", kind: "stretch" },
-  { id: "piriformis_stretch", label: "Piriformis-Dehnung", category: "Hüfte", kind: "stretch" },
-  { id: "figure_four_stretch", label: "Figure-Four-Stretch", category: "Hüfte", kind: "stretch" },
-  { id: "hamstring_stretch", label: "Hamstring-Dehnung", category: "Unterkörper", kind: "stretch" },
-  { id: "quad_stretch", label: "Quadrizeps-Dehnung", category: "Unterkörper", kind: "stretch" },
-  { id: "adductor_stretch", label: "Adduktoren-Dehnung", category: "Unterkörper", kind: "stretch" },
+  {
+    id: "piriformis_stretch",
+    label: "Piriformis-Dehnung",
+    category: "Hüfte",
+    kind: "stretch",
+  },
+  {
+    id: "figure_four_stretch",
+    label: "Figure-Four-Stretch",
+    category: "Hüfte",
+    kind: "stretch",
+  },
+  {
+    id: "hamstring_stretch",
+    label: "Hamstring-Dehnung",
+    category: "Unterkörper",
+    kind: "stretch",
+  },
+  {
+    id: "quad_stretch",
+    label: "Quadrizeps-Dehnung",
+    category: "Unterkörper",
+    kind: "stretch",
+  },
+  {
+    id: "adductor_stretch",
+    label: "Adduktoren-Dehnung",
+    category: "Unterkörper",
+    kind: "stretch",
+  },
   { id: "calf_stretch", label: "Wadendehnung", category: "Unterkörper", kind: "stretch" },
-  { id: "toe_touch_hold", label: "Vorbeuge halten", category: "Unterkörper", kind: "stretch" },
+  {
+    id: "toe_touch_hold",
+    label: "Vorbeuge halten",
+    category: "Unterkörper",
+    kind: "stretch",
+  },
 ];
 
 export const TRAINING_EXERCISE_CATALOG = EXERCISE_CATALOG.filter(
@@ -228,11 +393,34 @@ const EXERCISE_DEFAULTS: Record<
 };
 
 export function getExerciseCatalogEntry(exerciseId: string) {
-  return EXERCISE_CATALOG.find((entry) => entry.id === exerciseId) ?? null;
+  const normalized = exerciseId.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const systemEntry =
+    EXERCISE_CATALOG.find(
+      (entry) =>
+        entry.id.toLowerCase() === normalized ||
+        entry.label.toLowerCase() === normalized
+    ) ?? null;
+
+  if (systemEntry) {
+    return systemEntry;
+  }
+
+  return findCustomExerciseEntry(exerciseId);
+}
+
+export function resolveExerciseCatalogReference(exerciseRef: string) {
+  return getExerciseCatalogEntry(exerciseRef)?.id ?? null;
 }
 
 export function getExerciseCatalogSections() {
-  return groupCatalogByCategory(TRAINING_EXERCISE_CATALOG);
+  return groupCatalogByCategory([
+    ...TRAINING_EXERCISE_CATALOG,
+    ...getCustomExerciseCatalogEntries(),
+  ]);
 }
 
 export function getStretchCatalogSections() {
@@ -241,7 +429,7 @@ export function getStretchCatalogSections() {
 
 export function getSuggestedExerciseSetup(exerciseId: string) {
   const entry = getExerciseCatalogEntry(exerciseId);
-  const defaults = EXERCISE_DEFAULTS[exerciseId];
+  const defaults = EXERCISE_DEFAULTS[exerciseId] ?? entry?.defaults;
 
   if (defaults) {
     return defaults;

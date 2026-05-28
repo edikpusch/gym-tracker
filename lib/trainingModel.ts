@@ -137,7 +137,7 @@ export function buildExerciseBlock(
     minReps: exercise.minReps,
     maxReps: exercise.maxReps,
     restSeconds: exercise.restSeconds,
-    warmupSets: existingBlock?.warmupSets ?? getDefaultWarmupSets(exerciseKind),
+    warmupSets: existingBlock?.warmupSets ?? 0,
     weight: existingBlock?.weight ?? getDefaultWeightConfig(exercise.name),
   };
 }
@@ -163,20 +163,7 @@ export function buildWarmupBlock(
 }
 
 export function buildDayBlocks(exercises: ExerciseDefinition[]) {
-  const blocks: TrainingPlanBlock[] = [];
-
-  exercises.forEach((exercise) => {
-    const exerciseBlock = buildExerciseBlock(exercise);
-    const warmupBlock = buildWarmupBlock(exerciseBlock);
-
-    if (warmupBlock) {
-      blocks.push(warmupBlock);
-    }
-
-    blocks.push(exerciseBlock);
-  });
-
-  return blocks;
+  return exercises.map((exercise) => buildExerciseBlock(exercise));
 }
 
 export function syncDayBlocks(
@@ -197,12 +184,26 @@ export function syncDayBlocks(
       (block): block is ExercisePlanBlock =>
         block.type === "exercise" && block.exerciseId === exercise.id
     );
-    const exerciseBlock = buildExerciseBlock(exercise, existingExerciseBlock);
     const existingWarmupBlock = existingBlocks.find(
       (block): block is WarmupPlanBlock =>
         block.type === "warmup" && block.parentExerciseId === exercise.id
     );
-    const warmupBlock = buildWarmupBlock(exerciseBlock, existingWarmupBlock);
+    const exerciseBlock = buildExerciseBlock(exercise, existingExerciseBlock);
+    const warmupRounds = existingWarmupBlock?.rounds ?? 0;
+
+    if (warmupRounds > 0) {
+      exerciseBlock.warmupSets = warmupRounds;
+    }
+
+    const warmupBlock = existingWarmupBlock
+      ? buildWarmupBlock(
+          {
+            ...exerciseBlock,
+            warmupSets: warmupRounds,
+          },
+          existingWarmupBlock
+        )
+      : null;
 
     return { exerciseBlock, warmupBlock };
   }
@@ -253,6 +254,50 @@ export function syncDayBlocks(
       blocks.push(exerciseBlock);
       consumedExerciseIds.add(exercise.id);
     }
+  });
+
+  return blocks;
+}
+
+export function materializeLegacyWarmupBlocks(
+  exercises: ExerciseDefinition[],
+  existingBlocks: TrainingPlanBlock[] = []
+) {
+  if (existingBlocks.length === 0) {
+    return existingBlocks;
+  }
+
+  const hasLegacyWarmupState = existingBlocks.some(
+    (block) => block.type === "exercise" && block.warmupSets > 0
+  );
+
+  if (!hasLegacyWarmupState) {
+    return existingBlocks;
+  }
+
+  const blocks: TrainingPlanBlock[] = [];
+  const seenWarmups = new Set<string>();
+
+  existingBlocks.forEach((block) => {
+    if (block.type === "warmup") {
+      seenWarmups.add(block.parentExerciseId);
+      blocks.push(block);
+      return;
+    }
+
+    if (
+      block.type === "exercise" &&
+      block.warmupSets > 0 &&
+      !seenWarmups.has(block.exerciseId)
+    ) {
+      const warmupBlock = buildWarmupBlock(block);
+      if (warmupBlock) {
+        blocks.push(warmupBlock);
+        seenWarmups.add(block.exerciseId);
+      }
+    }
+
+    blocks.push(block);
   });
 
   return blocks;

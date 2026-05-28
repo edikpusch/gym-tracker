@@ -1,16 +1,27 @@
 ﻿"use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { AppCard } from "@/components/ui/AppCard";
 import { clearActiveWorkoutState } from "@/lib/activeWorkout";
+import {
+  appChromeBackground,
+  appPalette,
+  splitThemes,
+  withAlpha,
+} from "@/lib/theme";
 
 import {
   getBestMatchingSet,
+  getCoachDecision,
+  getLoggedSetExerciseReference,
   getPreviousMatchingSet,
   getSetComparison,
   getSetsBySession,
   getTopSet,
   isLoggedSetEntry,
+  isWarmupSetEntry,
   type SetComparisonKind,
   type SetType,
 } from "@/lib/workoutEngine";
@@ -29,6 +40,7 @@ type ExerciseSummary = {
   exercise: string;
   exerciseId: string;
   rows: SummaryRow[];
+  coach: ReturnType<typeof getCoachDecision>;
 };
 
 export default function SummaryPage() {
@@ -70,7 +82,9 @@ function SummaryContent() {
       try {
         const data = await getSetsBySession(sessionId);
         const loggedSets = data.filter(isLoggedSetEntry);
-        const workSets = loggedSets.filter((set) => set.set > 0);
+        const workSets = loggedSets.filter(
+          (set) => isLoggedSetEntry(set) && !isWarmupSetEntry(set)
+        );
         const first = data[0];
         const workoutType = first?.type;
 
@@ -99,7 +113,7 @@ function SummaryContent() {
 
         const grouped = new Map<string, SetType[]>();
         workSets.forEach((set) => {
-          const key = set.exerciseId ?? set.exercise;
+          const key = getLoggedSetExerciseReference(set);
           if (!grouped.has(key)) {
             grouped.set(key, []);
           }
@@ -119,13 +133,15 @@ function SummaryContent() {
                 current.set,
                 workoutType,
                 sessionId,
-                current.exerciseId
+                current.exerciseId,
+                current.setType
               );
               const best = await getBestMatchingSet(
                 exercise,
                 current.set,
                 workoutType,
-                current.exerciseId
+                current.exerciseId,
+                current.setType
               );
 
               return {
@@ -142,6 +158,7 @@ function SummaryContent() {
             exercise,
             exerciseId,
             rows,
+            coach: getCoachDecision(exercise, sortedSets),
           });
         }
 
@@ -171,6 +188,14 @@ function SummaryContent() {
   }, []);
 
   const stats = useMemo(() => getSummaryStats(exerciseData), [exerciseData]);
+  const sessionInsight = useMemo(
+    () => getSessionInsight(exerciseData, stats),
+    [exerciseData, stats]
+  );
+  const summaryFocusItems = useMemo(
+    () => getSummaryFocusItems(exerciseData, stats),
+    [exerciseData, stats]
+  );
   const visibleExercises = useMemo(
     () => (showAllExercises ? exerciseData : exerciseData.slice(0, 3)),
     [exerciseData, showAllExercises]
@@ -182,7 +207,7 @@ function SummaryContent() {
         <div style={topBar}>
           <div style={brandPill}>Gym Tracker</div>
           <div style={topBarRight}>
-            <a href="/index.html" style={topBackButton}>← Zurück</a>
+            <Link href="/" style={topBackButton}>← Zurück</Link>
           </div>
         </div>
         <div style={{ ...hero, ...(compactMode ? compactHero : null) }}>
@@ -236,6 +261,40 @@ function SummaryContent() {
           ) : null}
         </div>
 
+        {!loading ? (
+          <>
+            <AppCard
+              style={{
+                ...sessionInsightCard,
+                ...(sessionInsight.tone === "good"
+                  ? sessionInsightGood
+                  : sessionInsight.tone === "warn"
+                    ? sessionInsightWarn
+                    : sessionInsightNeutral),
+              }}
+            >
+              <div style={sessionInsightTitle}>{sessionInsight.title}</div>
+              <div style={sessionInsightValue}>{sessionInsight.value}</div>
+              <div style={sessionInsightDetail}>{sessionInsight.detail}</div>
+            </AppCard>
+
+            <AppCard style={focusSectionCard}>
+              <div style={focusSectionHead}>
+                <div style={focusSectionTitle}>Naechster Fokus</div>
+                <span style={neutralBadge}>{summaryFocusItems.length}</span>
+              </div>
+              <div style={focusList}>
+                {summaryFocusItems.map((item, index) => (
+                  <div key={`${item}-${index}`} style={focusListRow}>
+                    <span style={focusListIndex}>{index + 1}</span>
+                    <span style={focusListText}>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </AppCard>
+          </>
+        ) : null}
+
         {loading ? (
           <p style={loadingText}>Lade Daten...</p>
         ) : (
@@ -247,8 +306,9 @@ function SummaryContent() {
               }}
             >
               {visibleExercises.map((exercise) => (
-                <div
+                <AppCard
                   key={exercise.exerciseId}
+                  interactive
                   style={{
                     ...card,
                     ...(compactMode ? compactCard : null),
@@ -301,6 +361,7 @@ function SummaryContent() {
                         </span>
                       ))}
                     </div>
+                    <div style={summaryCoachLine}>Coach: {exercise.coach.label}</div>
                   </div>
 
                   {expandedExercise === exercise.exerciseId ? (
@@ -353,13 +414,14 @@ function SummaryContent() {
                               ...(compactMode ? compactDeltaLine : null),
                             }}
                           >
-                            Differenz: {formatDelta(row.comparison)}
+                            Vergleich: {getComparisonExplanation(row.comparison)}
                           </div>
                         </div>
                       ))}
+                      <div style={summaryCoachDetail}>{exercise.coach.detail}</div>
                     </div>
                   ) : null}
-                </div>
+                </AppCard>
               ))}
               {!showAllExercises && exerciseData.length > 3 ? (
                 <button
@@ -379,12 +441,12 @@ function SummaryContent() {
             ...(compactMode ? compactActionStack : null),
           }}
         >
-          <a href="/index.html" style={primaryButton}>
+          <Link href="/" style={primaryButton}>
             Start
-          </a>
-          <a href="/history/index.html" style={secondaryButton}>
+          </Link>
+          <Link href="/history" style={secondaryButton}>
             ◷ Verlauf
-          </a>
+          </Link>
         </div>
       </div>
     </div>
@@ -410,6 +472,105 @@ function getSummaryStats(exercises: ExerciseSummary[]) {
         newCount: 0,
       }
     );
+}
+
+function getSessionInsight(exercises: ExerciseSummary[], stats: ReturnType<typeof getSummaryStats>) {
+  const topExercise = exercises
+    .flatMap((exercise) =>
+      exercise.rows.map((row) => ({
+        exercise: exercise.exercise,
+        current: row.current,
+        comparison: row.comparison,
+      }))
+    )
+    .sort((a, b) => {
+      if (b.current.weight !== a.current.weight) {
+        return b.current.weight - a.current.weight;
+      }
+      return b.current.reps - a.current.reps;
+    })[0] ?? null;
+
+  if (!topExercise) {
+    return {
+      title: "Session-Fazit",
+      value: "Noch keine Arbeitssaetze",
+      detail: "Sobald ein Workout abgeschlossen ist, erscheint hier dein Tagesfazit.",
+      tone: "neutral" as const,
+    };
+  }
+
+  if (stats.better > stats.worse) {
+    return {
+      title: "Session-Fazit",
+      value: "Starker Trainingstag",
+      detail: `${stats.better} Saetze lagen ueber dem letzten passenden Vergleich. ${getExerciseLabel(topExercise.exercise)} war heute dein klarer Anker.`,
+      tone: "good" as const,
+    };
+  }
+
+  if (stats.worse > stats.better) {
+    return {
+      title: "Session-Fazit",
+      value: "Mehr Stabilisieren als Druecken",
+      detail: `${stats.worse} Saetze lagen unter dem letzten Vergleich. ${getExerciseLabel(topExercise.exercise)} zeigt trotzdem die staerkste Tagesleistung.`,
+      tone: "warn" as const,
+    };
+  }
+
+  return {
+    title: "Session-Fazit",
+    value: "Solide gehalten",
+    detail: `Viele Saetze lagen auf Kurs. ${getExerciseLabel(topExercise.exercise)} war dabei dein staerkster Satz des Tages.`,
+    tone: "neutral" as const,
+  };
+}
+
+function getSummaryFocusItems(
+  exercises: ExerciseSummary[],
+  stats: ReturnType<typeof getSummaryStats>
+) {
+  const items: string[] = [];
+  const decreaseCoach = exercises.find(
+    (exercise) => exercise.coach.action === "decrease"
+  );
+  const increaseCoach = exercises.find(
+    (exercise) => exercise.coach.action === "increase"
+  );
+  const stableCoach = exercises.find(
+    (exercise) => exercise.coach.action === "keep"
+  );
+
+  if (decreaseCoach) {
+    items.push(
+      `${getExerciseLabel(decreaseCoach.exercise)} zuerst sauber stabilisieren. ${decreaseCoach.coach.detail}`
+    );
+  }
+
+  if (increaseCoach) {
+    items.push(
+      `${getExerciseLabel(increaseCoach.exercise)} ist bereit fuer den naechsten kleinen Progressionsschritt.`
+    );
+  }
+
+  if (stats.newCount > 0) {
+    items.push(
+      `${stats.newCount} neue Vergleichsfaelle sind jetzt gespeichert. Die naechste Einheit wird dadurch deutlich aussagekraeftiger.`
+    );
+  }
+
+  if (!decreaseCoach && stableCoach) {
+    items.push(
+      `${getExerciseLabel(stableCoach.exercise)} weiter in der Zielrange festigen, statt zu frueh Gewicht nachzulegen.`
+    );
+  }
+
+  if (items.length === 0) {
+    items.push(
+      "Die Einheit wirkt aktuell ausgeglichen. Halte den Rhythmus und beobachte, welche Uebung als naechstes klar nach vorne zieht."
+    );
+  }
+
+  return items.slice(0, 3);
 }
 
 function getExerciseStats(rows: SummaryRow[]) {
@@ -484,6 +645,23 @@ function formatDelta(comparison: ReturnType<typeof getSetComparison>) {
   return parts.join(" · ");
 }
 
+function getComparisonExplanation(
+  comparison: ReturnType<typeof getSetComparison>
+) {
+  if (!comparison || comparison.kind === "new") {
+    return "Erster passender Vergleich";
+  }
+
+  if (comparison.kind === "same") {
+    return "Gleich wie letztes Mal";
+  }
+
+  const delta = formatDelta(comparison);
+  return comparison.kind === "better"
+    ? `${delta} stärker als letztes Mal`
+    : `${delta} unter letztem Vergleich`;
+}
+
 function formatSignedNumber(value: number) {
   if (value > 0) {
     return `+${value}`;
@@ -523,10 +701,10 @@ function getStatusBadgeStyle(kind: SetComparisonKind | undefined) {
 }
 
 const screen = {
-  height: "100%",
-  padding: "10px",
+  height: "100dvh",
+  padding: "calc(8px + env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom))",
   overflow: "hidden" as const,
-  background: "radial-gradient(circle at top, #dde6f5 0%, #f3f5f9 42%, #fbfbfd 100%)",
+  background: appChromeBackground,
   fontFamily: "sans-serif",
   boxSizing: "border-box" as const,
 };
@@ -537,9 +715,9 @@ const shell = {
   margin: "0 auto",
   padding: "12px",
   borderRadius: 30,
-  background: "rgba(255,255,255,0.96)",
-  boxShadow: "0 24px 60px rgba(17, 24, 39, 0.08)",
-  border: "1px solid rgba(148, 163, 184, 0.14)",
+  background: withAlpha(appPalette.surface, 0.96),
+  boxShadow: `0 24px 60px ${withAlpha(appPalette.surfaceDark, 0.08)}`,
+  border: `1px solid ${withAlpha(appPalette.borderDefault, 0.14)}`,
   display: "grid",
   gridTemplateRows: "auto auto 1fr auto",
   gap: 8,
@@ -559,8 +737,8 @@ const brandPill = {
   minHeight: 34,
   padding: "7px 12px",
   borderRadius: 999,
-  background: "#111827",
-  color: "#fff",
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
   fontSize: 13,
   fontWeight: "bold",
 };
@@ -577,9 +755,9 @@ const topBackButton = {
   minHeight: 34,
   padding: "6px 12px",
   borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#f1f5f9",
-  color: "#374151",
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surfaceMuted,
+  color: appPalette.textDefault,
   fontSize: 12,
   fontWeight: "bold",
   textDecoration: "none",
@@ -589,16 +767,16 @@ const eyebrow = {
   fontSize: 11,
   textTransform: "uppercase" as const,
   letterSpacing: 1.1,
-  color: "rgba(255,255,255,0.6)",
+  color: withAlpha(appPalette.surface, 0.6),
   fontWeight: "bold",
 };
 
 const hero = {
-  padding: "16px 16px",
+  padding: "14px 14px",
   borderRadius: 24,
-  background: "linear-gradient(135deg, #111827 0%, #1f2937 100%)",
-  color: "#fff",
-  boxShadow: "0 24px 60px rgba(17, 24, 39, 0.18)",
+  background: `linear-gradient(135deg, ${appPalette.surfaceDark} 0%, ${withAlpha(appPalette.surfaceDark, 0.9)} 100%)`,
+  color: appPalette.surface,
+  boxShadow: `0 24px 60px ${withAlpha(appPalette.surfaceDark, 0.18)}`,
 };
 
 const heroTopRow = {
@@ -615,10 +793,10 @@ const title = {
 };
 
 const metaLine = {
-  marginTop: 6,
-  fontSize: 13,
+  marginTop: 5,
+  fontSize: 12,
   fontWeight: 700,
-  color: "rgba(255,255,255,0.74)",
+  color: withAlpha(appPalette.surface, 0.74),
 };
 
 const durationRow = {
@@ -640,26 +818,11 @@ const statValue = {
   fontWeight: 800,
 };
 
-const backButton = {
-  minHeight: 34,
-  padding: "8px 12px",
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  textDecoration: "none",
-  color: "rgba(255,255,255,0.9)",
-  fontSize: 12,
-  fontWeight: "bold",
-  background: "rgba(255,255,255,0.14)",
-  border: "1px solid rgba(255,255,255,0.22)",
-};
-
 const heroSummaryRow = {
   display: "flex",
   flexWrap: "wrap" as const,
-  gap: 8,
-  marginTop: 10,
+  gap: 6,
+  marginTop: 8,
 };
 
 const baseBadge = {
@@ -674,26 +837,26 @@ const baseBadge = {
 
 const successBadge = {
   ...baseBadge,
-  color: "#15803d",
-  background: "#ecfdf3",
+  color: appPalette.success,
+  background: withAlpha(appPalette.success, 0.14),
 };
 
 const warningBadge = {
   ...baseBadge,
-  color: "#b91c1c",
-  background: "#fff1f2",
+  color: appPalette.danger,
+  background: withAlpha(appPalette.danger, 0.12),
 };
 
 const neutralBadge = {
   ...baseBadge,
-  color: "#475569",
-  background: "#f3f4f6",
+  color: appPalette.textDefault,
+  background: appPalette.surfaceMuted,
 };
 
 const newBadge = {
   ...baseBadge,
-  color: "#1d4ed8",
-  background: "#eaf2ff",
+  color: splitThemes.pull.primary,
+  background: withAlpha(splitThemes.pull.primary, 0.12),
 };
 
 const loadingText = {
@@ -711,23 +874,23 @@ const contentScroll = {
 const exerciseGrid = {
   display: "flex",
   flexDirection: "column" as const,
-  gap: 10,
+  gap: 8,
   alignContent: "start" as const,
 };
 
 const card = {
-  padding: 12,
-  border: "1px solid #e8ecf3",
+  padding: 10,
+  border: `1px solid ${appPalette.borderSoft}`,
   borderRadius: 20,
-  background: "rgba(255,255,255,0.96)",
-  boxShadow: "0 14px 28px rgba(15, 23, 42, 0.05)",
+  background: withAlpha(appPalette.surface, 0.96),
+  boxShadow: `0 14px 28px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
   width: "100%",
   cursor: "pointer",
 };
 
 const expandedCard = {
-  border: "1px solid #cfe0ff",
-  boxShadow: "0 14px 30px rgba(59, 130, 246, 0.08)",
+  border: `1px solid ${withAlpha(splitThemes.pull.primary, 0.28)}`,
+  boxShadow: `0 14px 30px ${withAlpha(splitThemes.pull.primary, 0.08)}`,
 };
 
 const cardHeaderRow = {
@@ -740,29 +903,37 @@ const cardHeaderRow = {
 const cardChevron = {
   fontSize: 16,
   fontWeight: "bold",
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const exerciseTitle = {
   fontWeight: 800,
   fontSize: 17,
   lineHeight: 1.15,
-  color: "#111827",
+  color: appPalette.textStrong,
 };
 
 const rowsStack = {
-  marginTop: 8,
+  marginTop: 6,
   display: "grid",
-  gap: 6,
+  gap: 5,
+};
+
+const summaryCoachDetail = {
+  fontSize: 13,
+  lineHeight: 1.4,
+  color: appPalette.textMuted,
+  fontWeight: 700,
+  paddingTop: 4,
 };
 
 const moreExercisesCard = {
   minHeight: 76,
   width: "100%",
   borderRadius: 20,
-  border: "1px dashed #cbd5e1",
-  background: "#f8fafc",
-  color: "#475569",
+  border: `1px dashed ${appPalette.borderDefault}`,
+  background: appPalette.surfaceMuted,
+  color: appPalette.textDefault,
   fontSize: 15,
   fontWeight: 800,
   display: "flex",
@@ -778,15 +949,15 @@ const overviewBlock = {
 };
 
 const overviewTopSet = {
-  fontSize: 20,
+  fontSize: 18,
   fontWeight: 800,
-  color: "#111827",
+  color: appPalette.textStrong,
   lineHeight: 1.05,
 };
 
 const overviewCaption = {
   fontSize: 13,
-  color: "#64748b",
+  color: appPalette.textMuted,
   fontWeight: 700,
 };
 
@@ -796,9 +967,16 @@ const overviewBadgeRow = {
   gap: 8,
 };
 
+const summaryCoachLine = {
+  fontSize: 12,
+  lineHeight: 1.35,
+  color: appPalette.textMuted,
+  fontWeight: 700,
+};
+
 const setRow = {
   paddingTop: 6,
-  borderTop: "1px solid #edf2f7",
+  borderTop: `1px solid ${appPalette.borderSoft}`,
 };
 
 const setHeaderRow = {
@@ -812,7 +990,7 @@ const setLabel = {
   fontSize: 12,
   fontWeight: 800,
   letterSpacing: 0.3,
-  color: "#475569",
+  color: appPalette.textDefault,
   textTransform: "uppercase" as const,
 };
 
@@ -820,26 +998,26 @@ const todayValue = {
   marginTop: 6,
   fontSize: 16,
   fontWeight: 800,
-  color: "#111827",
+  color: appPalette.textStrong,
 };
 
 const comparisonLine = {
   marginTop: 4,
   fontSize: 13,
-  color: "#475569",
+  color: appPalette.textDefault,
 };
 
 const deltaLine = {
   marginTop: 5,
   fontSize: 13,
   fontWeight: 700,
-  color: "#1f2937",
+  color: appPalette.textStrong,
 };
 
 const actionStack = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: 10,
+  gap: 8,
   paddingBottom: "calc(4px + env(safe-area-inset-bottom))",
 };
 
@@ -850,10 +1028,10 @@ const primaryButton = {
   alignItems: "center",
   justifyContent: "center",
   textDecoration: "none",
-  color: "#fff",
-  background: "#111827",
+  color: appPalette.surface,
+  background: appPalette.surfaceDark,
   fontWeight: 800,
-  boxShadow: "0 14px 32px rgba(17, 24, 39, 0.12)",
+  boxShadow: `0 14px 32px ${withAlpha(appPalette.surfaceDark, 0.12)}`,
 };
 
 const secondaryButton = {
@@ -863,9 +1041,9 @@ const secondaryButton = {
   alignItems: "center",
   justifyContent: "center",
   textDecoration: "none",
-  color: "#111827",
-  background: "#f3f6fb",
-  border: "1px solid #dde5f0",
+  color: appPalette.textStrong,
+  background: appPalette.surfaceMuted,
+  border: `1px solid ${appPalette.borderDefault}`,
   fontWeight: "bold",
 };
 
@@ -885,12 +1063,6 @@ const compactTitle = {
 const compactMetaLine = {
   fontSize: 12,
   marginTop: 5,
-};
-
-const compactBackButton = {
-  minHeight: 32,
-  padding: "7px 10px",
-  fontSize: 11,
 };
 
 const compactDurationRow = {
@@ -949,5 +1121,96 @@ const compactDeltaLine = {
 
 const compactActionStack = {
   gap: 8,
+};
+
+const sessionInsightCard = {
+  padding: "13px 14px 14px",
+  display: "grid",
+  gap: 5,
+};
+
+const sessionInsightGood = {
+  background: withAlpha(appPalette.success, 0.12),
+};
+
+const sessionInsightWarn = {
+  background: withAlpha(appPalette.warning, 0.14),
+};
+
+const sessionInsightNeutral = {
+  background: appPalette.surface,
+};
+
+const sessionInsightTitle = {
+  fontSize: 12,
+  textTransform: "uppercase" as const,
+  letterSpacing: 1,
+  fontWeight: 800,
+  color: appPalette.textMuted,
+};
+
+const sessionInsightValue = {
+  fontSize: 24,
+  lineHeight: 1.05,
+  fontWeight: 800,
+  color: appPalette.textStrong,
+};
+
+const sessionInsightDetail = {
+  fontSize: 14,
+  color: appPalette.textDefault,
+  fontWeight: 700,
+};
+
+const focusSectionCard = {
+  padding: "14px 14px",
+  display: "grid",
+  gap: 10,
+};
+
+const focusSectionHead = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+};
+
+const focusSectionTitle = {
+  fontSize: 18,
+  fontWeight: 800,
+  color: appPalette.textStrong,
+};
+
+const focusList = {
+  display: "grid",
+  gap: 10,
+};
+
+const focusListRow = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 10,
+  paddingTop: 10,
+  borderTop: `1px solid ${appPalette.borderSoft}`,
+};
+
+const focusListIndex = {
+  minWidth: 28,
+  minHeight: 28,
+  borderRadius: 999,
+  background: appPalette.surfaceMuted,
+  color: appPalette.textStrong,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const focusListText = {
+  fontSize: 14,
+  lineHeight: 1.45,
+  color: appPalette.textDefault,
+  fontWeight: 700,
 };
 

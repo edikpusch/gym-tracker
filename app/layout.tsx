@@ -1,7 +1,10 @@
+import { AppStorageBootstrap } from "@/components/app-storage-bootstrap";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { PlanVersionGuard } from "@/components/plan-version-guard";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
+import { ThemeController } from "@/components/theme-controller";
+import { appChromeBackground } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "Gym Tracker",
@@ -20,7 +23,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#ffffff",
+  themeColor: "#111827",
 };
 
 export default function RootLayout({
@@ -31,6 +34,8 @@ export default function RootLayout({
   return (
     <html lang="de">
       <body style={bodyStyle}>
+        <AppStorageBootstrap />
+        <ThemeController />
         <ServiceWorkerRegistration />
         <PlanVersionGuard />
         <div style={appWrapper}>{children}</div>
@@ -42,17 +47,21 @@ export default function RootLayout({
 const bodyStyle: React.CSSProperties = {
   margin: 0,
   padding: 0,
-  background: "#fff",
-  color: "#000",
+  minHeight: "100dvh",
+  background: appChromeBackground,
+  color: "rgb(var(--app-text-strong-rgb))",
   WebkitTapHighlightColor: "transparent",
   touchAction: "manipulation",
+  overflowX: "hidden",
 };
 
 const appWrapper: React.CSSProperties = {
   minHeight: "100dvh",
+  width: "100%",
   display: "flex",
   flexDirection: "column",
   boxSizing: "border-box",
+  background: appChromeBackground,
   paddingRight: "env(safe-area-inset-right)",
   paddingLeft: "env(safe-area-inset-left)",
 };

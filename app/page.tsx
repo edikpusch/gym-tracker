@@ -4,9 +4,18 @@ import { useEffect, useState } from "react";
 
 import { getActiveWorkoutState, type ActiveWorkoutState } from "@/lib/activeWorkout";
 import { getAppPreferences, type MenuSide } from "@/lib/appPreferences";
+import {
+  getFavoriteExerciseIds,
+  isExerciseFavorite,
+  setExerciseFavorite,
+} from "@/lib/exerciseFavorites";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import { PlanAccordionCard } from "@/components/PlanAccordionCard";
+import { PlanBuilder } from "@/components/PlanBuilder";
 import { SideMenu } from "@/components/SideMenu";
+import { AppButton } from "@/components/ui/AppButton";
+import { AppCard } from "@/components/ui/AppCard";
+import { TextPromptDialog } from "@/components/ui/TextPromptDialog";
 import { getSuggestedExerciseSetup } from "@/lib/trainingCatalog";
 import type { ExercisePlanBlock, TrainingPlanBlock } from "@/lib/trainingModel";
 import {
@@ -15,6 +24,7 @@ import {
   addNoteBlock,
   addPauseBlock,
   addStretchBlock,
+  addWarmupBlock,
   createTrainingPlan,
   deleteTrainingPlan,
   getDayBlocks,
@@ -22,6 +32,8 @@ import {
   getActivePlanId,
   getAllTrainingPlans,
   moveDayBlock,
+  moveDayBlockRelative,
+  getRecentPlanExerciseRefs,
   getPlanPreview,
   getTrainingPlan,
   isCustomTrainingPlan,
@@ -39,12 +51,18 @@ import {
   type TrainingPlan,
 } from "@/lib/trainingPlans";
 import {
-  EXERCISE_LIBRARY,
-  EXERCISE_LIBRARY_GROUPS,
+  getExerciseLibrary,
+  getExerciseLibraryGroups,
   getExerciseLabel,
   STRETCH_LIBRARY_GROUPS,
   STRETCH_LIBRARY,
 } from "@/lib/workoutUi";
+import {
+  appChromeBackground,
+  appPalette,
+  splitThemes,
+  withAlpha,
+} from "@/lib/theme";
 
 const slotHref = {
   push: "/workout/push/index.html",
@@ -76,6 +94,8 @@ type WarmupEditorState = {
   dayId: string;
   exerciseId: string;
   exerciseLabel: string;
+  blockId?: string;
+  insertAfterBlockId?: string | null;
   rounds: string;
   restSeconds: string;
 };
@@ -103,45 +123,104 @@ type NoteEditorState = {
   notes: string;
 };
 
-type GuidedPlanExercise = {
-  name: string;
-  sets: number;
-  minReps: number;
-  maxReps: number;
-  restSeconds: number;
-};
-
-type GuidedPlanDay = {
-  name: string;
-  exercises: GuidedPlanExercise[];
+type AddBlockContextState = {
+  dayId: string;
+  insertAfterBlockId?: string | null;
 };
 
 type NewPlanWizardState = {
-  step: "name" | "day" | "exercise" | "sets" | "pause";
+  step: "name" | "day";
   planName: string;
   dayName: string;
-  exerciseName: string;
-  sets: string;
-  restSeconds: string;
-  days: GuidedPlanDay[];
-  exercises: GuidedPlanExercise[];
+  daySlot: "push" | "pull" | "mixed";
 };
 
+type RenamePlanState = {
+  planId: string;
+  value: string;
+};
+
+type RemoveExerciseState = {
+  dayId: string;
+  exerciseId: string;
+};
+
+type RemoveBlockState = {
+  dayId: string;
+  blockId: string;
+};
+
+type HomeInitialState = {
+  activePlan: TrainingPlan;
+  activeWorkoutState: ActiveWorkoutState | null;
+  availablePlans: TrainingPlan[];
+  menuSide: MenuSide;
+  showPlanDetail: boolean;
+  showPlanPicker: boolean;
+  activeDayTab: string | null;
+};
+
+function getInitialHomeState(): HomeInitialState {
+  const fallbackPlan = getTrainingPlan(getActivePlanId());
+  const searchParams =
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search);
+  const sheet = searchParams?.get("sheet") ?? null;
+  const requestedPlanId = searchParams?.get("plan") ?? null;
+  const requestedDayId = searchParams?.get("day") ?? null;
+  const activePlan = requestedPlanId
+    ? getTrainingPlan(requestedPlanId)
+    : fallbackPlan;
+  const requestedDayExists = requestedDayId
+    ? activePlan.days.some((day) => day.id === requestedDayId)
+    : false;
+
+  return {
+    activePlan,
+    activeWorkoutState: getActiveWorkoutState(),
+    availablePlans: getAllTrainingPlans(),
+    menuSide: getAppPreferences().menuSide,
+    showPlanDetail: sheet === "exercises",
+    showPlanPicker: sheet === "plans",
+    activeDayTab:
+      sheet === "exercises"
+        ? requestedDayExists
+          ? requestedDayId
+          : activePlan.days[0]?.id ?? null
+        : null,
+  };
+}
+
 export default function Home() {
-  const [availablePlans, setAvailablePlans] = useState<TrainingPlan[]>([]);
-  const [activePlan, setActivePlan] = useState<TrainingPlan>(() =>
-    getTrainingPlan("my-plan")
+  const exerciseLibrary = getExerciseLibrary();
+  const exerciseLibraryGroups = getExerciseLibraryGroups();
+  const favoriteExerciseIds = getFavoriteExerciseIds();
+  const favoriteExercises = exerciseLibrary.filter((exercise) =>
+    favoriteExerciseIds.includes(exercise.value)
   );
-  const [showPlanPicker, setShowPlanPicker] = useState(false);
-  const [showPlanDetail, setShowPlanDetail] = useState(false);
-  const [activeWorkoutState, setActiveWorkoutState] = useState<ActiveWorkoutState | null>(null);
-  const [activeDayTab, setActiveDayTab] = useState<string | null>(null);
+  const recentPlanExercises = getRecentPlanExerciseRefs(6)
+    .map((reference) => exerciseLibrary.find((exercise) => exercise.value === reference))
+    .filter((exercise): exercise is NonNullable<(typeof exerciseLibrary)[number]> => Boolean(exercise));
+  const [initialHomeState] = useState(getInitialHomeState);
+  const [availablePlans, setAvailablePlans] = useState<TrainingPlan[]>(
+    initialHomeState.availablePlans
+  );
+  const [activePlan, setActivePlan] = useState<TrainingPlan>(initialHomeState.activePlan);
+  const [showPlanPicker, setShowPlanPicker] = useState(initialHomeState.showPlanPicker);
+  const [showPlanDetail, setShowPlanDetail] = useState(initialHomeState.showPlanDetail);
+  const [activeWorkoutState, setActiveWorkoutState] = useState<ActiveWorkoutState | null>(
+    initialHomeState.activeWorkoutState
+  );
+  const [activeDayTab, setActiveDayTab] = useState<string | null>(initialHomeState.activeDayTab);
   const [newPlanWizard, setNewPlanWizard] = useState<NewPlanWizardState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuSide, setMenuSide] = useState<MenuSide>("left");
+  const [menuSide] = useState<MenuSide>(initialHomeState.menuSide);
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
   const [deleteCandidatePlan, setDeleteCandidatePlan] = useState<TrainingPlan | null>(null);
-  const [showDayEditorBlocks, setShowDayEditorBlocks] = useState(false);
+  const [renamePlanState, setRenamePlanState] = useState<RenamePlanState | null>(null);
+  const [removeExerciseState, setRemoveExerciseState] = useState<RemoveExerciseState | null>(null);
+  const [removeBlockState, setRemoveBlockState] = useState<RemoveBlockState | null>(null);
 
   const [dayEditor, setDayEditor] = useState<DayEditorState | null>(null);
   const [newDayEditor, setNewDayEditor] = useState<NewDayState | null>(null);
@@ -150,14 +229,23 @@ export default function Home() {
   const [stretchEditor, setStretchEditor] = useState<StretchEditorState | null>(null);
   const [pauseEditor, setPauseEditor] = useState<PauseEditorState | null>(null);
   const [noteEditor, setNoteEditor] = useState<NoteEditorState | null>(null);
-  const [addBlockDayId, setAddBlockDayId] = useState<string | null>(null);
+  const [addBlockContext, setAddBlockContext] = useState<AddBlockContextState | null>(null);
   const [warmupTargetDayId, setWarmupTargetDayId] = useState<string | null>(null);
 
-  useEffect(() => {
+  function refreshPlans(nextActivePlanId?: string) {
+    const plans = getAllTrainingPlans();
+    const resolvedPlan = getTrainingPlan(nextActivePlanId || getActivePlanId());
+    setAvailablePlans(plans);
+    setActivePlan(resolvedPlan);
+  }
+
+  function openPlanDetail() {
     refreshPlans();
-    setMenuSide(getAppPreferences().menuSide);
-    setActiveWorkoutState(getActiveWorkoutState());
-  }, []);
+    const plan = getTrainingPlan(getActivePlanId());
+    setActiveDayTab(plan.days[0]?.id ?? null);
+    setMenuOpen(false);
+    setShowPlanDetail(true);
+  }
 
   useEffect(() => {
     function refreshActiveWorkout() {
@@ -176,40 +264,6 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const sheet = params.get("sheet");
-
-    if (sheet === "plans") {
-      setMenuOpen(false);
-      setExpandedPlanId(null);
-      setShowPlanPicker(true);
-      setShowPlanDetail(false);
-      return;
-    }
-
-    if (sheet === "exercises") {
-      setMenuOpen(false);
-      setShowPlanPicker(false);
-      openPlanDetail();
-    }
-  }, []);
-
-  useEffect(() => {
-    setShowDayEditorBlocks(false);
-  }, [activeDayTab, showPlanDetail]);
-
-  function refreshPlans(nextActivePlanId?: string) {
-    const plans = getAllTrainingPlans();
-    const resolvedPlan = getTrainingPlan(nextActivePlanId || getActivePlanId());
-    setAvailablePlans(plans);
-    setActivePlan(resolvedPlan);
-  }
-
   function openPlanPicker() {
     refreshPlans();
     setMenuOpen(false);
@@ -217,56 +271,17 @@ export default function Home() {
     setShowPlanPicker(true);
   }
 
-  function getDefaultWizardExercise(exerciseName?: string) {
-    const nextExerciseName = exerciseName ?? EXERCISE_LIBRARY[0]?.value ?? "benchpress";
-    const suggested = getSuggestedExerciseSetup(nextExerciseName);
-    return {
-      exerciseName: nextExerciseName,
-      sets: String(suggested.sets),
-      restSeconds: String(suggested.restSeconds),
-      minReps: suggested.minReps,
-      maxReps: suggested.maxReps,
-    };
-  }
-
   function openNewPlanWizard() {
-    const defaults = getDefaultWizardExercise();
     setNewPlanWizard({
       step: "name",
       planName: "",
       dayName: "Tag A",
-      exerciseName: defaults.exerciseName,
-      sets: defaults.sets,
-      restSeconds: defaults.restSeconds,
-      days: [],
-      exercises: [],
+      daySlot: "push",
     });
   }
 
   function closeNewPlanWizard() {
     setNewPlanWizard(null);
-  }
-
-  function updateWizardExerciseSelection(exerciseName: string) {
-    const suggested = getDefaultWizardExercise(exerciseName);
-    setNewPlanWizard((current) =>
-      current
-        ? {
-            ...current,
-            step: current.step === "exercise" ? "sets" : current.step,
-            exerciseName: suggested.exerciseName,
-            sets: suggested.sets,
-            restSeconds: suggested.restSeconds,
-          }
-        : current
-    );
-  }
-
-  function updateWizardExerciseCategory(category: string) {
-    const group = EXERCISE_LIBRARY_GROUPS.find((entry) => entry.category === category);
-    const firstExercise = group?.items[0]?.value;
-    if (!firstExercise) return;
-    updateWizardExerciseSelection(firstExercise);
   }
 
   function continueNewPlanWizard() {
@@ -279,28 +294,17 @@ export default function Home() {
     }
 
     if (newPlanWizard.step === "day") {
-      if (!newPlanWizard.dayName.trim()) return;
-      setNewPlanWizard({ ...newPlanWizard, step: "exercise" });
-      return;
-    }
-
-    if (newPlanWizard.step === "exercise") {
-      setNewPlanWizard({ ...newPlanWizard, step: "sets" });
-      return;
-    }
-
-    if (newPlanWizard.step === "sets") {
-      setNewPlanWizard({ ...newPlanWizard, step: "pause" });
+      finishNewPlanWizard();
     }
   }
 
-  function selectWizardDayPreset(dayName: string) {
+  function selectWizardDayPreset(dayName: string, slot?: "push" | "pull" | "mixed") {
     setNewPlanWizard((current) =>
       current
         ? {
             ...current,
             dayName,
-            step: "exercise",
+            daySlot: slot ?? deriveSlotFromDayName(dayName),
           }
         : current
     );
@@ -311,74 +315,21 @@ export default function Home() {
 
     if (newPlanWizard.step === "day") {
       setNewPlanWizard({ ...newPlanWizard, step: "name" });
-      return;
     }
-
-    if (newPlanWizard.step === "exercise") {
-      setNewPlanWizard({ ...newPlanWizard, step: "day" });
-      return;
-    }
-
-    if (newPlanWizard.step === "sets") {
-      setNewPlanWizard({ ...newPlanWizard, step: "exercise" });
-      return;
-    }
-
-    if (newPlanWizard.step === "pause") {
-      setNewPlanWizard({ ...newPlanWizard, step: "sets" });
-    }
-  }
-
-  function addGuidedExerciseAndContinue() {
-    if (!newPlanWizard) return;
-    const nextExercises = [...newPlanWizard.exercises, buildGuidedWizardExercise(newPlanWizard)];
-    const defaults = getDefaultWizardExercise();
-    setNewPlanWizard({
-      ...newPlanWizard,
-      step: "exercise",
-      exerciseName: defaults.exerciseName,
-      sets: defaults.sets,
-      restSeconds: defaults.restSeconds,
-      exercises: nextExercises,
-    });
-  }
-
-  function addGuidedDayAndContinue() {
-    if (!newPlanWizard) return;
-
-    const nextDays = [
-      ...newPlanWizard.days,
-      {
-        name: newPlanWizard.dayName.trim(),
-        exercises: [...newPlanWizard.exercises, buildGuidedWizardExercise(newPlanWizard)],
-      },
-    ];
-    const defaults = getDefaultWizardExercise();
-    setNewPlanWizard({
-      ...newPlanWizard,
-      step: "day",
-      dayName: getNextWizardDayName(nextDays.length),
-      exerciseName: defaults.exerciseName,
-      sets: defaults.sets,
-      restSeconds: defaults.restSeconds,
-      days: nextDays,
-      exercises: [],
-    });
   }
 
   function finishNewPlanWizard() {
     if (!newPlanWizard) return;
-    const days = [
-      ...newPlanWizard.days,
-      {
-        name: newPlanWizard.dayName.trim(),
-        exercises: [...newPlanWizard.exercises, buildGuidedWizardExercise(newPlanWizard)],
-      },
-    ];
 
     const created = createTrainingPlan({
       name: newPlanWizard.planName,
-      days,
+      days: [
+        {
+          name: newPlanWizard.dayName.trim(),
+          slot: newPlanWizard.daySlot,
+          exercises: [],
+        },
+      ],
     });
 
     if (!created) return;
@@ -388,14 +339,6 @@ export default function Home() {
     setActiveDayTab(created.days[0]?.id ?? null);
     setShowPlanDetail(true);
     setNewPlanWizard(null);
-  }
-
-  function openPlanDetail() {
-    refreshPlans();
-    const plan = getTrainingPlan(getActivePlanId());
-    setActiveDayTab(plan.days[0]?.id ?? null);
-    setMenuOpen(false);
-    setShowPlanDetail(true);
   }
 
   function handlePlanSelect(planId: string) {
@@ -442,12 +385,16 @@ export default function Home() {
   }
 
   function handleRenamePlan(planId: string) {
-    const current = getTrainingPlan(planId);
-    const nextName = window.prompt("Neuer Planname", current.name);
+    const current = renamePlanState ?? {
+      planId,
+      value: getTrainingPlan(planId).name,
+    };
+    const nextName = current.value.trim();
     if (!nextName) return;
 
-    const renamed = renameTrainingPlan(planId, nextName);
+    const renamed = renameTrainingPlan(current.planId, nextName);
     if (!renamed) return;
+    setRenamePlanState(null);
     refreshPlans(renamed.id);
   }
 
@@ -493,14 +440,26 @@ export default function Home() {
   const activeDayBlocks = activePlanDay ? getDayBlocks(activePlanDay) : [];
 
   function openAddExercise(dayId: string) {
-    const defaults = getDefaultWizardExercise();
     setExerciseEditor({
       dayId,
-      name: defaults.exerciseName,
-      sets: defaults.sets,
-      minReps: String(defaults.minReps),
-      maxReps: String(defaults.maxReps),
-      restSeconds: defaults.restSeconds,
+      name: "",
+      sets: "3",
+      minReps: "8",
+      maxReps: "12",
+      restSeconds: "90",
+    });
+  }
+
+  function openAddExerciseWithName(dayId: string, exerciseName: string) {
+    const resolvedName = resolveExerciseNameInput(exerciseName);
+    const suggested = getSuggestedExerciseSetup(resolvedName);
+    setExerciseEditor({
+      dayId,
+      name: exerciseName,
+      sets: String(suggested.sets),
+      minReps: String(suggested.minReps),
+      maxReps: String(suggested.maxReps),
+      restSeconds: String(suggested.restSeconds),
     });
   }
 
@@ -508,7 +467,7 @@ export default function Home() {
     setExerciseEditor({
       dayId,
       exerciseId: exercise.id,
-      name: exercise.name,
+      name: getExerciseLabel(exercise.name),
       sets: String(exercise.sets),
       minReps: String(exercise.minReps),
       maxReps: String(exercise.maxReps),
@@ -518,9 +477,11 @@ export default function Home() {
 
   function saveExerciseEditor() {
     if (!exerciseEditor) return;
+    const resolvedName = resolveExerciseNameInput(exerciseEditor.name);
+    if (!resolvedName) return;
 
     const draft = {
-      name: exerciseEditor.name,
+      name: resolvedName,
       sets: Number(exerciseEditor.sets),
       minReps: Number(exerciseEditor.minReps),
       maxReps: Number(exerciseEditor.maxReps),
@@ -529,15 +490,24 @@ export default function Home() {
 
     const updated = exerciseEditor.exerciseId
       ? updateTrainingExercise(activePlan.id, exerciseEditor.dayId, exerciseEditor.exerciseId, draft)
-      : addTrainingExercise(activePlan.id, exerciseEditor.dayId, draft);
+      : addTrainingExercise(
+          activePlan.id,
+          exerciseEditor.dayId,
+          draft,
+          addBlockContext?.dayId === exerciseEditor.dayId
+            ? addBlockContext.insertAfterBlockId ?? null
+            : null
+        );
 
     if (!updated) return;
     setExerciseEditor(null);
+    setAddBlockContext(null);
     refreshPlans(updated.id);
   }
 
   function applyExerciseEditorDefaults(exerciseName: string) {
-    const suggested = getSuggestedExerciseSetup(exerciseName);
+    const resolvedName = resolveExerciseNameInput(exerciseName);
+    const suggested = getSuggestedExerciseSetup(resolvedName);
     setExerciseEditor((current) =>
       current
         ? {
@@ -552,12 +522,38 @@ export default function Home() {
     );
   }
 
-  function handleRemoveExercise(dayId: string, exerciseId: string) {
-    const shouldRemove = window.confirm("Diese Übung aus dem Plan entfernen?");
-    if (!shouldRemove) return;
+  function toggleExerciseEditorFavorite() {
+    if (!exerciseEditor) return;
 
+    const resolvedName = resolveExerciseNameInput(exerciseEditor.name);
+    const fallbackName = exerciseEditor.name.trim();
+    const targetValue = resolvedName || fallbackName;
+    if (!targetValue) return;
+
+    const nextFavorite = !isExerciseFavorite(targetValue);
+    const reference = setExerciseFavorite(targetValue, nextFavorite, {
+      sets: Number(exerciseEditor.sets) || 3,
+      minReps: Number(exerciseEditor.minReps) || 8,
+      maxReps: Number(exerciseEditor.maxReps) || 12,
+      restSeconds: Number(exerciseEditor.restSeconds) || 90,
+    });
+
+    if (!reference) return;
+
+    setExerciseEditor((current) =>
+      current
+        ? {
+            ...current,
+            name: getExerciseLabel(reference),
+          }
+        : current
+    );
+  }
+
+  function handleRemoveExercise(dayId: string, exerciseId: string) {
     const updated = removeTrainingExercise(activePlan.id, dayId, exerciseId);
     if (!updated) return;
+    setRemoveExerciseState(null);
     refreshPlans(updated.id);
   }
 
@@ -566,19 +562,42 @@ export default function Home() {
     exerciseId: string,
     exerciseLabel: string,
     rounds: number,
-    restSeconds: number
+    restSeconds: number,
+    blockId?: string,
+    insertAfterBlockId?: string | null
   ) {
-    setWarmupEditor({ dayId, exerciseId, exerciseLabel, rounds: String(rounds), restSeconds: String(restSeconds) });
+    setWarmupEditor({
+      dayId,
+      exerciseId,
+      exerciseLabel,
+      blockId,
+      insertAfterBlockId,
+      rounds: String(rounds),
+      restSeconds: String(restSeconds),
+    });
   }
 
   function saveWarmupEditor() {
     if (!warmupEditor) return;
-    const updated = updateWarmupBlock(activePlan.id, warmupEditor.dayId, warmupEditor.exerciseId, {
+    const draft = {
       rounds: Number(warmupEditor.rounds),
       restSeconds: Number(warmupEditor.restSeconds),
-    });
+    };
+    const updated = warmupEditor.blockId
+      ? updateWarmupBlock(activePlan.id, warmupEditor.dayId, warmupEditor.exerciseId, draft)
+      : addWarmupBlock(
+          activePlan.id,
+          warmupEditor.dayId,
+          {
+            exerciseId: warmupEditor.exerciseId,
+            ...draft,
+          },
+          warmupEditor.insertAfterBlockId ?? null
+        );
     if (!updated) return;
     setWarmupEditor(null);
+    setAddBlockContext(null);
+    setWarmupTargetDayId(null);
     refreshPlans(updated.id);
   }
 
@@ -609,10 +628,18 @@ export default function Home() {
 
     const updated = stretchEditor.blockId
       ? updateStretchBlock(activePlan.id, stretchEditor.dayId, stretchEditor.blockId, draft)
-      : addStretchBlock(activePlan.id, stretchEditor.dayId, draft);
+      : addStretchBlock(
+          activePlan.id,
+          stretchEditor.dayId,
+          draft,
+          addBlockContext?.dayId === stretchEditor.dayId
+            ? addBlockContext.insertAfterBlockId ?? null
+            : null
+        );
 
     if (!updated) return;
     setStretchEditor(null);
+    setAddBlockContext(null);
     refreshPlans(updated.id);
   }
 
@@ -637,10 +664,18 @@ export default function Home() {
 
     const updated = pauseEditor.blockId
       ? updatePauseBlock(activePlan.id, pauseEditor.dayId, pauseEditor.blockId, draft)
-      : addPauseBlock(activePlan.id, pauseEditor.dayId, draft);
+      : addPauseBlock(
+          activePlan.id,
+          pauseEditor.dayId,
+          draft,
+          addBlockContext?.dayId === pauseEditor.dayId
+            ? addBlockContext.insertAfterBlockId ?? null
+            : null
+        );
 
     if (!updated) return;
     setPauseEditor(null);
+    setAddBlockContext(null);
     refreshPlans(updated.id);
   }
 
@@ -663,24 +698,30 @@ export default function Home() {
 
     const updated = noteEditor.blockId
       ? updateNoteBlock(activePlan.id, noteEditor.dayId, noteEditor.blockId, draft)
-      : addNoteBlock(activePlan.id, noteEditor.dayId, draft);
+      : addNoteBlock(
+          activePlan.id,
+          noteEditor.dayId,
+          draft,
+          addBlockContext?.dayId === noteEditor.dayId
+            ? addBlockContext.insertAfterBlockId ?? null
+            : null
+        );
 
     if (!updated) return;
     setNoteEditor(null);
+    setAddBlockContext(null);
     refreshPlans(updated.id);
   }
 
-  function openAddBlockSheet(dayId: string) {
-    setAddBlockDayId(dayId);
+  function openAddBlockSheet(dayId: string, insertAfterBlockId?: string | null) {
+    setAddBlockContext({ dayId, insertAfterBlockId: insertAfterBlockId ?? null });
     setWarmupTargetDayId(null);
   }
 
   function handleRemoveBlock(dayId: string, blockId: string) {
-    const shouldRemove = window.confirm("Diesen Block aus dem Plan entfernen?");
-    if (!shouldRemove) return;
-
     const updated = removeDayBlock(activePlan.id, dayId, blockId);
     if (!updated) return;
+    setRemoveBlockState(null);
     refreshPlans(updated.id);
   }
 
@@ -689,6 +730,29 @@ export default function Home() {
     if (!updated) return;
     refreshPlans(updated.id);
   }
+
+  function handleReorderBlock(
+    dayId: string,
+    blockId: string,
+    targetBlockId: string,
+    position: "before" | "after"
+  ) {
+    const updated = moveDayBlockRelative(
+      activePlan.id,
+      dayId,
+      blockId,
+      targetBlockId,
+      position
+    );
+    if (!updated) return;
+    refreshPlans(updated.id);
+  }
+
+  const exerciseEditorFavoriteActive = exerciseEditor
+    ? isExerciseFavorite(
+        resolveExerciseNameInput(exerciseEditor.name) || exerciseEditor.name
+      )
+    : false;
 
   const canEditActivePlan = isCustomTrainingPlan(activePlan.id);
   const hideMenuButton =
@@ -702,18 +766,18 @@ export default function Home() {
     Boolean(stretchEditor) ||
     Boolean(pauseEditor) ||
     Boolean(noteEditor) ||
-    Boolean(addBlockDayId) ||
+    Boolean(addBlockContext) ||
     Boolean(warmupTargetDayId);
   const menuItems = [
-    { key: "training", label: "Training", icon: "🏋️", active: true, onClick: () => setMenuOpen(false) },
-    { key: "plans", label: "Pläne", icon: "📋", onClick: openPlanPicker },
-    { key: "exercises", label: "Übungen", icon: "💪", onClick: openPlanDetail },
-    { key: "history", label: "Verlauf", icon: "🕘", href: "/history/index.html" },
-    { key: "stats", label: "Statistiken", icon: "◔", href: "/statistics/index.html" },
-    { key: "progress", label: "Fortschritte", icon: "📈", href: "/progress/index.html" },
-    { key: "weight", label: "Gewicht", icon: "⚖️", href: "/weight/index.html" },
-    { key: "settings", label: "Einstellungen", icon: "⚙️", href: "/settings/index.html" },
-    { key: "support", label: "Hilfe & Support", icon: "❔", href: "/support/index.html" },
+    { key: "training", section: "Training", label: "Training", icon: "🏋️", active: true, onClick: () => setMenuOpen(false) },
+    { key: "plans", section: "Training", label: "Pläne", icon: "📋", onClick: openPlanPicker },
+    { key: "exercises", section: "Training", label: "Übungen", icon: "💪", onClick: openPlanDetail },
+    { key: "history", section: "Analyse", label: "Verlauf", icon: "🕘", href: "/history/index.html" },
+    { key: "stats", section: "Analyse", label: "Statistiken", icon: "◔", href: "/statistics/index.html" },
+    { key: "progress", section: "Analyse", label: "Fortschritte", icon: "📈", href: "/progress/index.html" },
+    { key: "weight", section: "Analyse", label: "Gewicht", icon: "⚖️", href: "/weight/index.html" },
+    { key: "settings", section: "System", label: "Einstellungen", icon: "⚙️", href: "/settings/index.html" },
+    { key: "support", section: "System", label: "Hilfe & Support", icon: "❔", href: "/support/index.html" },
   ];
 
   return (
@@ -733,7 +797,7 @@ export default function Home() {
         </div>
 
         {activeWorkoutState ? (
-          <div style={currentPlanCard}>
+          <AppCard variant="default" style={currentPlanCard}>
             <div>
               <div style={sectionTitle}>Training läuft</div>
               <div style={currentPlanName}>{activeWorkoutState.workoutLabel}</div>
@@ -744,11 +808,16 @@ export default function Home() {
               </div>
             </div>
             <div style={currentPlanActions}>
-              <a href={activeWorkoutState.href} style={primaryActionButton}>
+              <AppButton
+                href={activeWorkoutState.href}
+                variant="primary"
+                size="compact"
+                style={primaryActionButton}
+              >
                 Fortsetzen
-              </a>
+              </AppButton>
             </div>
-          </div>
+          </AppCard>
         ) : null}
 
         <div
@@ -758,22 +827,23 @@ export default function Home() {
           }}
         >
           {activePlan.days.map((day, index) => (
-            <a
-              key={day.id}
-              href={slotHref[day.slot]}
-              style={{
-                ...dayCard,
-                background: `linear-gradient(135deg, ${day.color} 0%, ${shadeColor(day.color)} 100%)`,
-              }}
-            >
-              <div style={dayCardTop}>
-                <span style={dayKicker}>{buildDayKicker(index, activePlan.days.length)}</span>
-                <span style={dayStartBadge}>Start</span>
-              </div>
-              <div style={dayBody}>
-                <span style={dayTitle}>{day.name}</span>
-                <span style={dayCopy}>{buildExercisePreview(day.exercises)}</span>
-              </div>
+            <a key={day.id} href={slotHref[day.slot]} style={dayCardLink}>
+              <AppCard
+                interactive
+                style={{
+                  ...dayCard,
+                  background: `linear-gradient(135deg, ${day.color} 0%, ${shadeColor(day.color)} 100%)`,
+                }}
+              >
+                <div style={dayCardTop}>
+                  <span style={dayKicker}>{buildDayKicker(index, activePlan.days.length)}</span>
+                  <span style={dayStartBadge}>Start</span>
+                </div>
+                <div style={dayBody}>
+                  <span style={dayTitle}>{day.name}</span>
+                  <span style={dayCopy}>{buildExercisePreview(day.exercises)}</span>
+                </div>
+              </AppCard>
             </a>
           ))}
         </div>
@@ -789,8 +859,17 @@ export default function Home() {
                 <div style={sheetTitle}>Plan wählen</div>
               </div>
               <div style={sheetHeaderActions}>
-                <button style={plusButton} onClick={openNewPlanWizard}>+</button>
-                <button style={closeButton} onClick={() => setShowPlanPicker(false)}>×</button>
+                <AppButton variant="danger" size="compact" style={sheetPlusButton} onClick={openNewPlanWizard}>
+                  +
+                </AppButton>
+                <AppButton
+                  variant="secondary"
+                  size="compact"
+                  style={sheetCloseButton}
+                  onClick={() => setShowPlanPicker(false)}
+                >
+                  ×
+                </AppButton>
               </div>
             </div>
 
@@ -847,6 +926,50 @@ export default function Home() {
         onConfirm={confirmDeletePlan}
       />
 
+      <ConfirmDeleteDialog
+        open={Boolean(removeExerciseState)}
+        title="Übung löschen?"
+        body="Möchtest du diese Übung wirklich aus dem Plan entfernen?"
+        onCancel={() => setRemoveExerciseState(null)}
+        onConfirm={() =>
+          removeExerciseState &&
+          handleRemoveExercise(removeExerciseState.dayId, removeExerciseState.exerciseId)
+        }
+      />
+
+      <ConfirmDeleteDialog
+        open={Boolean(removeBlockState)}
+        title="Block löschen?"
+        body="Möchtest du diesen Block wirklich aus dem Plan entfernen?"
+        onCancel={() => setRemoveBlockState(null)}
+        onConfirm={() =>
+          removeBlockState &&
+          handleRemoveBlock(removeBlockState.dayId, removeBlockState.blockId)
+        }
+      />
+
+      <TextPromptDialog
+        open={Boolean(renamePlanState)}
+        title="Plan umbenennen"
+        label="Planname"
+        value={renamePlanState?.value ?? ""}
+        confirmLabel="Speichern"
+        cancelLabel="Abbrechen"
+        confirmDisabled={!renamePlanState?.value.trim()}
+        onChange={(value) =>
+          setRenamePlanState((current) =>
+            current
+              ? {
+                  ...current,
+                  value,
+                }
+              : current
+          )
+        }
+        onCancel={() => setRenamePlanState(null)}
+        onConfirm={() => renamePlanState && handleRenamePlan(renamePlanState.planId)}
+      />
+
       {/* Plan Detail / Editor */}
       {showPlanDetail ? (
         <div style={overlay}>
@@ -856,7 +979,14 @@ export default function Home() {
                 <div style={sectionTitle}>Plan</div>
                 <div style={sheetTitle}>{activePlan.name}</div>
               </div>
-              <button style={closeButton} onClick={() => setShowPlanDetail(false)}>×</button>
+              <AppButton
+                variant="secondary"
+                size="compact"
+                style={sheetCloseButton}
+                onClick={() => setShowPlanDetail(false)}
+              >
+                ×
+              </AppButton>
             </div>
 
             <div style={planDetailMetaBar}>
@@ -866,20 +996,30 @@ export default function Home() {
               <div style={miniActionRow}>
                 {canEditActivePlan ? (
                   <>
-                    <button style={miniActionButton} onClick={() => handleRenamePlan(activePlan.id)}>
+                    <AppButton
+                      variant="secondary"
+                      size="compact"
+                      style={miniActionButton}
+                      onClick={() =>
+                        setRenamePlanState({
+                          planId: activePlan.id,
+                          value: activePlan.name,
+                        })
+                      }
+                    >
                       Umbenennen
-                    </button>
+                    </AppButton>
                     <button
                       style={{ ...miniActionButton, ...dangerMiniButton }}
-                      onClick={() => handleDeletePlan(activePlan.id)}
+                      onClick={() => requestDeletePlan(activePlan.id)}
                     >
                       Löschen
                     </button>
                   </>
                 ) : (
-                  <button style={miniActionButton} onClick={() => handleDuplicatePlan(activePlan.id)}>
+                  <AppButton variant="secondary" size="compact" style={miniActionButton} onClick={() => handleDuplicatePlan(activePlan.id)}>
                     Als Kopie
-                  </button>
+                  </AppButton>
                 )}
               </div>
             </div>
@@ -908,160 +1048,79 @@ export default function Home() {
               ) : null}
             </div>
 
-            {canEditActivePlan && activePlanDay ? (
-              <div style={activeDayActions}>
-                <span style={activeDayLabel}>Aktiver Tag: {activePlanDay.name}</span>
-                <div style={activeDayActionRow}>
-                  <button
-                    style={miniActionButton}
-                    onClick={() => openDayEditor(activePlanDay.id, activePlanDay.name)}
-                  >
-                    Umbenennen
-                  </button>
-                  <button
-                    style={miniActionButton}
-                    onClick={() => setShowDayEditorBlocks((current) => !current)}
-                  >
-                    {showDayEditorBlocks ? "Überblick" : "Ablauf bearbeiten"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
             {activePlanDay ? (
-              <div style={dayOverviewCard}>
-                <div style={dayOverviewTop}>
-                  <div>
-                    <div style={dayOverviewTitle}>Tagesüberblick</div>
-                    <div style={dayOverviewMeta}>
-                      {activeDayBlocks.filter((block) => block.type === "exercise").length} Übungen ·{" "}
-                      {activeDayBlocks.filter((block) => block.type === "warmup").length} Aufwärmen ·{" "}
-                      {activeDayBlocks.filter((block) => block.type === "stretch").length} Dehnen ·{" "}
-                      {activeDayBlocks.filter((block) => block.type === "pause").length} Pausen
-                    </div>
-                  </div>
-                  {!showDayEditorBlocks ? (
-                    <button
-                      style={overviewPrimaryButton}
-                      onClick={() => setShowDayEditorBlocks(true)}
-                    >
-                      Ablauf bearbeiten
-                    </button>
-                  ) : null}
-                </div>
-                {activeDayBlocks.length > 0 ? (
-                  <div style={dayOverviewChips}>
-                    {activeDayBlocks.slice(0, 6).map((block) => (
-                      <span key={block.id} style={getOverviewChipStyle(block.type)}>
-                        {getBlockTitle(block)}
-                      </span>
-                    ))}
-                    {activeDayBlocks.length > 6 ? (
-                      <span style={dayOverviewMoreChip}>+{activeDayBlocks.length - 6} weitere</span>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div style={emptyDayHint}>
-                    Dieser Split ist noch leer. Starte direkt mit `+ Übung`, `+ Dehnen` oder `+ Pause`.
-                  </div>
-                )}
-              </div>
-            ) : null}
-
-            {showDayEditorBlocks ? (
-            <div style={planBlockList}>
-              {(() => {
-                const activeDay = activePlanDay;
-                if (!activeDay) return null;
-                const dayBlocks = activeDayBlocks;
-
-                if (dayBlocks.length === 0) {
-                  return null;
+              <PlanBuilder
+                dayName={activePlanDay?.name ?? "Tag"}
+                dayBlocks={activeDayBlocks}
+                canEdit={canEditActivePlan}
+                onEditDay={() => openDayEditor(activePlanDay.id, activePlanDay.name)}
+                onAddBlock={() => activeDayTab && openAddBlockSheet(activeDayTab)}
+                onAddAfterBlock={(block) => {
+                  if (!activePlanDay) return;
+                  openAddBlockSheet(activePlanDay.id, block.id);
+                }}
+                onMoveBlock={(block, direction) =>
+                  activePlanDay && handleMoveBlock(activePlanDay.id, block.id, direction)
                 }
-
-                return dayBlocks.map((block, blockIndex) => {
-                  const editableExercise = getEditableExerciseForBlock(block, activeDay.exercises);
+                onReorderBlock={(block, targetBlock, position) =>
+                  activePlanDay &&
+                  handleReorderBlock(activePlanDay.id, block.id, targetBlock.id, position)
+                }
+                onDeleteBlock={(block) => {
+                  if (!activePlanDay) return;
+                  const editableExercise = getEditableExerciseForBlock(block, activePlanDay.exercises);
+                  if (editableExercise) {
+                    setRemoveExerciseState({
+                      dayId: activePlanDay.id,
+                      exerciseId: editableExercise.id,
+                    });
+                    return;
+                  }
+                  setRemoveBlockState({
+                    dayId: activePlanDay.id,
+                    blockId: block.id,
+                  });
+                }}
+                onEditBlock={(block) => {
+                  if (!activePlanDay) return;
+                  const editableExercise = getEditableExerciseForBlock(block, activePlanDay.exercises);
                   const warmupExercise =
                     block.type === "warmup"
-                      ? activeDay.exercises.find((e) => e.id === block.parentExerciseId) ?? null
+                      ? activePlanDay.exercises.find((exercise) => exercise.id === block.parentExerciseId) ?? null
                       : null;
 
-                  const openEditor = () => {
-                    if (editableExercise) {
-                      openEditExercise(activeDay.id, editableExercise);
-                    } else if (block.type === "warmup" && warmupExercise) {
-                      openWarmupEditor(
-                        activeDay.id,
-                        warmupExercise.id,
-                        getExerciseLabel(warmupExercise.name),
-                        block.rounds,
-                        block.restSeconds
-                      );
-                    } else if (block.type === "stretch") {
-                      openStretchEditor(activeDay.id, block.stretchId, block.holdSeconds, block.rounds, block.id);
-                    } else if (block.type === "pause") {
-                      openPauseEditor(activeDay.id, block.label, block.seconds, block.scope, block.id);
-                    } else if (block.type === "note") {
-                      openNoteEditor(activeDay.id, block.label, block.notes, block.id);
-                    }
-                  };
+                  if (editableExercise) {
+                    openEditExercise(activePlanDay.id, editableExercise);
+                    return;
+                  }
 
-                  const removeBlock = () => {
-                    if (editableExercise) {
-                      handleRemoveExercise(activeDay.id, editableExercise.id);
-                    } else {
-                      handleRemoveBlock(activeDay.id, block.id);
-                    }
-                  };
+                  if (block.type === "warmup" && warmupExercise) {
+                    openWarmupEditor(
+                      activePlanDay.id,
+                      warmupExercise.id,
+                      getExerciseLabel(warmupExercise.name),
+                      block.rounds,
+                      block.restSeconds,
+                      block.id
+                    );
+                    return;
+                  }
 
-                  return (
-                    <div key={block.id} style={planBlockRow}>
-                      <button style={planBlockMain} onClick={openEditor}>
-                        <div style={planBlockNameRow}>
-                          <span style={planBlockName}>{getBlockTitle(block)}</span>
-                          <span style={getBlockBadgeStyle(block.type)}>
-                            {getBlockBadgeLabel(block.type)}
-                          </span>
-                        </div>
-                        <span style={planBlockMeta}>{getBlockMeta(block)}</span>
-                      </button>
-                      {canEditActivePlan ? (
-                        <div style={planBlockActions}>
-                          <button
-                            style={planBlockIcon}
-                            disabled={blockIndex === 0}
-                            onClick={() => handleMoveBlock(activeDay.id, block.id, "up")}
-                          >
-                            ↑ Hoch
-                          </button>
-                          <button
-                            style={planBlockIcon}
-                            disabled={blockIndex === dayBlocks.length - 1}
-                            onClick={() => handleMoveBlock(activeDay.id, block.id, "down")}
-                          >
-                            ↓ Runter
-                          </button>
-                          <button
-                            style={{ ...planBlockIcon, color: "#be123c" }}
-                            onClick={removeBlock}
-                          >
-                            Löschen
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-            ) : null}
+                  if (block.type === "stretch") {
+                    openStretchEditor(activePlanDay.id, block.stretchId, block.holdSeconds, block.rounds, block.id);
+                    return;
+                  }
 
-            {canEditActivePlan && activeDayTab ? (
-              <div style={quickAddDock}>
-                <button style={addBlockButton} onClick={() => openAddBlockSheet(activeDayTab)}>
-                  + Baustein hinzufügen
-                </button>
-              </div>
+                  if (block.type === "pause") {
+                    openPauseEditor(activePlanDay.id, block.label, block.seconds, block.scope, block.id);
+                    return;
+                  }
+
+                  if (block.type === "note") {
+                    openNoteEditor(activePlanDay.id, block.label, block.notes, block.id);
+                  }
+                }}
+              />
             ) : null}
           </div>
         </div>
@@ -1075,42 +1134,15 @@ export default function Home() {
                 <div style={sectionTitle}>Neuer Plan</div>
                 <div style={sheetTitle}>{getWizardTitle(newPlanWizard.step)}</div>
               </div>
-              <button style={closeButton} onClick={closeNewPlanWizard}>×</button>
+              <AppButton variant="secondary" size="compact" style={sheetCloseButton} onClick={closeNewPlanWizard}>
+                ×
+              </AppButton>
             </div>
 
             <div style={wizardStepBar}>
               <span style={wizardStepChip}>{getWizardStepLabel(newPlanWizard.step)}</span>
-              {newPlanWizard.days.length > 0 ? (
-                <span style={wizardMeta}>{newPlanWizard.days.length} Splits</span>
-              ) : null}
-              {newPlanWizard.exercises.length > 0 ? (
-                <span style={wizardMeta}>{newPlanWizard.exercises.length} Übungen</span>
-              ) : null}
+              <span style={wizardMeta}>Direkt danach im visuellen Builder</span>
             </div>
-
-            {newPlanWizard.days.length > 0 && newPlanWizard.step !== "day" ? (
-              <div style={wizardPreviewList}>
-                {newPlanWizard.days.map((day, index) => (
-                  <div key={`${day.name}-${index}`} style={wizardPreviewItem}>
-                    <span style={wizardPreviewName}>{day.name}</span>
-                    <span style={wizardPreviewMeta}>{day.exercises.length} Übungen</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            {newPlanWizard.exercises.length > 0 && newPlanWizard.step === "pause" ? (
-              <div style={wizardPreviewList}>
-                {newPlanWizard.exercises.map((exercise, index) => (
-                  <div key={`${exercise.name}-${index}`} style={wizardPreviewItem}>
-                    <span style={wizardPreviewName}>{getExerciseLabel(exercise.name)}</span>
-                    <span style={wizardPreviewMeta}>
-                      {exercise.sets} Sätze · {formatRest(exercise.restSeconds)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
 
             {newPlanWizard.step === "name" ? (
               <label style={fieldStack}>
@@ -1152,172 +1184,67 @@ export default function Home() {
                   }}
                 />
                 <div style={wizardChoiceGridCompact}>
-                  {["Tag A", "Tag B", "Tag C", "Push", "Pull", "Mixed"].map((value) => (
+                  {[
+                    { value: "Tag A", slot: "push" as const },
+                    { value: "Tag B", slot: "pull" as const },
+                    { value: "Tag C", slot: "mixed" as const },
+                  ].map((option) => (
                     <button
-                      key={value}
+                      key={option.value}
                       style={
-                        newPlanWizard.dayName === value
+                        newPlanWizard.dayName === option.value
                           ? wizardChoiceButtonActive
                           : wizardChoiceButton
                       }
-                      onClick={() => selectWizardDayPreset(value)}
+                      onClick={() => selectWizardDayPreset(option.value, option.slot)}
                     >
-                      {value}
+                      {option.value}
                     </button>
                   ))}
                 </div>
-              </div>
-            ) : null}
-
-            {newPlanWizard.step === "exercise" ? (
-              <div style={fieldStack}>
-                <span style={fieldLabel}>Übung</span>
+                <div style={sectionTitle}>Split</div>
                 <div style={wizardChoiceGridCompact}>
-                  {EXERCISE_LIBRARY_GROUPS.slice(0, 6).map((group) => {
-                    const isActiveCategory = group.items.some(
-                      (item) => item.value === newPlanWizard.exerciseName
-                    );
-                    return (
-                      <button
-                        key={group.category}
-                        style={isActiveCategory ? wizardChoiceButtonActive : wizardChoiceButton}
-                        onClick={() => updateWizardExerciseCategory(group.category)}
-                      >
-                        {group.category}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={wizardExerciseQuickList}>
-                  {(EXERCISE_LIBRARY_GROUPS.find((group) =>
-                    group.items.some((item) => item.value === newPlanWizard.exerciseName)
-                  )?.items ?? EXERCISE_LIBRARY_GROUPS[0]?.items ?? [])
-                    .slice(0, 6)
-                    .map((exercise) => (
-                      <button
-                        key={exercise.value}
-                        style={
-                          newPlanWizard.exerciseName === exercise.value
-                            ? wizardExerciseQuickCardActive
-                            : wizardExerciseQuickCard
-                        }
-                        onClick={() => updateWizardExerciseSelection(exercise.value)}
-                      >
-                        {exercise.label}
-                      </button>
-                    ))}
-                </div>
-                <select
-                  style={textInput}
-                  value={newPlanWizard.exerciseName}
-                  onChange={(event) => updateWizardExerciseSelection(event.target.value)}
-                >
-                  {EXERCISE_LIBRARY.map((exercise) => (
-                    <option key={exercise.value} value={exercise.value}>
-                      {exercise.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            {newPlanWizard.step === "sets" ? (
-              <div style={wizardChoiceGrid}>
-                {[2, 3, 4, 5, 6].map((value) => (
-                  <button
-                    key={value}
-                    style={
-                      newPlanWizard.sets === String(value)
-                        ? wizardChoiceButtonActive
-                        : wizardChoiceButton
-                    }
-                    onClick={() =>
-                      setNewPlanWizard((current) =>
-                        current
-                          ? { ...current, step: "pause", sets: String(value) }
-                          : current
-                      )
-                    }
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            {newPlanWizard.step === "pause" ? (
-              <>
-                <div style={wizardChoiceGrid}>
-                  {[60, 75, 90, 120, 150, 180].map((value) => (
+                  {[
+                    { value: "push", label: "Push" },
+                    { value: "pull", label: "Pull" },
+                    { value: "mixed", label: "Mixed" },
+                  ].map((option) => (
                     <button
-                      key={value}
+                      key={option.value}
                       style={
-                        newPlanWizard.restSeconds === String(value)
+                        newPlanWizard.daySlot === option.value
                           ? wizardChoiceButtonActive
                           : wizardChoiceButton
                       }
                       onClick={() =>
                         setNewPlanWizard((current) =>
-                          current ? { ...current, restSeconds: String(value) } : current
+                          current
+                            ? {
+                                ...current,
+                                daySlot: option.value as "push" | "pull" | "mixed",
+                              }
+                            : current
                         )
                       }
                     >
-                      {formatRest(value)}
+                      {option.label}
                     </button>
                   ))}
                 </div>
-                <div style={wizardReadyCard}>
-                  <div style={wizardReadyTitle}>
-                    {getExerciseLabel(newPlanWizard.exerciseName)}
-                  </div>
-                  <div style={wizardReadyMeta}>
-                    {newPlanWizard.sets} Sätze · {formatRest(Number(newPlanWizard.restSeconds))}
-                  </div>
-                </div>
-              </>
+                <div style={editorHint}>Ein Name, ein Split, dann direkt in den Builder.</div>
+              </div>
             ) : null}
 
             <div style={editorActions}>
-              <button style={selectButton} onClick={closeNewPlanWizard}>Abbrechen</button>
-              {newPlanWizard.step !== "pause" ? (
-                <>
-                  {newPlanWizard.step === "name" || newPlanWizard.step === "day" ? (
-                    <button style={activeSelectButton} onClick={continueNewPlanWizard}>
-                      Weiter
-                    </button>
-                  ) : null}
-                  {newPlanWizard.step !== "name" ? (
-                    <button style={selectButton} onClick={goBackNewPlanWizard}>
-                      Zurück
-                    </button>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <div style={wizardFinalActions}>
-                    <button style={wizardOutcomeButton} onClick={addGuidedExerciseAndContinue}>
-                      <span style={wizardOutcomeTitle}>+ Übung</span>
-                      <span style={wizardOutcomeMeta}>Noch eine Übung in diesem Split</span>
-                    </button>
-                    <button style={wizardOutcomeButton} onClick={addGuidedDayAndContinue}>
-                      <span style={wizardOutcomeTitle}>+ Split</span>
-                      <span style={wizardOutcomeMeta}>Diesen Tag abschließen und neuen Tag starten</span>
-                    </button>
-                    <button style={wizardPrimaryOutcomeButton} onClick={finishNewPlanWizard}>
-                      <span style={wizardOutcomeTitle}>Erstellen</span>
-                      <span style={wizardOutcomeMeta}>Plan jetzt direkt anlegen</span>
-                    </button>
-                  </div>
-                  <div style={wizardSecondaryActions}>
-                    <button style={selectButton} onClick={goBackNewPlanWizard}>
-                      Zurück
-                    </button>
-                    <button style={selectButton} onClick={closeNewPlanWizard}>
-                      Abbrechen
-                    </button>
-                  </div>
-                </>
-              )}
+              <AppButton variant="secondary" block onClick={closeNewPlanWizard}>Abbrechen</AppButton>
+              <AppButton variant="primary" block onClick={continueNewPlanWizard}>
+                {newPlanWizard.step === "name" ? "Weiter" : "Builder öffnen"}
+              </AppButton>
+              {newPlanWizard.step !== "name" ? (
+                <AppButton variant="secondary" block onClick={goBackNewPlanWizard}>
+                  Zurück
+                </AppButton>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1332,7 +1259,9 @@ export default function Home() {
                 <div style={sectionTitle}>Tag</div>
                 <div style={sheetTitle}>Namen anpassen</div>
               </div>
-              <button style={closeButton} onClick={() => setDayEditor(null)}>×</button>
+              <AppButton variant="secondary" size="compact" style={sheetCloseButton} onClick={() => setDayEditor(null)}>
+                ×
+              </AppButton>
             </div>
 
             <label style={fieldStack}>
@@ -1355,8 +1284,8 @@ export default function Home() {
             </label>
 
             <div style={editorActions}>
-              <button style={selectButton} onClick={() => setDayEditor(null)}>Abbrechen</button>
-              <button style={activeSelectButton} onClick={saveDayEditor}>Speichern</button>
+              <AppButton variant="secondary" block onClick={() => setDayEditor(null)}>Abbrechen</AppButton>
+              <AppButton variant="primary" block onClick={saveDayEditor}>Speichern</AppButton>
             </div>
           </div>
         </div>
@@ -1370,7 +1299,14 @@ export default function Home() {
                 <div style={sectionTitle}>Neuer Split</div>
                 <div style={sheetTitle}>Tag hinzufügen</div>
               </div>
-              <button style={closeButton} onClick={() => setNewDayEditor(null)}>×</button>
+              <AppButton
+                variant="secondary"
+                size="compact"
+                style={sheetCloseButton}
+                onClick={() => setNewDayEditor(null)}
+              >
+                ×
+              </AppButton>
             </div>
 
             <div style={fieldGrid}>
@@ -1432,8 +1368,8 @@ export default function Home() {
             </div>
 
             <div style={editorActions}>
-              <button style={selectButton} onClick={() => setNewDayEditor(null)}>Abbrechen</button>
-              <button style={activeSelectButton} onClick={saveNewDayEditor}>Hinzufügen</button>
+              <AppButton variant="secondary" block onClick={() => setNewDayEditor(null)}>Abbrechen</AppButton>
+              <AppButton variant="primary" block onClick={saveNewDayEditor}>Hinzufügen</AppButton>
             </div>
           </div>
         </div>
@@ -1449,24 +1385,91 @@ export default function Home() {
                 <div style={sheetTitle}>
                   {exerciseEditor.exerciseId ? "Übung bearbeiten" : "Übung hinzufügen"}
                 </div>
+                <div style={sheetSubtext}>Ein paar schnelle Entscheidungen und die Übung sitzt direkt im Ablauf.</div>
               </div>
-              <button style={closeButton} onClick={() => setExerciseEditor(null)}>×</button>
+              <AppButton
+                variant="secondary"
+                size="compact"
+                style={sheetCloseButton}
+                onClick={() => setExerciseEditor(null)}
+              >
+                ×
+              </AppButton>
             </div>
 
-            <div style={fieldGrid}>
+            <div style={fieldGridCompact}>
               <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
-                <span style={fieldLabel}>Übung</span>
+                <div style={fieldLabelRow}>
+                  <span style={fieldLabel}>Übung</span>
+                  <button
+                    style={
+                      exerciseEditorFavoriteActive
+                        ? favoriteToggleButtonActive
+                        : favoriteToggleButton
+                    }
+                    onClick={toggleExerciseEditorFavorite}
+                  >
+                    {exerciseEditorFavoriteActive ? "★ Favorit" : "☆ Favorit"}
+                  </button>
+                </div>
+                {favoriteExercises.length > 0 ? (
+                  <div style={favoriteQuickRow}>
+                    {favoriteExercises.slice(0, 6).map((exercise) => {
+                      const isActiveFavorite =
+                        resolveExerciseNameInput(exerciseEditor.name) === exercise.value ||
+                        exercise.label.toLowerCase() === exerciseEditor.name.trim().toLowerCase();
+
+                      return (
+                        <button
+                          key={exercise.value}
+                          style={
+                            isActiveFavorite ? favoriteQuickButtonActive : favoriteQuickButton
+                          }
+                          onClick={() => applyExerciseEditorDefaults(exercise.label)}
+                        >
+                          ★ {exercise.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {recentPlanExercises.length > 0 ? (
+                  <div style={recentQuickSection}>
+                    <div style={recentQuickLabel}>Zuletzt verwendet</div>
+                    <div style={favoriteQuickRow}>
+                      {recentPlanExercises.map((exercise) => {
+                        const isActiveRecent =
+                          resolveExerciseNameInput(exerciseEditor.name) === exercise.value ||
+                          exercise.label.toLowerCase() === exerciseEditor.name.trim().toLowerCase();
+
+                        return (
+                          <button
+                            key={`recent-${exercise.value}`}
+                            style={
+                              isActiveRecent ? favoriteQuickButtonActive : favoriteQuickButton
+                            }
+                            onClick={() => applyExerciseEditorDefaults(exercise.label)}
+                          >
+                            ↺ {exercise.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 <div style={editorQuickGrid}>
-                  {EXERCISE_LIBRARY_GROUPS.slice(0, 6).map((group) => {
+                  {exerciseLibraryGroups.slice(0, 6).map((group) => {
                     const isActiveCategory = group.items.some(
-                      (item) => item.value === exerciseEditor.name
+                      (item) =>
+                        item.value === resolveExerciseNameInput(exerciseEditor.name) ||
+                        item.label.toLowerCase() === exerciseEditor.name.trim().toLowerCase()
                     );
                     return (
                       <button
                         key={group.category}
                         style={isActiveCategory ? wizardChoiceButtonActive : wizardChoiceButton}
                         onClick={() => {
-                          const first = group.items[0]?.value;
+                          const first = group.items[0]?.label;
                           if (!first) return;
                           applyExerciseEditorDefaults(first);
                         }}
@@ -1476,29 +1479,41 @@ export default function Home() {
                     );
                   })}
                 </div>
-                <select
+                <input
                   style={textInput}
+                  list="exercise-suggestions"
                   value={exerciseEditor.name}
-                  onChange={(event) => applyExerciseEditorDefaults(event.target.value)}
-                >
-                  {EXERCISE_LIBRARY.map((exercise) => (
-                    <option key={exercise.value} value={exercise.value}>
-                      {exercise.label}
-                    </option>
+                  placeholder="z. B. Bankdrücken oder eigene Übung"
+                  onChange={(event) =>
+                    setExerciseEditor((current) =>
+                      current ? { ...current, name: event.target.value } : current
+                    )
+                  }
+                  onBlur={(event) => {
+                    if (!event.target.value.trim()) return;
+                    applyExerciseEditorDefaults(event.target.value);
+                  }}
+                />
+                <datalist id="exercise-suggestions">
+                  {exerciseLibrary.map((exercise) => (
+                    <option key={exercise.value} value={exercise.label} />
                   ))}
-                </select>
+                </datalist>
+                <div style={editorHint}>
+                  Eigene Übungen frei eintippen. Bekannte Übungen ziehen passende Standardwerte.
+                </div>
               </label>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Sätze</span>
-                <div style={editorQuickGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Sätze</div>
+                <div style={compactChoiceGrid}>
                   {[2, 3, 4, 5, 6].map((value) => (
                     <button
                       key={value}
                       style={
                         exerciseEditor.sets === String(value)
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setExerciseEditor((current) =>
@@ -1511,7 +1526,7 @@ export default function Home() {
                   ))}
                 </div>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   inputMode="numeric"
                   value={exerciseEditor.sets}
                   onChange={(event) =>
@@ -1520,11 +1535,11 @@ export default function Home() {
                     )
                   }
                 />
-              </label>
+              </div>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Min. Wdh</span>
-                <div style={editorQuickGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Wdh.-Bereich</div>
+                <div style={compactChoiceGrid}>
                   {[
                     [5, 8],
                     [6, 10],
@@ -1536,8 +1551,8 @@ export default function Home() {
                       style={
                         exerciseEditor.minReps === String(min) &&
                         exerciseEditor.maxReps === String(max)
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setExerciseEditor((current) =>
@@ -1551,42 +1566,40 @@ export default function Home() {
                     </button>
                   ))}
                 </div>
-                <input
-                  style={textInput}
-                  inputMode="numeric"
-                  value={exerciseEditor.minReps}
-                  onChange={(event) =>
-                    setExerciseEditor((current) =>
-                      current ? { ...current, minReps: event.target.value } : current
-                    )
-                  }
-                />
-              </label>
+                <div style={compactDualInputs}>
+                  <input
+                    style={compactInput}
+                    inputMode="numeric"
+                    value={exerciseEditor.minReps}
+                    onChange={(event) =>
+                      setExerciseEditor((current) =>
+                        current ? { ...current, minReps: event.target.value } : current
+                      )
+                    }
+                  />
+                  <input
+                    style={compactInput}
+                    inputMode="numeric"
+                    value={exerciseEditor.maxReps}
+                    onChange={(event) =>
+                      setExerciseEditor((current) =>
+                        current ? { ...current, maxReps: event.target.value } : current
+                      )
+                    }
+                  />
+                </div>
+              </div>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Max. Wdh</span>
-                <input
-                  style={textInput}
-                  inputMode="numeric"
-                  value={exerciseEditor.maxReps}
-                  onChange={(event) =>
-                    setExerciseEditor((current) =>
-                      current ? { ...current, maxReps: event.target.value } : current
-                    )
-                  }
-                />
-              </label>
-
-              <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
-                <span style={fieldLabel}>Pause (Sekunden)</span>
-                <div style={editorQuickGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Pause</div>
+                <div style={compactChoiceGrid}>
                   {[60, 75, 90, 120, 150, 180].map((value) => (
                     <button
                       key={value}
                       style={
                         exerciseEditor.restSeconds === String(value)
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setExerciseEditor((current) =>
@@ -1599,7 +1612,7 @@ export default function Home() {
                   ))}
                 </div>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   inputMode="numeric"
                   value={exerciseEditor.restSeconds}
                   onChange={(event) =>
@@ -1608,12 +1621,24 @@ export default function Home() {
                     )
                   }
                 />
-              </label>
+              </div>
             </div>
 
             <div style={editorActions}>
-              <button style={selectButton} onClick={() => setExerciseEditor(null)}>Abbrechen</button>
-              <button style={activeSelectButton} onClick={saveExerciseEditor}>Speichern</button>
+              <AppButton variant="secondary" block onClick={() => setExerciseEditor(null)}>Abbrechen</AppButton>
+              <AppButton variant="primary" block onClick={saveExerciseEditor}>Speichern</AppButton>
+            </div>
+
+            <div style={builderSheetPreview}>
+              <div style={builderSheetPreviewLabel}>Live-Vorschau</div>
+              <div style={builderSheetPreviewTitle}>
+                {exerciseEditor.name.trim() || "Eigene Übung"}
+              </div>
+              <div style={builderSheetPreviewMeta}>
+                {Math.max(1, Number(exerciseEditor.sets) || 1)} × {Math.max(1, Number(exerciseEditor.minReps) || 1)}–
+                {Math.max(Math.max(1, Number(exerciseEditor.minReps) || 1), Number(exerciseEditor.maxReps) || Number(exerciseEditor.minReps) || 1)} ·{" "}
+                {formatRest(Math.max(15, Number(exerciseEditor.restSeconds) || 60))}
+              </div>
             </div>
           </div>
         </div>
@@ -1627,21 +1652,29 @@ export default function Home() {
               <div>
                 <div style={sectionTitle}>Aufwärmen</div>
                 <div style={sheetTitle}>{warmupEditor.exerciseLabel}</div>
+                <div style={sheetSubtext}>Warm-up bleibt als echter Block direkt vor der Übung sichtbar.</div>
               </div>
-              <button style={closeButton} onClick={() => setWarmupEditor(null)}>×</button>
+              <AppButton
+                variant="secondary"
+                size="compact"
+                style={sheetCloseButton}
+                onClick={() => setWarmupEditor(null)}
+              >
+                ×
+              </AppButton>
             </div>
 
-            <div style={fieldGrid}>
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Aufwärmsätze</span>
-                <div style={editorQuickGridCompact}>
-                  {[0, 1, 3].map((value) => (
+            <div style={fieldGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Aufwärmsätze</div>
+                <div style={compactChoiceGrid}>
+                  {[0, 1, 2, 3].map((value) => (
                     <button
                       key={value}
                       style={
                         warmupEditor.rounds === String(value)
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setWarmupEditor((current) =>
@@ -1654,7 +1687,7 @@ export default function Home() {
                   ))}
                 </div>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   inputMode="numeric"
                   value={warmupEditor.rounds}
                   onChange={(event) =>
@@ -1663,18 +1696,18 @@ export default function Home() {
                     )
                   }
                 />
-              </label>
+              </div>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Pause (Sek)</span>
-                <div style={editorQuickGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Pause</div>
+                <div style={compactChoiceGrid}>
                   {[45, 60, 75, 90].map((value) => (
                     <button
                       key={value}
                       style={
                         warmupEditor.restSeconds === String(value)
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setWarmupEditor((current) =>
@@ -1687,7 +1720,7 @@ export default function Home() {
                   ))}
                 </div>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   inputMode="numeric"
                   value={warmupEditor.restSeconds}
                   onChange={(event) =>
@@ -1696,14 +1729,25 @@ export default function Home() {
                     )
                   }
                 />
-              </label>
+              </div>
             </div>
 
             <div style={editorHint}>0 Aufwärmsätze blendet den Block aus.</div>
 
             <div style={editorActions}>
-              <button style={selectButton} onClick={() => setWarmupEditor(null)}>Abbrechen</button>
-              <button style={activeSelectButton} onClick={saveWarmupEditor}>Speichern</button>
+              <AppButton variant="secondary" block onClick={() => setWarmupEditor(null)}>Abbrechen</AppButton>
+              <AppButton variant="primary" block onClick={saveWarmupEditor}>Speichern</AppButton>
+            </div>
+
+            <div style={builderSheetPreview}>
+              <div style={builderSheetPreviewLabel}>Live-Vorschau</div>
+              <div style={builderSheetPreviewTitle}>
+                {warmupEditor.exerciseLabel} Aufwärmen
+              </div>
+              <div style={builderSheetPreviewMeta}>
+                {Math.max(0, Number(warmupEditor.rounds) || 0)} Sätze ·{" "}
+                {formatRest(Math.max(15, Number(warmupEditor.restSeconds) || 45))}
+              </div>
             </div>
           </div>
         </div>
@@ -1719,11 +1763,19 @@ export default function Home() {
                 <div style={sheetTitle}>
                   {stretchEditor.blockId ? "Dehnblock bearbeiten" : "Dehnblock hinzufügen"}
                 </div>
+                <div style={sheetSubtext}>Dehnen bleibt als echter Teil des Trainingsflusses sichtbar.</div>
               </div>
-              <button style={closeButton} onClick={() => setStretchEditor(null)}>×</button>
+              <AppButton
+                variant="secondary"
+                size="compact"
+                style={sheetCloseButton}
+                onClick={() => setStretchEditor(null)}
+              >
+                ×
+              </AppButton>
             </div>
 
-            <div style={fieldGrid}>
+            <div style={fieldGridCompact}>
               <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
                 <span style={fieldLabel}>Dehnung</span>
                 <div style={editorQuickGrid}>
@@ -1749,7 +1801,7 @@ export default function Home() {
                   })}
                 </div>
                 <select
-                  style={textInput}
+                  style={compactInput}
                   value={stretchEditor.stretchId}
                   onChange={(event) =>
                     setStretchEditor((current) =>
@@ -1765,16 +1817,16 @@ export default function Home() {
                 </select>
               </label>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Halten (Sek)</span>
-                <div style={editorQuickGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Halten</div>
+                <div style={compactChoiceGrid}>
                   {[20, 30, 45, 60].map((value) => (
                     <button
                       key={value}
                       style={
                         stretchEditor.holdSeconds === String(value)
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setStretchEditor((current) =>
@@ -1787,7 +1839,7 @@ export default function Home() {
                   ))}
                 </div>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   inputMode="numeric"
                   value={stretchEditor.holdSeconds}
                   onChange={(event) =>
@@ -1796,18 +1848,18 @@ export default function Home() {
                     )
                   }
                 />
-              </label>
+              </div>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Runden</span>
-                <div style={editorQuickGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Runden</div>
+                <div style={compactChoiceGrid}>
                   {[1, 2, 3].map((value) => (
                     <button
                       key={value}
                       style={
                         stretchEditor.rounds === String(value)
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setStretchEditor((current) =>
@@ -1820,7 +1872,7 @@ export default function Home() {
                   ))}
                 </div>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   inputMode="numeric"
                   value={stretchEditor.rounds}
                   onChange={(event) =>
@@ -1829,12 +1881,23 @@ export default function Home() {
                     )
                   }
                 />
-              </label>
+              </div>
             </div>
 
             <div style={editorActions}>
-              <button style={selectButton} onClick={() => setStretchEditor(null)}>Abbrechen</button>
-              <button style={activeSelectButton} onClick={saveStretchEditor}>Speichern</button>
+              <AppButton variant="secondary" block onClick={() => setStretchEditor(null)}>Abbrechen</AppButton>
+              <AppButton variant="primary" block onClick={saveStretchEditor}>Speichern</AppButton>
+            </div>
+
+            <div style={builderSheetPreview}>
+              <div style={builderSheetPreviewLabel}>Live-Vorschau</div>
+              <div style={builderSheetPreviewTitle}>
+                {STRETCH_LIBRARY.find((stretch) => stretch.value === stretchEditor.stretchId)?.label ?? "Dehnen"}
+              </div>
+              <div style={builderSheetPreviewMeta}>
+                {Math.max(15, Number(stretchEditor.holdSeconds) || 30)} Sek ·{" "}
+                {Math.max(1, Number(stretchEditor.rounds) || 1)} Runden
+              </div>
             </div>
           </div>
         </div>
@@ -1850,15 +1913,23 @@ export default function Home() {
                 <div style={sheetTitle}>
                   {pauseEditor.blockId ? "Pausenblock bearbeiten" : "Pausenblock hinzufügen"}
                 </div>
+                <div style={sheetSubtext}>Pausen werden als echter Block direkt im Ablauf gespeichert.</div>
               </div>
-              <button style={closeButton} onClick={() => setPauseEditor(null)}>×</button>
+              <AppButton
+                variant="secondary"
+                size="compact"
+                style={sheetCloseButton}
+                onClick={() => setPauseEditor(null)}
+              >
+                ×
+              </AppButton>
             </div>
 
-            <div style={fieldGrid}>
+            <div style={fieldGridCompact}>
               <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
                 <span style={fieldLabel}>Name</span>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   value={pauseEditor.label}
                   onChange={(event) =>
                     setPauseEditor((current) =>
@@ -1868,16 +1939,16 @@ export default function Home() {
                 />
               </label>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Sekunden</span>
-                <div style={editorQuickGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Sekunden</div>
+                <div style={compactChoiceGrid}>
                   {[30, 45, 60, 90, 120, 180].map((value) => (
                     <button
                       key={value}
                       style={
                         pauseEditor.seconds === String(value)
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setPauseEditor((current) =>
@@ -1890,7 +1961,7 @@ export default function Home() {
                   ))}
                 </div>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   inputMode="numeric"
                   value={pauseEditor.seconds}
                   onChange={(event) =>
@@ -1899,11 +1970,11 @@ export default function Home() {
                     )
                   }
                 />
-              </label>
+              </div>
 
-              <label style={fieldStack}>
-                <span style={fieldLabel}>Typ</span>
-                <div style={editorQuickGridCompact}>
+              <div style={compactEditorRow}>
+                <div style={compactEditorLabel}>Typ</div>
+                <div style={compactChoiceGrid}>
                   {[
                     { value: "exercise", label: "Übungspause" },
                     { value: "workout", label: "Workout-Pause" },
@@ -1912,8 +1983,8 @@ export default function Home() {
                       key={option.value}
                       style={
                         pauseEditor.scope === option.value
-                          ? wizardChoiceButtonActive
-                          : wizardChoiceButton
+                          ? compactChoiceButtonActive
+                          : compactChoiceButton
                       }
                       onClick={() =>
                         setPauseEditor((current) =>
@@ -1928,7 +1999,7 @@ export default function Home() {
                   ))}
                 </div>
                 <select
-                  style={textInput}
+                  style={compactInput}
                   value={pauseEditor.scope}
                   onChange={(event) =>
                     setPauseEditor((current) =>
@@ -1941,12 +2012,23 @@ export default function Home() {
                   <option value="exercise">Übungspause</option>
                   <option value="workout">Workout-Pause</option>
                 </select>
-              </label>
+              </div>
             </div>
 
             <div style={editorActions}>
-              <button style={selectButton} onClick={() => setPauseEditor(null)}>Abbrechen</button>
-              <button style={activeSelectButton} onClick={savePauseEditor}>Speichern</button>
+              <AppButton variant="secondary" block onClick={() => setPauseEditor(null)}>Abbrechen</AppButton>
+              <AppButton variant="primary" block onClick={savePauseEditor}>Speichern</AppButton>
+            </div>
+
+            <div style={builderSheetPreview}>
+              <div style={builderSheetPreviewLabel}>Live-Vorschau</div>
+              <div style={builderSheetPreviewTitle}>
+                {pauseEditor.label.trim() || (pauseEditor.scope === "workout" ? "Workout-Pause" : "Pause")}
+              </div>
+              <div style={builderSheetPreviewMeta}>
+                {formatRest(Math.max(15, Number(pauseEditor.seconds) || 60))} ·{" "}
+                {pauseEditor.scope === "workout" ? "Workout-Pause" : "Übungspause"}
+              </div>
             </div>
           </div>
         </div>
@@ -1961,15 +2043,23 @@ export default function Home() {
                 <div style={sheetTitle}>
                   {noteEditor.blockId ? "Hinweis bearbeiten" : "Hinweis hinzufügen"}
                 </div>
+                <div style={sheetSubtext}>Kurze Hinweise sitzen direkt sichtbar in der Planstruktur.</div>
               </div>
-              <button style={closeButton} onClick={() => setNoteEditor(null)}>×</button>
+              <AppButton
+                variant="secondary"
+                size="compact"
+                style={sheetCloseButton}
+                onClick={() => setNoteEditor(null)}
+              >
+                ×
+              </AppButton>
             </div>
 
-            <div style={fieldGrid}>
+            <div style={fieldGridCompact}>
               <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
                 <span style={fieldLabel}>Titel</span>
                 <input
-                  style={textInput}
+                  style={compactInput}
                   value={noteEditor.label}
                   onChange={(event) =>
                     setNoteEditor((current) =>
@@ -1982,7 +2072,7 @@ export default function Home() {
               <label style={{ ...fieldStack, gridColumn: "1 / -1" }}>
                 <span style={fieldLabel}>Text</span>
                 <textarea
-                  style={{ ...textInput, minHeight: 132, resize: "vertical" as const }}
+                  style={{ ...compactInput, minHeight: 110, resize: "vertical" as const }}
                   value={noteEditor.notes}
                   onChange={(event) =>
                     setNoteEditor((current) =>
@@ -1994,30 +2084,56 @@ export default function Home() {
             </div>
 
             <div style={editorActions}>
-              <button style={selectButton} onClick={() => setNoteEditor(null)}>Abbrechen</button>
-              <button style={activeSelectButton} onClick={saveNoteEditor}>Speichern</button>
+              <AppButton variant="secondary" block onClick={() => setNoteEditor(null)}>Abbrechen</AppButton>
+              <AppButton variant="primary" block onClick={saveNoteEditor}>Speichern</AppButton>
+            </div>
+
+            <div style={builderSheetPreview}>
+              <div style={builderSheetPreviewLabel}>Live-Vorschau</div>
+              <div style={builderSheetPreviewTitle}>
+                {noteEditor.label.trim() || "Hinweis"}
+              </div>
+              <div style={builderSheetPreviewMeta}>
+                {(noteEditor.notes.trim() || "Dein Hinweistext erscheint hier als kompakter Trainingsblock.")
+                  .replace(/\s+/g, " ")
+                  .slice(0, 120)}
+              </div>
             </div>
           </div>
         </div>
       ) : null}
 
-      {addBlockDayId ? (
+      {addBlockContext ? (
         <div style={overlay}>
           <div style={editorSheet}>
             <div style={sheetHeader}>
               <div>
                 <div style={sectionTitle}>Plan-Bausteine</div>
-                <div style={sheetTitle}>Baustein hinzufügen</div>
+                <div style={sheetTitle}>Block hinzufügen</div>
+                {(() => {
+                  const targetDay =
+                    activePlan.days.find((day) => day.id === addBlockContext.dayId) ?? null;
+                  const dayBlocks = targetDay ? getDayBlocks(targetDay) : [];
+                  const insertAfterBlock = addBlockContext.insertAfterBlockId
+                    ? dayBlocks.find((block) => block.id === addBlockContext.insertAfterBlockId) ?? null
+                    : null;
+
+                  return insertAfterBlock ? (
+                    <div style={sheetSubtext}>Wird nach „{insertAfterBlock.label}“ eingefügt.</div>
+                  ) : null;
+                })()}
               </div>
-              <button
-                style={closeButton}
+              <AppButton
+                variant="secondary"
+                size="compact"
+                style={sheetCloseButton}
                 onClick={() => {
-                  setAddBlockDayId(null);
+                  setAddBlockContext(null);
                   setWarmupTargetDayId(null);
                 }}
               >
                 ×
-              </button>
+              </AppButton>
             </div>
 
             {warmupTargetDayId ? (
@@ -2028,100 +2144,241 @@ export default function Home() {
                       key={exercise.id}
                       style={addPickerOption}
                       onClick={() => {
-                        setAddBlockDayId(null);
+                        const insertAfterBlockId = addBlockContext?.insertAfterBlockId ?? null;
+                        setAddBlockContext(null);
                         setWarmupTargetDayId(null);
                         openWarmupEditor(
                           warmupTargetDayId,
                           exercise.id,
                           getExerciseLabel(exercise.name),
                           1,
-                          Math.max(45, Math.round(exercise.restSeconds / 2))
+                          Math.max(45, Math.round(exercise.restSeconds / 2)),
+                          undefined,
+                          insertAfterBlockId
                         );
                       }}
                     >
                       <span style={addPickerEmoji}>🔥</span>
                       <span>
                         <div style={addPickerLabel}>{getExerciseLabel(exercise.name)}</div>
-                        <div style={addPickerHint}>Warm-up für diese Übung anpassen</div>
+                        <div style={addPickerHint}>Warm-up-Block für diese Übung einfügen</div>
                       </span>
                     </button>
                   )
                 )}
               </div>
             ) : (
-              <div style={addPickerList}>
-                <button
-                  style={addPickerOption}
-                  onClick={() => {
-                    setAddBlockDayId(null);
-                    openAddExercise(addBlockDayId);
-                  }}
-                >
-                  <span style={addPickerEmoji}>🏋️</span>
-                  <span>
-                    <div style={addPickerLabel}>Übung</div>
-                    <div style={addPickerHint}>Name, Sätze, Wiederholungen und Pause</div>
-                  </span>
-                </button>
+              (() => {
+                const targetDay =
+                  activePlan.days.find((day) => day.id === addBlockContext.dayId) ?? null;
+                const dayBlocks = targetDay ? getDayBlocks(targetDay) : [];
+                const hasExercises = (targetDay?.exercises.length ?? 0) > 0;
+                const insertAfterBlock = addBlockContext.insertAfterBlockId
+                  ? dayBlocks.find((block) => block.id === addBlockContext.insertAfterBlockId) ?? null
+                  : null;
+                const recommendedExerciseId =
+                  insertAfterBlock?.type === "exercise"
+                    ? insertAfterBlock.exerciseId
+                    : insertAfterBlock?.type === "warmup"
+                      ? insertAfterBlock.parentExerciseId
+                      : null;
+                const recommendedExercise =
+                  recommendedExerciseId && targetDay
+                    ? targetDay.exercises.find((exercise) => exercise.id === recommendedExerciseId) ?? null
+                    : null;
+                const recommendedOptions = getRecommendedAddOptions(dayBlocks, insertAfterBlock ?? undefined);
+                const allOptions = [
+                  {
+                    key: "exercise",
+                    icon: "🏋️",
+                    label: "Übung",
+                    hint: "Übung oder eigene Übung hinzufügen",
+                    onClick: () => {
+                      openAddExercise(addBlockContext.dayId);
+                    },
+                    accent: "#feecec",
+                    disabled: false,
+                  },
+                  {
+                    key: "warmup",
+                    icon: "🔥",
+                    label: "Warm-up",
+                    hint: "Warm-up als echten Block einfügen",
+                    onClick: () => {
+                      if (!hasExercises) return;
+                      if (recommendedExercise) {
+                        const insertAfterBlockId = addBlockContext.insertAfterBlockId ?? null;
+                        setAddBlockContext(null);
+                        openWarmupEditor(
+                          addBlockContext.dayId,
+                          recommendedExercise.id,
+                          getExerciseLabel(recommendedExercise.name),
+                          1,
+                          Math.max(45, Math.round(recommendedExercise.restSeconds / 2)),
+                          undefined,
+                          insertAfterBlockId
+                        );
+                        return;
+                      }
+                      setWarmupTargetDayId(addBlockContext.dayId);
+                    },
+                    accent: "#fff4e8",
+                    disabled: !hasExercises,
+                  },
+                  {
+                    key: "stretch",
+                    icon: "🧘",
+                    label: "Dehnen",
+                    hint: "Dehnblock in den Ablauf einfügen",
+                    onClick: () => {
+                      openStretchEditor(addBlockContext.dayId);
+                    },
+                    accent: "#ecfdf5",
+                    disabled: false,
+                  },
+                  {
+                    key: "pause",
+                    icon: "⏱️",
+                    label: "Pause",
+                    hint: "Pause als Block einfügen",
+                    onClick: () => {
+                      openPauseEditor(addBlockContext.dayId);
+                    },
+                    accent: "#eff5ff",
+                    disabled: false,
+                  },
+                  {
+                    key: "note",
+                    icon: "📝",
+                    label: "Notiz",
+                    hint: "Kurzen Hinweis ergänzen",
+                    onClick: () => {
+                      openNoteEditor(addBlockContext.dayId);
+                    },
+                    accent: "#f5f3ff",
+                    disabled: false,
+                  },
+                ] as const;
 
-                <button
-                  style={addPickerOption}
-                  onClick={() => {
-                    const hasExercises =
-                      (activePlan.days.find((day) => day.id === addBlockDayId)?.exercises.length ?? 0) > 0;
-                    if (!hasExercises) return;
-                    setWarmupTargetDayId(addBlockDayId);
-                  }}
-                >
-                  <span style={addPickerEmoji}>🔥</span>
-                  <span>
-                    <div style={addPickerLabel}>Warm-up</div>
-                    <div style={addPickerHint}>Aufwärmen einer Übung festlegen</div>
-                  </span>
-                </button>
+                const recommendedEntries = recommendedOptions.reduce<(typeof allOptions)[number][]>((list, key) => {
+                  const match = allOptions.find((entry) => entry.key === key);
+                  if (match) {
+                    list.push(match);
+                  }
+                  return list;
+                }, []);
+                const recommendedSet = new Set<string>(recommendedOptions);
+                const orderedOptions = [
+                  ...recommendedEntries,
+                  ...allOptions.filter((option) => !recommendedSet.has(option.key)),
+                ];
+                const quickTemplates = [
+                  {
+                    key: "exercise-start",
+                    label: "Direkt mit Übung",
+                    detail: "Öffnet sofort den kompakten Übungseditor.",
+                    disabled: false,
+                    onClick: () => openAddExercise(addBlockContext.dayId),
+                  },
+                  {
+                    key: "warmup-start",
+                    label: "Warm-up vor Übung",
+                    detail: hasExercises
+                      ? "Fügt vor einer Zielübung direkt einen echten Warm-up-Block ein."
+                      : "Lege zuerst eine Übung an, damit ein Warm-up sauber verknüpft werden kann.",
+                    disabled: !hasExercises,
+                    onClick: () => {
+                      if (!hasExercises) return;
+                      if (recommendedExercise) {
+                        const insertAfterBlockId = addBlockContext.insertAfterBlockId ?? null;
+                        setAddBlockContext(null);
+                        openWarmupEditor(
+                          addBlockContext.dayId,
+                          recommendedExercise.id,
+                          getExerciseLabel(recommendedExercise.name),
+                          1,
+                          Math.max(45, Math.round(recommendedExercise.restSeconds / 2)),
+                          undefined,
+                          insertAfterBlockId
+                        );
+                        return;
+                      }
+                      setWarmupTargetDayId(addBlockContext.dayId);
+                    },
+                  },
+                  {
+                    key: "mobility-start",
+                    label: "Mobiler Einstieg",
+                    detail: "Startet mit Stretch/Mobility und hält den Tag als Fluss sichtbar.",
+                    disabled: false,
+                    onClick: () => openStretchEditor(addBlockContext.dayId),
+                  },
+                ];
 
-                <button
-                  style={addPickerOption}
-                  onClick={() => {
-                    setAddBlockDayId(null);
-                    openStretchEditor(addBlockDayId);
-                  }}
-                >
-                  <span style={addPickerEmoji}>🧘</span>
-                  <span>
-                    <div style={addPickerLabel}>Dehnen</div>
-                    <div style={addPickerHint}>Timer-Block mit Dauer und Runden</div>
-                  </span>
-                </button>
-
-                <button
-                  style={addPickerOption}
-                  onClick={() => {
-                    setAddBlockDayId(null);
-                    openPauseEditor(addBlockDayId);
-                  }}
-                >
-                  <span style={addPickerEmoji}>⏱️</span>
-                  <span>
-                    <div style={addPickerLabel}>Pause</div>
-                    <div style={addPickerHint}>Einfache Übungs- oder Workout-Pause</div>
-                  </span>
-                </button>
-
-                <button
-                  style={addPickerOption}
-                  onClick={() => {
-                    setAddBlockDayId(null);
-                    openNoteEditor(addBlockDayId);
-                  }}
-                >
-                  <span style={addPickerEmoji}>📝</span>
-                  <span>
-                    <div style={addPickerLabel}>Notiz</div>
-                    <div style={addPickerHint}>Hinweistext für diesen Trainingstag</div>
-                  </span>
-                </button>
-              </div>
+                return (
+                  <div style={addSheetStack}>
+                    <div style={sectionTitle}>Schnellstart</div>
+                    <div style={templateCardGrid}>
+                      {quickTemplates.map((template) => (
+                        <button
+                          key={template.key}
+                          style={{
+                            ...templateCard,
+                            opacity: template.disabled ? 0.55 : 1,
+                          }}
+                          disabled={template.disabled}
+                          onClick={template.onClick}
+                        >
+                          <div style={templateTitle}>{template.label}</div>
+                          <div style={templateDetail}>{template.detail}</div>
+                        </button>
+                      ))}
+                    </div>
+                    {recentPlanExercises.length > 0 ? (
+                      <>
+                        <div style={sectionTitle}>Zuletzt verwendet</div>
+                        <div style={favoriteQuickRow}>
+                          {recentPlanExercises.map((exercise) => (
+                            <button
+                              key={`sheet-recent-${exercise.value}`}
+                              style={favoriteQuickButton}
+                              onClick={() => openAddExerciseWithName(addBlockContext.dayId, exercise.label)}
+                            >
+                              ↺ {exercise.label}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+                    <div style={sectionTitle}>Nächster Block</div>
+                    <div style={addPickerList}>
+                      {orderedOptions.map((option) => (
+                        <button
+                          key={option.key}
+                          style={{
+                            ...addPickerOption,
+                            background: option.accent,
+                            opacity: option.disabled ? 0.55 : 1,
+                          }}
+                          disabled={option.disabled}
+                          onClick={option.onClick}
+                        >
+                          <span style={addPickerEmoji}>{option.icon}</span>
+                          <span style={addOptionTextWrap}>
+                            <div style={addOptionLabelRow}>
+                              <div style={addPickerLabel}>{option.label}</div>
+                              {recommendedSet.has(option.key) ? (
+                                <span style={recommendedPill}>Empfohlen</span>
+                              ) : null}
+                            </div>
+                            <div style={addPickerHint}>{option.hint}</div>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()
             )}
           </div>
         </div>
@@ -2195,61 +2452,73 @@ function getBlockMeta(block: TrainingPlanBlock) {
   return `${formatRest(block.seconds)} · ${block.scope === "workout" ? "Workout-Pause" : "Übungspause"}`;
 }
 
-function getBlockBadgeLabel(type: TrainingPlanBlock["type"]) {
-  if (type === "exercise") return "Übung";
-  if (type === "warmup") return "Aufwärmen";
-  if (type === "stretch") return "Dehnen";
-  if (type === "note") return "Notiz";
-  return "Pause";
-}
-
-function getBlockBadgeStyle(type: TrainingPlanBlock["type"]) {
-  if (type === "exercise") return blockBadgeExercise;
-  if (type === "warmup") return blockBadgeWarmup;
-  if (type === "stretch") return blockBadgeStretch;
-  if (type === "note") return blockBadgeNote;
-  return blockBadgePause;
-}
-
-function getOverviewChipStyle(type: TrainingPlanBlock["type"]) {
-  if (type === "exercise") return overviewChipExercise;
-  if (type === "warmup") return overviewChipWarmup;
-  if (type === "stretch") return overviewChipStretch;
-  if (type === "note") return overviewChipNote;
-  return overviewChipPause;
-}
-
 function getWizardTitle(step: NewPlanWizardState["step"]) {
   if (step === "name") return "Planname";
-  if (step === "day") return "Tag";
-  if (step === "exercise") return "Übung";
-  if (step === "sets") return "Sätze";
-  return "Pause";
+  return "Tag";
 }
 
 function getWizardStepLabel(step: NewPlanWizardState["step"]) {
-  if (step === "name") return "1 / 5";
-  if (step === "day") return "2 / 5";
-  if (step === "exercise") return "3 / 5";
-  if (step === "sets") return "4 / 5";
-  return "5 / 5";
+  if (step === "name") return "1 / 2";
+  return "2 / 2";
 }
 
-function buildGuidedWizardExercise(wizard: NewPlanWizardState): GuidedPlanExercise {
-  const suggested = getSuggestedExerciseSetup(wizard.exerciseName);
-  return {
-    name: wizard.exerciseName,
-    sets: Math.max(1, Number(wizard.sets) || suggested.sets),
-    minReps: suggested.minReps,
-    maxReps: suggested.maxReps,
-    restSeconds: Math.max(15, Number(wizard.restSeconds) || suggested.restSeconds),
-  };
+function deriveSlotFromDayName(value: string): "push" | "pull" | "mixed" {
+  const lowered = value.trim().toLowerCase();
+  if (lowered.includes("pull")) return "pull";
+  if (lowered.includes("mixed")) return "mixed";
+  return "push";
 }
 
-function getNextWizardDayName(existingDays: number) {
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const letter = letters[existingDays] ?? String(existingDays + 1);
-  return `Tag ${letter}`;
+function resolveExerciseNameInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const exerciseLibrary = getExerciseLibrary();
+  const exactValueMatch = exerciseLibrary.find(
+    (exercise) => exercise.value.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (exactValueMatch) {
+    return exactValueMatch.value;
+  }
+
+  const exactLabelMatch = exerciseLibrary.find(
+    (exercise) => exercise.label.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (exactLabelMatch) {
+    return exactLabelMatch.value;
+  }
+
+  return trimmed;
+}
+
+function getRecommendedAddOptions(
+  dayBlocks: TrainingPlanBlock[],
+  insertAfterBlock?: TrainingPlanBlock
+) {
+  const anchorBlock = insertAfterBlock ?? dayBlocks[dayBlocks.length - 1];
+  if (!anchorBlock) {
+    return ["stretch", "exercise", "pause"] as const;
+  }
+
+  if (anchorBlock.type === "stretch") {
+    return ["warmup", "exercise", "pause"] as const;
+  }
+
+  if (anchorBlock.type === "exercise") {
+    return ["pause", "exercise", "warmup"] as const;
+  }
+
+  if (anchorBlock.type === "pause") {
+    return ["exercise", "stretch", "note"] as const;
+  }
+
+  if (anchorBlock.type === "warmup") {
+    return ["exercise", "pause", "note"] as const;
+  }
+
+  return ["exercise", "pause", "stretch"] as const;
 }
 
 // Styles
@@ -2260,9 +2529,9 @@ const screen = {
   justifyContent: "center",
   alignItems: "stretch",
   overflow: "hidden" as const,
-  padding: "max(8px, env(safe-area-inset-top)) 10px calc(68px + env(safe-area-inset-bottom))",
-  background:
-    "linear-gradient(180deg, #111827 0px, #111827 56px, #dde6f5 56px, #f3f5f9 136px, #fbfbfd 100%)",
+  padding:
+    "calc(8px + env(safe-area-inset-top)) 8px calc(100px + env(safe-area-inset-bottom))",
+  background: appChromeBackground,
   fontFamily: "sans-serif",
   position: "relative" as const,
   boxSizing: "border-box" as const,
@@ -2272,17 +2541,16 @@ const shell = {
   maxWidth: 460,
   flex: 1,
   minHeight: 0,
-  height: "100%",
   width: "100%",
   margin: "0 auto",
-  padding: "8px 8px 8px",
-  borderRadius: 30,
-  background: "rgba(255,255,255,0.96)",
-  boxShadow: "0 24px 60px rgba(17, 24, 39, 0.08)",
-  border: "1px solid rgba(148, 163, 184, 0.14)",
+  padding: "4px",
+  borderRadius: 28,
+  background: withAlpha(appPalette.surface, 0.96),
+  boxShadow: `0 24px 60px ${withAlpha(appPalette.surfaceDark, 0.08)}`,
+  border: `1px solid ${withAlpha(appPalette.borderDefault, 0.14)}`,
   display: "flex",
   flexDirection: "column" as const,
-  gap: 8,
+  gap: 4,
   overflow: "hidden" as const,
   boxSizing: "border-box" as const,
 };
@@ -2293,18 +2561,27 @@ const topBar = {
   alignItems: "center",
   gap: 12,
   flexShrink: 0,
+  minHeight: 34,
+};
+
+const sheetSubtext = {
+  marginTop: 6,
+  fontSize: 12,
+  lineHeight: 1.35,
+  color: withAlpha(appPalette.textDefault, 0.95),
+  fontWeight: 600,
 };
 
 const brandPill = {
   display: "inline-flex",
   alignItems: "center",
-  minHeight: 34,
+  minHeight: 32,
   width: "fit-content",
-  padding: "7px 13px",
+  padding: "6px 13px",
   borderRadius: 999,
-  background: "#111827",
-  color: "#fff",
-  fontSize: 13,
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
+  fontSize: 12,
   fontWeight: "bold",
 };
 
@@ -2312,9 +2589,9 @@ const ghostAction = {
   minHeight: 32,
   padding: "6px 10px",
   borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "rgba(255,255,255,0.96)",
-  color: "#111827",
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: withAlpha(appPalette.surface, 0.96),
+  color: appPalette.textStrong,
   fontSize: 12,
   fontWeight: "bold",
   cursor: "pointer",
@@ -2324,7 +2601,7 @@ const sectionTitle = {
   fontSize: 11,
   textTransform: "uppercase" as const,
   letterSpacing: 1.1,
-  color: "#64748b",
+  color: appPalette.textMuted,
   fontWeight: "bold",
 };
 
@@ -2333,18 +2610,18 @@ const activePlanBar = {
   justifyContent: "space-between",
   alignItems: "center",
   gap: 10,
-  padding: "12px 14px",
+  padding: "8px 10px",
   borderRadius: 20,
-  background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)",
-  border: "1px solid #dfe8f3",
-  marginBottom: 12,
-  boxShadow: "0 12px 26px rgba(15, 23, 42, 0.05)",
+  background: `linear-gradient(180deg, ${appPalette.surfaceMuted} 0%, ${appPalette.surface} 100%)`,
+  border: `1px solid ${appPalette.borderSoft}`,
+  marginBottom: 6,
+  boxShadow: `0 12px 26px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
 };
 
 const activePlanName = {
   fontSize: 15,
   fontWeight: "bold",
-  color: "#111827",
+  color: appPalette.textStrong,
   marginTop: 2,
 };
 
@@ -2352,60 +2629,42 @@ const currentPlanCard = {
   display: "flex",
   alignItems: "flex-end",
   justifyContent: "space-between",
-  gap: 12,
+  gap: 10,
   padding: "8px 10px",
-  borderRadius: 18,
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  border: "1px solid #e2e8f0",
-  boxShadow: "0 14px 28px rgba(15, 23, 42, 0.05)",
+  borderRadius: 16,
+  background: `linear-gradient(180deg, ${appPalette.surface} 0%, ${appPalette.surfaceMuted} 100%)`,
+  border: `1px solid ${appPalette.borderDefault}`,
+  boxShadow: `0 14px 28px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
   flexShrink: 0,
 };
 
 const currentPlanName = {
   marginTop: 2,
-  fontSize: 17,
+  fontSize: 15,
   lineHeight: 1.05,
   fontWeight: 800,
-  color: "#111827",
+  color: appPalette.textStrong,
 };
 
 const currentPlanMeta = {
   marginTop: 3,
   fontSize: 10,
   lineHeight: 1.25,
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const currentPlanActions = {
   display: "flex",
   flexDirection: "column" as const,
-  gap: 6,
+  gap: 4,
   flexShrink: 0,
 };
 
-const softActionButton = {
-  minHeight: 38,
-  padding: "9px 13px",
-  borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
 const primaryActionButton = {
-  minHeight: 36,
-  padding: "7px 13px",
-  borderRadius: 999,
-  border: "1px solid #111827",
-  background: "#111827",
-  color: "#ffffff",
+  minWidth: 124,
+  padding: "0 16px",
   fontSize: 11,
-  fontWeight: 800,
-  cursor: "pointer",
-  boxShadow: "0 14px 24px rgba(15, 23, 42, 0.16)",
+  letterSpacing: 0.2,
 };
 
 const dayGrid = {
@@ -2416,21 +2675,30 @@ const dayGrid = {
   height: "100%",
   overflow: "hidden" as const,
   alignContent: "stretch" as const,
-  paddingRight: 2,
+  paddingRight: 1,
   paddingBottom: 0,
 };
 
-const dayCard = {
-  borderRadius: 28,
-  color: "#fff",
+const dayCardLink = {
+  display: "block",
   textDecoration: "none",
-  padding: "10px 10px 9px",
+  color: "inherit",
+  minHeight: 0,
+  height: "100%",
+};
+
+const dayCard = {
+  borderRadius: 26,
+  color: appPalette.surface,
+  padding: "10px 12px 10px",
   display: "flex",
   flexDirection: "column" as const,
   justifyContent: "space-between",
   height: "100%",
   minHeight: 0,
-  boxShadow: "0 20px 40px rgba(15, 23, 42, 0.16)",
+  border: "none",
+  overflow: "hidden" as const,
+  boxShadow: `0 20px 40px ${withAlpha(appPalette.surfaceDark, 0.16)}`,
 };
 
 const dayCardTop = {
@@ -2461,20 +2729,20 @@ const dayKicker = {
 const dayStartBadge = {
   display: "inline-flex",
   alignItems: "center",
-  minHeight: 28,
-  padding: "5px 9px",
+  minHeight: 26,
+  padding: "4px 10px",
   borderRadius: 999,
-  background: "rgba(255,255,255,0.16)",
-  border: "1px solid rgba(255,255,255,0.22)",
-  color: "#ffffff",
+  background: withAlpha(appPalette.surface, 0.16),
+  border: `1px solid ${withAlpha(appPalette.surface, 0.22)}`,
+  color: appPalette.surface,
   fontSize: 11,
   fontWeight: 800,
   backdropFilter: "blur(10px)",
 };
 
 const dayTitle = {
-  fontSize: 20,
-  lineHeight: 0.95,
+  fontSize: 18,
+  lineHeight: 0.96,
   fontWeight: 800,
 };
 
@@ -2488,7 +2756,7 @@ const dayCopy = {
 const overlay = {
   position: "fixed" as const,
   inset: 0,
-  background: "linear-gradient(180deg, rgba(15, 23, 42, 0.18) 0%, rgba(15, 23, 42, 0.42) 100%)",
+  background: `linear-gradient(180deg, ${withAlpha(appPalette.surfaceDark, 0.18)} 0%, ${withAlpha(appPalette.surfaceDark, 0.42)} 100%)`,
   display: "flex",
   alignItems: "flex-end" as const,
   justifyContent: "center",
@@ -2499,29 +2767,30 @@ const overlay = {
 const sheet = {
   width: "100%",
   maxWidth: 460,
-  maxHeight: "80dvh",
+  maxHeight: "76dvh",
   overflowY: "auto" as const,
-  padding: "16px 14px calc(20px + env(safe-area-inset-bottom))",
+  padding: "12px 12px calc(16px + env(safe-area-inset-bottom))",
   borderRadius: "30px 30px 0 0" as const,
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-  border: "1px solid #dce5f1",
+  background: `linear-gradient(180deg, ${appPalette.surface} 0%, ${appPalette.surfaceMuted} 100%)`,
+  border: `1px solid ${appPalette.borderDefault}`,
   borderBottom: "none",
-  boxShadow: "0 -20px 60px rgba(15, 23, 42, 0.16)",
+  boxShadow: `0 -20px 60px ${withAlpha(appPalette.surfaceDark, 0.16)}`,
 };
 
 const planDetailSheet = {
   ...sheet,
-  maxHeight: "80dvh",
+  maxHeight: "78dvh",
   display: "flex",
   flexDirection: "column" as const,
-  padding: "16px 0 0 0",
+  padding: "12px 0 0 0",
   gap: 0,
 };
 
 const editorSheet = {
   ...sheet,
   maxWidth: 460,
-  paddingBottom: "calc(22px + env(safe-area-inset-bottom))",
+  paddingBottom: "calc(18px + env(safe-area-inset-bottom))",
+  background: `linear-gradient(180deg, ${appPalette.surface} 0%, ${appPalette.surfaceMuted} 100%)`,
 };
 
 const sheetHeader = {
@@ -2529,7 +2798,7 @@ const sheetHeader = {
   justifyContent: "space-between",
   alignItems: "start",
   gap: 12,
-  marginBottom: 12,
+  marginBottom: 8,
   padding: "0 4px",
 };
 
@@ -2541,64 +2810,54 @@ const sheetHeaderActions = {
 
 const sheetTitle = {
   marginTop: 4,
-  fontSize: 24,
+  fontSize: 21,
   fontWeight: 800,
   lineHeight: 1.05,
-  color: "#111827",
+  color: appPalette.textStrong,
 };
 
-const closeButton = {
-  minHeight: 38,
-  minWidth: 38,
-  padding: "8px 12px",
-  borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#f8fafc",
-  color: "#111827",
-  fontSize: 14,
-  fontWeight: "bold",
-  cursor: "pointer",
-  boxShadow: "0 6px 16px rgba(15, 23, 42, 0.04)",
+const sheetCloseButton = {
+  minWidth: 42,
+  width: 42,
+  padding: 0,
+  fontSize: 18,
+  fontWeight: 800,
+  lineHeight: 1,
 };
 
-const plusButton = {
-  minWidth: 38,
-  minHeight: 38,
-  padding: "0 12px",
-  borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#ef4444",
-  color: "#ffffff",
-  fontSize: 20,
-  fontWeight: "bold",
-  cursor: "pointer",
-  boxShadow: "0 10px 22px rgba(239, 68, 68, 0.24)",
+const sheetPlusButton = {
+  minWidth: 42,
+  width: 42,
+  padding: 0,
+  fontSize: 22,
+  fontWeight: 800,
+  lineHeight: 1,
 };
 
 const planList = {
   display: "flex",
   flexDirection: "column" as const,
-  gap: 12,
+  gap: 10,
 };
 
 const planListCard = {
   borderRadius: 22,
-  border: "1.5px solid #e5ebf4",
-  background: "#ffffff",
+  border: `1.5px solid ${appPalette.borderSoft}`,
+  background: appPalette.surface,
   overflow: "hidden" as const,
   display: "flex",
   alignItems: "stretch",
-  boxShadow: "0 14px 28px rgba(15, 23, 42, 0.06)",
+  boxShadow: `0 12px 24px ${withAlpha(appPalette.surfaceDark, 0.06)}`,
 };
 
 const planListCardActive = {
-  background: "#f8fbff",
-  boxShadow: "0 16px 32px rgba(37, 99, 235, 0.12)",
+  background: appPalette.surfaceMuted,
+  boxShadow: `0 16px 32px ${withAlpha(appPalette.surfaceDark, 0.12)}`,
 };
 
 const planListMain = {
   flex: 1,
-  padding: "16px 16px",
+  padding: "14px 14px",
   textAlign: "left" as const,
   background: "none",
   border: "none",
@@ -2618,7 +2877,7 @@ const planListHeader = {
 const planListName = {
   fontSize: 17,
   fontWeight: 800,
-  color: "#111827",
+  color: appPalette.textStrong,
   lineHeight: 1.1,
 };
 
@@ -2634,8 +2893,8 @@ const activeBadgePill = {
   minHeight: 22,
   padding: "3px 8px",
   borderRadius: 999,
-  background: "#111827",
-  color: "#fff",
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
   fontSize: 11,
   fontWeight: "bold",
 };
@@ -2662,13 +2921,13 @@ const planDayDot = {
 const planDayLabel = {
   fontSize: 12,
   fontWeight: 700,
-  color: "#374151",
+  color: appPalette.textDefault,
   minWidth: 44,
 };
 
 const planDayExercises = {
   fontSize: 12,
-  color: "#6b7280",
+  color: appPalette.textMuted,
   flex: 1,
   lineHeight: 1.35,
   whiteSpace: "normal" as const,
@@ -2678,7 +2937,7 @@ const planDayExercises = {
 const planCardActionRow = {
   display: "flex",
   gap: 8,
-  marginTop: 12,
+  marginTop: 10,
   flexWrap: "wrap" as const,
 };
 
@@ -2686,9 +2945,9 @@ const planActionButton = {
   minHeight: 36,
   padding: "7px 12px",
   borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
   fontSize: 12,
   fontWeight: 800,
   cursor: "pointer",
@@ -2696,14 +2955,14 @@ const planActionButton = {
 
 const activePlanActionButton = {
   ...planActionButton,
-  background: "#111827",
-  color: "#ffffff",
-  border: "1px solid #111827",
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
+  border: `1px solid ${appPalette.surfaceDark}`,
 };
 
 const planSecondaryActionButton = {
   ...planActionButton,
-  color: "#475569",
+  color: appPalette.textDefault,
 };
 
 const planDetailMetaBar = {
@@ -2712,7 +2971,7 @@ const planDetailMetaBar = {
   alignItems: "center",
   gap: 10,
   padding: "10px 16px 14px",
-  borderBottom: "1px solid #edf2f7",
+  borderBottom: `1px solid ${appPalette.borderSoft}`,
   flexWrap: "wrap" as const,
 };
 
@@ -2728,158 +2987,35 @@ const dayTabsWrap = {
   display: "flex",
   alignItems: "center",
   gap: 10,
-  padding: "12px 16px",
-  borderBottom: "1px solid #edf2f7",
+  padding: "10px 16px",
+  borderBottom: `1px solid ${appPalette.borderSoft}`,
 };
 
 const addSplitButton = {
-  minHeight: 38,
-  padding: "8px 14px",
+  minHeight: 36,
+  padding: "7px 13px",
   borderRadius: 999,
-  border: "1.5px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
+  border: `1.5px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
   fontSize: 13,
   fontWeight: "bold",
   cursor: "pointer",
   whiteSpace: "nowrap" as const,
   flexShrink: 0,
-  boxShadow: "0 4px 12px rgba(15, 23, 42, 0.05)",
-};
-
-const activeDayActions = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 10,
-  padding: "10px 16px 0",
-  flexWrap: "wrap" as const,
-};
-
-const activeDayLabel = {
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#64748b",
-};
-
-const activeDayActionRow = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap" as const,
-};
-
-const dayOverviewCard = {
-  margin: "10px 16px 0",
-  padding: "14px",
-  borderRadius: 22,
-  background: "#ffffff",
-  border: "1px solid #e7edf6",
-  boxShadow: "0 10px 20px rgba(15, 23, 42, 0.04)",
-  display: "grid",
-  gap: 12,
-};
-
-const dayOverviewTop = {
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: 10,
-};
-
-const dayOverviewTitle = {
-  fontSize: 16,
-  fontWeight: 800,
-  color: "#111827",
-};
-
-const dayOverviewMeta = {
-  marginTop: 4,
-  fontSize: 13,
-  color: "#64748b",
-  fontWeight: 700,
-};
-
-const overviewPrimaryButton = {
-  minHeight: 38,
-  padding: "8px 14px",
-  borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#111827",
-  color: "#ffffff",
-  fontSize: 13,
-  fontWeight: "bold",
-  whiteSpace: "nowrap" as const,
-  flexShrink: 0,
-};
-
-const dayOverviewChips = {
-  display: "flex",
-  flexWrap: "wrap" as const,
-  gap: 8,
-};
-
-const overviewChipBase = {
-  minHeight: 34,
-  padding: "7px 12px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 800,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
-
-const overviewChipExercise = {
-  ...overviewChipBase,
-  background: "#eef4ff",
-  color: "#2563eb",
-};
-
-const overviewChipWarmup = {
-  ...overviewChipBase,
-  background: "#fff7ed",
-  color: "#ea580c",
-};
-
-const overviewChipStretch = {
-  ...overviewChipBase,
-  background: "#ecfeff",
-  color: "#0f766e",
-};
-
-const overviewChipPause = {
-  ...overviewChipBase,
-  background: "#f3f4f6",
-  color: "#475569",
-};
-
-const overviewChipNote = {
-  ...overviewChipBase,
-  background: "#eef2ff",
-  color: "#4338ca",
-};
-
-const dayOverviewMoreChip = {
-  minHeight: 34,
-  padding: "7px 12px",
-  borderRadius: 999,
-  background: "#f8fafc",
-  border: "1px dashed #cbd5e1",
-  color: "#64748b",
-  fontSize: 12,
-  fontWeight: 800,
+  boxShadow: `0 4px 12px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
 };
 
 const dayTab = {
   display: "inline-flex",
   alignItems: "center",
   gap: 5,
-  minHeight: 38,
-  padding: "8px 15px",
+  minHeight: 36,
+  padding: "7px 14px",
   borderRadius: 999,
-  border: "1.5px solid #d7e1ef",
-  background: "#f8fafc",
-  color: "#374151",
+  border: `1.5px solid ${appPalette.borderDefault}`,
+  background: appPalette.surfaceMuted,
+  color: appPalette.textDefault,
   fontSize: 13,
   fontWeight: "bold",
   cursor: "pointer",
@@ -2888,8 +3024,8 @@ const dayTab = {
 };
 
 const dayTabActive = {
-  background: "#fff",
-  boxShadow: "0 4px 12px rgba(15, 23, 42, 0.08)",
+  background: appPalette.surface,
+  boxShadow: `0 4px 12px ${withAlpha(appPalette.surfaceDark, 0.08)}`,
 };
 
 const tabEditIcon = {
@@ -2913,9 +3049,9 @@ const planBlockRow = {
   gap: 10,
   padding: "14px 14px",
   borderRadius: 20,
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-  border: "1px solid #e7edf6",
-  boxShadow: "0 10px 20px rgba(15, 23, 42, 0.04)",
+  background: `linear-gradient(180deg, ${appPalette.surface} 0%, ${appPalette.surfaceMuted} 100%)`,
+  border: `1px solid ${appPalette.borderSoft}`,
+  boxShadow: `0 10px 20px ${withAlpha(appPalette.surfaceDark, 0.04)}`,
 };
 
 const planBlockMain = {
@@ -2940,12 +3076,12 @@ const planBlockNameRow = {
 const planBlockName = {
   fontSize: 15,
   fontWeight: 800,
-  color: "#111827",
+  color: appPalette.textStrong,
 };
 
 const planBlockMeta = {
   fontSize: 13,
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const planBlockActions = {
@@ -2959,23 +3095,16 @@ const planBlockIcon = {
   minHeight: 34,
   padding: "6px 12px",
   borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#374151",
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textDefault,
   fontSize: 12,
   fontWeight: 800,
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
   cursor: "pointer",
-  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
-};
-
-const emptyDayHint = {
-  fontSize: 13,
-  color: "#94a3b8",
-  textAlign: "center" as const,
-  padding: "20px 0",
+  boxShadow: `0 8px 18px ${withAlpha(appPalette.surfaceDark, 0.04)}`,
 };
 
 const quickAddDock = {
@@ -2983,88 +3112,150 @@ const quickAddDock = {
   gridTemplateColumns: "1fr 1fr",
   gap: 10,
   padding: "12px 16px calc(20px + env(safe-area-inset-bottom))",
-  borderTop: "1px solid #edf2f7",
+  borderTop: `1px solid ${appPalette.borderSoft}`,
   flexShrink: 0,
 };
 
 const quickAddButton = {
   minHeight: 50,
   borderRadius: 18,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
   fontSize: 15,
   fontWeight: 800,
   cursor: "pointer",
-  boxShadow: "0 10px 22px rgba(15, 23, 42, 0.05)",
+  boxShadow: `0 10px 22px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
 };
 
 const addBlockButton = {
   ...quickAddButton,
   gridColumn: "1 / -1",
-  border: "1.5px dashed #bfd0e6",
-  background: "#f0f6ff",
-  color: "#1d4ed8",
+  border: `1.5px dashed ${withAlpha("#2563eb", 0.28)}`,
+  background: withAlpha("#2563eb", 0.08),
+  color: splitThemes.pull.primary,
 };
 
 const addPickerList = {
   display: "flex",
   flexDirection: "column" as const,
-  gap: 12,
-  marginTop: 6,
+  gap: 10,
+  marginTop: 0,
 };
 
 const addPickerOption = {
   display: "flex",
   alignItems: "center",
-  gap: 14,
-  padding: "18px 18px",
-  borderRadius: 22,
-  border: "1px solid #e5ebf4",
-  background: "#ffffff",
+  gap: 12,
+  padding: "14px 16px",
+  borderRadius: 20,
+  border: `1px solid ${appPalette.borderSoft}`,
+  background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.98)} 0%, ${withAlpha(appPalette.surfaceMuted, 0.96)} 100%)`,
   cursor: "pointer",
   textAlign: "left" as const,
   width: "100%",
-  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.05)",
+  boxShadow: `0 12px 28px ${withAlpha(appPalette.surfaceDark, 0.06)}`,
+};
+
+const addSheetStack = {
+  display: "grid",
+  gap: 10,
+};
+
+const templateCardGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 8,
+};
+
+const templateCard = {
+  padding: "12px 12px 13px",
+  borderRadius: 18,
+  border: `1px solid ${appPalette.borderSoft}`,
+  background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.98)} 0%, ${withAlpha(appPalette.surfaceMuted, 0.98)} 100%)`,
+  textAlign: "left" as const,
+  display: "grid",
+  gap: 5,
+  cursor: "pointer",
+  boxShadow: `0 10px 24px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
+};
+
+const templateTitle = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: appPalette.textStrong,
+  lineHeight: 1.25,
+};
+
+const templateDetail = {
+  fontSize: 11,
+  lineHeight: 1.4,
+  color: appPalette.textMuted,
 };
 
 const addPickerEmoji = {
-  fontSize: 28,
+  fontSize: 24,
   flexShrink: 0,
 };
 
 const addPickerLabel = {
-  fontSize: 16,
+  fontSize: 15,
   fontWeight: "bold",
-  color: "#111827",
+  color: appPalette.textStrong,
 };
 
 const addPickerHint = {
-  fontSize: 13,
-  color: "#64748b",
+  fontSize: 12,
+  color: appPalette.textMuted,
   marginTop: 2,
+};
+
+const addOptionTextWrap = {
+  display: "grid",
+  gap: 4,
+  flex: 1,
+  minWidth: 0,
+};
+
+const addOptionLabelRow = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap" as const,
+};
+
+const recommendedPill = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 22,
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: withAlpha(appPalette.surfaceDark, 0.08),
+  color: appPalette.textDefault,
+  fontSize: 11,
+  fontWeight: 800,
 };
 
 const selectButton = {
   minHeight: 56,
   padding: "13px 16px",
   borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
   fontSize: 15,
   fontWeight: 800,
   cursor: "pointer",
   width: "100%",
-  boxShadow: "0 10px 22px rgba(15, 23, 42, 0.05)",
+  boxShadow: `0 10px 22px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
 };
 
 const activeSelectButton = {
   ...selectButton,
-  background: "#111827",
-  color: "#ffffff",
-  border: "1px solid #111827",
-  boxShadow: "0 14px 28px rgba(17, 24, 39, 0.18)",
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
+  border: `1px solid ${appPalette.surfaceDark}`,
+  boxShadow: `0 14px 28px ${withAlpha(appPalette.surfaceDark, 0.18)}`,
 };
 
 const templateBadge = {
@@ -3073,8 +3264,8 @@ const templateBadge = {
   minHeight: 22,
   padding: "4px 8px",
   borderRadius: 999,
-  background: "#eff6ff",
-  color: "#1d4ed8",
+  background: withAlpha(splitThemes.pull.primary, 0.12),
+  color: splitThemes.pull.primary,
   fontSize: 11,
   fontWeight: "bold",
   whiteSpace: "nowrap" as const,
@@ -3082,8 +3273,8 @@ const templateBadge = {
 
 const customBadge = {
   ...templateBadge,
-  background: "#ecfdf3",
-  color: "#15803d",
+  background: withAlpha(appPalette.success, 0.12),
+  color: appPalette.success,
 };
 
 const miniActionRow = {
@@ -3096,62 +3287,123 @@ const miniActionButton = {
   minHeight: 32,
   padding: "6px 12px",
   borderRadius: 999,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
   fontSize: 12,
   fontWeight: 700,
   cursor: "pointer",
 };
 
 const dangerMiniButton = {
-  background: "#fff1f2",
-  border: "1px solid #fecdd3",
-  color: "#be123c",
+  background: withAlpha(appPalette.danger, 0.08),
+  border: `1px solid ${withAlpha(appPalette.danger, 0.25)}`,
+  color: appPalette.danger,
 };
-
-const blockBadgeBase = {
-  display: "inline-flex",
-  alignItems: "center",
-  width: "fit-content",
-  minHeight: 20,
-  padding: "2px 7px",
-  borderRadius: 999,
-  fontSize: 10,
-  fontWeight: "bold",
-  whiteSpace: "nowrap" as const,
-};
-
-const blockBadgeExercise = { ...blockBadgeBase, background: "#eef4ff", color: "#1d4ed8" };
-const blockBadgeWarmup = { ...blockBadgeBase, background: "#fff7ed", color: "#c2410c" };
-const blockBadgeStretch = { ...blockBadgeBase, background: "#ecfeff", color: "#0f766e" };
-const blockBadgePause = { ...blockBadgeBase, background: "#f3f4f6", color: "#374151" };
-const blockBadgeNote = { ...blockBadgeBase, background: "#eef2ff", color: "#4338ca" };
 
 const fieldGrid = {
   display: "grid",
   gridTemplateColumns: "1fr",
   gap: 12,
+  padding: "16px 14px",
+  borderRadius: 24,
+  border: `1px solid ${appPalette.borderSoft}`,
+  background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.98)} 0%, ${withAlpha(appPalette.surfaceMuted, 0.98)} 100%)`,
+  boxShadow: `0 12px 28px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
+};
+
+const fieldGridCompact = {
+  ...fieldGrid,
+  gap: 12,
+  padding: "12px 12px",
 };
 
 const fieldStack = {
   display: "grid",
-  gap: 10,
-  padding: "0 14px",
+  gap: 8,
 };
 
 const fieldLabel = {
   fontSize: 12,
   fontWeight: "bold",
-  color: "#475569",
+  color: appPalette.textDefault,
   textTransform: "uppercase" as const,
   letterSpacing: 0.8,
+};
+
+const fieldLabelRow = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+  flexWrap: "wrap" as const,
+};
+
+const favoriteToggleButton = {
+  minHeight: 34,
+  padding: "6px 12px",
+  borderRadius: 999,
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textDefault,
+  fontSize: 12,
+  fontWeight: 800,
+  cursor: "pointer",
+  boxShadow: `0 8px 18px ${withAlpha(appPalette.surfaceDark, 0.04)}`,
+};
+
+const favoriteToggleButtonActive = {
+  ...favoriteToggleButton,
+  border: `1px solid ${withAlpha(appPalette.warning, 0.35)}`,
+  background: withAlpha(appPalette.warning, 0.12),
+  color: appPalette.warning,
+};
+
+const favoriteQuickRow = {
+  display: "flex",
+  gap: 8,
+  overflowX: "auto" as const,
+  paddingBottom: 2,
+};
+
+const recentQuickSection = {
+  display: "grid",
+  gap: 6,
+};
+
+const recentQuickLabel = {
+  fontSize: 11,
+  letterSpacing: 0.8,
+  textTransform: "uppercase" as const,
+  fontWeight: 800,
+  color: appPalette.textMuted,
+};
+
+const favoriteQuickButton = {
+  minHeight: 38,
+  padding: "8px 14px",
+  borderRadius: 14,
+  border: `1px solid ${withAlpha(appPalette.warning, 0.28)}`,
+  background: withAlpha(appPalette.warning, 0.08),
+  color: appPalette.warning,
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: "pointer",
+  whiteSpace: "nowrap" as const,
+  boxShadow: `0 8px 18px ${withAlpha(appPalette.warning, 0.08)}`,
+};
+
+const favoriteQuickButtonActive = {
+  ...favoriteQuickButton,
+  border: `1px solid ${appPalette.warning}`,
+  background: appPalette.warning,
+  color: appPalette.surface,
 };
 
 const editorQuickGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 10,
+  gap: 8,
 };
 
 const editorQuickGridCompact = {
@@ -3160,24 +3412,80 @@ const editorQuickGridCompact = {
   gap: 10,
 };
 
+const compactEditorRow = {
+  display: "grid",
+  gap: 8,
+};
+
+const compactEditorLabel = {
+  fontSize: 12,
+  fontWeight: "bold",
+  color: appPalette.textDefault,
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.8,
+};
+
+const compactChoiceGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 8,
+};
+
+const compactChoiceButton = {
+  minHeight: 44,
+  borderRadius: 16,
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
+  fontSize: 14,
+  fontWeight: 800,
+  cursor: "pointer",
+  boxShadow: `0 8px 18px ${withAlpha(appPalette.surfaceDark, 0.04)}`,
+};
+
+const compactChoiceButtonActive = {
+  ...compactChoiceButton,
+  border: `1px solid ${appPalette.surfaceDark}`,
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
+  boxShadow: `0 12px 24px ${withAlpha(appPalette.surfaceDark, 0.16)}`,
+};
+
+const compactInput = {
+  width: "100%",
+  minHeight: 44,
+  padding: "9px 12px",
+  borderRadius: 14,
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
+  fontSize: 15,
+  boxShadow: `0 8px 20px ${withAlpha(appPalette.surfaceDark, 0.03)}`,
+};
+
+const compactDualInputs = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+};
+
 const textInput = {
   width: "100%",
-  minHeight: 56,
-  padding: "14px 16px",
-  borderRadius: 18,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: 16,
-  boxShadow: "0 8px 20px rgba(15, 23, 42, 0.03)",
+  minHeight: 50,
+  padding: "12px 14px",
+  borderRadius: 16,
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
+  fontSize: 15,
+  boxShadow: `0 8px 20px ${withAlpha(appPalette.surfaceDark, 0.03)}`,
 };
 
 const editorActions = {
   display: "grid",
-  gridTemplateColumns: "1fr",
-  gap: 10,
-  marginTop: 18,
-  padding: "0 14px",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+  marginTop: 14,
 };
 
 const wizardStepBar = {
@@ -3195,8 +3503,8 @@ const wizardStepChip = {
   minHeight: 24,
   padding: "4px 9px",
   borderRadius: 999,
-  background: "#111827",
-  color: "#ffffff",
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
   fontSize: 11,
   fontWeight: "bold",
 };
@@ -3207,8 +3515,8 @@ const wizardMeta = {
   minHeight: 24,
   padding: "4px 9px",
   borderRadius: 999,
-  background: "#eef4ff",
-  color: "#1d4ed8",
+  background: withAlpha(splitThemes.pull.primary, 0.12),
+  color: splitThemes.pull.primary,
   fontSize: 11,
   fontWeight: "bold",
 };
@@ -3225,154 +3533,86 @@ const wizardPreviewItem = {
   gap: 4,
   padding: "14px 16px",
   borderRadius: 18,
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-  border: "1px solid #e5ebf4",
-  boxShadow: "0 10px 20px rgba(15, 23, 42, 0.04)",
+  background: `linear-gradient(180deg, ${appPalette.surface} 0%, ${appPalette.surfaceMuted} 100%)`,
+  border: `1px solid ${appPalette.borderSoft}`,
+  boxShadow: `0 10px 20px ${withAlpha(appPalette.surfaceDark, 0.04)}`,
 };
 
 const wizardPreviewName = {
   fontSize: 14,
   fontWeight: "bold",
-  color: "#111827",
+  color: appPalette.textStrong,
 };
 
 const wizardPreviewMeta = {
   fontSize: 12,
-  color: "#64748b",
-};
-
-const wizardChoiceGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 12,
-  padding: "0 14px",
+  color: appPalette.textMuted,
 };
 
 const wizardChoiceGridCompact = {
   display: "grid",
   gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 10,
-};
-
-const wizardExerciseQuickList = {
-  display: "grid",
-  gap: 10,
-};
-
-const wizardExerciseQuickCard = {
-  minHeight: 58,
-  padding: "14px 16px",
-  borderRadius: 18,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: 16,
-  fontWeight: 700,
-  textAlign: "left" as const,
-  cursor: "pointer",
-  boxShadow: "0 10px 22px rgba(15, 23, 42, 0.04)",
-};
-
-const wizardExerciseQuickCardActive = {
-  ...wizardExerciseQuickCard,
-  border: "1px solid #111827",
-  background: "#f8fafc",
+  gap: 8,
 };
 
 const wizardChoiceButton = {
-  minHeight: 58,
-  borderRadius: 20,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: 16,
+  minHeight: 48,
+  borderRadius: 18,
+  border: `1px solid ${appPalette.borderDefault}`,
+  background: appPalette.surface,
+  color: appPalette.textStrong,
+  fontSize: 14,
   fontWeight: 800,
   cursor: "pointer",
-  boxShadow: "0 10px 22px rgba(15, 23, 42, 0.04)",
+  boxShadow: `0 10px 22px ${withAlpha(appPalette.surfaceDark, 0.04)}`,
 };
 
 const wizardChoiceButtonActive = {
   ...wizardChoiceButton,
-  border: "1px solid #111827",
-  background: "#111827",
-  color: "#ffffff",
+  border: `1px solid ${appPalette.surfaceDark}`,
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
 };
 
-const wizardFinalActions = {
-  display: "grid",
-  gridTemplateColumns: "1fr",
-  gap: 10,
-  gridColumn: "1 / -1",
-};
-
-const wizardSecondaryActions = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 10,
-  gridColumn: "1 / -1",
-};
-
-const wizardReadyCard = {
-  display: "grid",
-  gap: 4,
-  margin: "14px 14px 0",
-  padding: "14px 16px",
-  borderRadius: 18,
-  background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-  border: "1px solid #e5ebf4",
-  boxShadow: "0 10px 20px rgba(15, 23, 42, 0.04)",
-};
-
-const wizardReadyTitle = {
-  fontSize: 18,
-  fontWeight: 800,
-  color: "#111827",
-};
-
-const wizardReadyMeta = {
-  fontSize: 13,
-  color: "#64748b",
-  fontWeight: 700,
-};
-
-const wizardOutcomeButton = {
-  display: "grid",
-  gap: 4,
-  minHeight: 74,
-  padding: "14px 16px",
-  borderRadius: 20,
-  border: "1px solid #d7e1ef",
-  background: "#ffffff",
-  color: "#111827",
-  textAlign: "left" as const,
-  boxShadow: "0 10px 22px rgba(15, 23, 42, 0.05)",
-  cursor: "pointer",
-};
-
-const wizardPrimaryOutcomeButton = {
-  ...wizardOutcomeButton,
-  border: "1px solid #111827",
-  background: "#111827",
-  color: "#ffffff",
-  boxShadow: "0 14px 28px rgba(17, 24, 39, 0.18)",
-};
-
-const wizardOutcomeTitle = {
-  fontSize: 18,
-  fontWeight: 800,
-};
-
-const wizardOutcomeMeta = {
-  fontSize: 13,
-  lineHeight: 1.35,
-  opacity: 0.82,
-};
 
 const editorHint = {
-  marginTop: 10,
-  fontSize: 12,
-  color: "#475569",
+  marginTop: 6,
+  fontSize: 11,
+  color: appPalette.textDefault,
   lineHeight: 1.4,
+};
+
+const builderSheetPreview = {
+  marginTop: 12,
+  padding: "14px 14px",
+  borderRadius: 20,
+  background: `linear-gradient(180deg, ${withAlpha("#2563eb", 0.08)} 0%, ${appPalette.surface} 100%)`,
+  border: `1px solid ${withAlpha("#2563eb", 0.16)}`,
+  boxShadow: `0 16px 32px ${withAlpha(appPalette.surfaceDark, 0.07)}`,
+  display: "grid",
+  gap: 8,
+};
+
+const builderSheetPreviewLabel = {
+  fontSize: 11,
+  letterSpacing: 1.1,
+  textTransform: "uppercase" as const,
+  color: appPalette.textSoft,
+  fontWeight: "bold",
+};
+
+const builderSheetPreviewTitle = {
+  fontSize: 18,
+  fontWeight: 900,
+  color: appPalette.textStrong,
+  lineHeight: 1.15,
+};
+
+const builderSheetPreviewMeta = {
+  fontSize: 13,
+  lineHeight: 1.45,
+  color: appPalette.textDefault,
+  fontWeight: 700,
 };
 
 function getPlanCardText(plan: TrainingPlan) {

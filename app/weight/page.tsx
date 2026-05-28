@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AppPageFrame } from "@/components/AppPageFrame";
+import { AppBadge } from "@/components/ui/AppBadge";
+import { AppButton } from "@/components/ui/AppButton";
+import { AppCard } from "@/components/ui/AppCard";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { appPalette, splitThemes, uiTheme, withAlpha } from "@/lib/theme";
 import {
   deleteBodyWeightEntry,
   getBodyWeightEntries,
@@ -11,20 +16,22 @@ import {
 } from "@/lib/bodyWeight";
 
 export default function WeightPage() {
-  const [entries, setEntries] = useState<BodyWeightEntry[]>([]);
+  const [entries, setEntries] = useState<BodyWeightEntry[]>(() => getBodyWeightEntries());
   const [weight, setWeight] = useState("");
   const [note, setNote] = useState("");
   const [showAllHistory, setShowAllHistory] = useState(false);
-
-  useEffect(() => {
-    setEntries(getBodyWeightEntries());
-  }, []);
+  const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null);
+  const [statsReferenceTime] = useState(() => Date.now());
 
   const stats = useMemo(() => {
     const latest = entries[0] ?? null;
     const previous = entries[1] ?? null;
-    const last7 = entries.filter((entry) => Date.now() - entry.timestamp <= 7 * 86400000);
-    const last30 = entries.filter((entry) => Date.now() - entry.timestamp <= 30 * 86400000);
+    const last7 = entries.filter(
+      (entry) => statsReferenceTime - entry.timestamp <= 7 * 86400000
+    );
+    const last30 = entries.filter(
+      (entry) => statsReferenceTime - entry.timestamp <= 30 * 86400000
+    );
 
     const avg7 =
       last7.length > 0
@@ -35,8 +42,7 @@ export default function WeightPage() {
         ? roundWeight(last30.reduce((sum, entry) => sum + entry.weight, 0) / last30.length)
         : null;
     const delta = latest && previous ? roundWeight(latest.weight - previous.weight) : null;
-    const trendDelta =
-      avg7 !== null && avg30 !== null ? roundWeight(avg7 - avg30) : null;
+    const trendDelta = avg7 !== null && avg30 !== null ? roundWeight(avg7 - avg30) : null;
 
     return {
       latest,
@@ -46,7 +52,7 @@ export default function WeightPage() {
       delta,
       trendDelta,
     };
-  }, [entries]);
+  }, [entries, statsReferenceTime]);
 
   const trendRun = useMemo(() => {
     if (entries.length < 2) {
@@ -86,7 +92,8 @@ export default function WeightPage() {
       return {
         title: "Noch kein Trend",
         value: "Ersten Eintrag speichern",
-        detail: "Mit ein paar Werten erkennst du hier sofort, ob dein Gewicht steigt, fällt oder stabil bleibt.",
+        detail:
+          "Mit ein paar Werten erkennst du hier sofort, ob dein Gewicht steigt, fällt oder stabil bleibt.",
         tone: "neutral" as const,
       };
     }
@@ -131,14 +138,14 @@ export default function WeightPage() {
       return {
         title: "Was jetzt?",
         value: "Regelmäßig eintragen",
-        detail: "2–3 Einträge pro Woche reichen schon, damit der Trend deutlich belastbarer wird.",
+        detail: "2-3 Einträge pro Woche reichen schon, damit der Trend deutlich belastbarer wird.",
       };
     }
 
     if (entries.length < 3) {
       return {
         title: "Was jetzt?",
-        value: "Noch 2–3 Vergleichswerte sammeln",
+        value: "Noch 2-3 Vergleichswerte sammeln",
         detail: "Mit ein paar zusätzlichen Wiegetagen werden Durchschnitt und Trend deutlich aussagekräftiger.",
       };
     }
@@ -148,7 +155,7 @@ export default function WeightPage() {
         title: "Was jetzt?",
         value: "Zunahme bewusst beobachten",
         detail: `Wenn der Aufbau gewollt ist, weiter so. Wenn nicht, lohnt sich ein Blick auf Kalorienmenge und Rhythmus${
-          trendRun.direction === "up" ? ` – der Anstieg läuft schon seit etwa ${trendRun.days} Tagen.` : "."
+          trendRun.direction === "up" ? ` - der Anstieg läuft schon seit etwa ${trendRun.days} Tagen.` : "."
         }`,
       };
     }
@@ -158,7 +165,9 @@ export default function WeightPage() {
         title: "Was jetzt?",
         value: "Abnahme mit Leistung abgleichen",
         detail: `Sinkt das Körpergewicht, prüfe parallel deine Trainingsleistung, damit Kraft und Erholung nicht wegbrechen${
-          trendRun.direction === "down" ? ` – die Tendenz hält schon etwa ${trendRun.days} Tage an.` : "."
+          trendRun.direction === "down"
+            ? ` - die Tendenz hält schon etwa ${trendRun.days} Tage an.`
+            : "."
         }`,
       };
     }
@@ -194,11 +203,8 @@ export default function WeightPage() {
   }
 
   function handleDelete(id: string) {
-    if (!window.confirm("Diesen Gewichtseintrag löschen?")) {
-      return;
-    }
-
     deleteBodyWeightEntry(id);
+    setDeleteEntryId(null);
     refresh();
   }
 
@@ -209,7 +215,7 @@ export default function WeightPage() {
       title="Dein Körpergewicht"
       subtitle="Trenne Körpergewicht klar von Trainingsgewicht und behalte deinen Trend im Blick."
     >
-      <div
+      <AppCard
         style={{
           ...trendCard,
           ...(trendInsight.tone === "good"
@@ -224,13 +230,13 @@ export default function WeightPage() {
         <div style={trendTitle}>{trendInsight.title}</div>
         <div style={trendValue}>{trendInsight.value}</div>
         <div style={trendDetail}>{trendInsight.detail}</div>
-      </div>
+      </AppCard>
 
-      <div style={recommendationCard}>
+      <AppCard style={recommendationCard}>
         <div style={recommendationTitle}>{recommendation.title}</div>
         <div style={recommendationValue}>{recommendation.value}</div>
         <div style={recommendationDetail}>{recommendation.detail}</div>
-      </div>
+      </AppCard>
 
       <div style={metricGrid}>
         <MetricCard label="Aktuell" value={stats.latest ? `${stats.latest.weight} kg` : "—"} />
@@ -242,8 +248,11 @@ export default function WeightPage() {
         <MetricCard label="Ø 30 Tage" value={stats.avg30 ? `${stats.avg30} kg` : "—"} />
       </div>
 
-      <section style={sectionCard}>
-        <div style={sectionTitle}>Neuen Eintrag speichern</div>
+      <AppCard style={sectionCard}>
+        <div style={sectionHead}>
+          <div style={sectionTitle}>Neuen Eintrag speichern</div>
+          <AppBadge variant="new">neu</AppBadge>
+        </div>
         <label style={fieldStack}>
           <span style={fieldLabel}>Gewicht</span>
           <input
@@ -263,16 +272,17 @@ export default function WeightPage() {
             style={textInput}
           />
         </label>
-        <button style={primaryButton} onClick={handleSave}>
+        <AppButton block variant="primary" style={primaryButton} onClick={handleSave}>
           Gewicht speichern
-        </button>
-      </section>
+        </AppButton>
+      </AppCard>
 
-      <section style={sectionCard}>
-        <div style={sectionTitle}>Verlauf</div>
-        {entries.length === 0 ? (
-          <div style={emptySmall}>Noch keine Gewichtseinträge vorhanden.</div>
-        ) : null}
+      <AppCard style={sectionCard}>
+        <div style={sectionHead}>
+          <div style={sectionTitle}>Verlauf</div>
+          {entries.length > 0 ? <AppBadge variant="template">{entries.length} Einträge</AppBadge> : null}
+        </div>
+        {entries.length === 0 ? <div style={emptySmall}>Noch keine Gewichtseinträge vorhanden.</div> : null}
         {(showAllHistory ? entries : entries.slice(0, 5)).map((entry) => (
           <div key={entry.id} style={entryRow}>
             <div>
@@ -282,32 +292,50 @@ export default function WeightPage() {
                 {entry.note ? ` · ${entry.note}` : ""}
               </div>
             </div>
-            <button style={deleteButton} onClick={() => handleDelete(entry.id)}>
+            <AppButton
+              variant="ghost"
+              size="compact"
+              style={deleteButton}
+              onClick={() => setDeleteEntryId(entry.id)}
+            >
               Löschen
-            </button>
+            </AppButton>
           </div>
         ))}
         {entries.length > 5 ? (
-          <button
+          <AppButton
+            block
+            variant="secondary"
             style={moreButton}
             onClick={() => setShowAllHistory((current) => !current)}
           >
             {showAllHistory
               ? "Weniger Einträge anzeigen"
               : `+${entries.length - 5} weitere Einträge anzeigen`}
-          </button>
+          </AppButton>
         ) : null}
-      </section>
+      </AppCard>
+
+      <ConfirmDialog
+        open={Boolean(deleteEntryId)}
+        title="Eintrag löschen?"
+        body="Möchtest du diesen Gewichtseintrag wirklich entfernen?"
+        confirmLabel="Löschen"
+        cancelLabel="Abbrechen"
+        confirmVariant="danger"
+        onCancel={() => setDeleteEntryId(null)}
+        onConfirm={() => deleteEntryId && handleDelete(deleteEntryId)}
+      />
     </AppPageFrame>
   );
 }
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div style={metricCard}>
+    <AppCard style={metricCard}>
       <div style={metricLabel}>{label}</div>
       <div style={metricValue}>{value}</div>
-    </div>
+    </AppCard>
   );
 }
 
@@ -322,57 +350,41 @@ function formatSigned(value: number) {
 }
 
 const trendCard = {
-  padding: "14px 14px 15px",
-  borderRadius: 22,
-  border: "1px solid #e8eef6",
-  boxShadow: "0 22px 36px rgba(15, 23, 42, 0.06)",
+  padding: "13px 14px 14px",
   display: "grid",
   gap: 5,
 };
 
-const goodCard = {
-  background: "#f0fdf4",
-};
-
-const warnCard = {
-  background: "#fff7ed",
-};
-
-const infoCard = {
-  background: "#eff6ff",
-};
-
-const neutralCard = {
-  background: "#ffffff",
-};
+const goodCard = { background: withAlpha(appPalette.success, 0.12) };
+const warnCard = { background: withAlpha(appPalette.warning, 0.12) };
+const infoCard = { background: withAlpha(splitThemes.pull.primary, 0.12) };
+const neutralCard = { background: appPalette.surface };
 
 const trendTitle = {
   fontSize: 12,
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const trendValue = {
   fontSize: 24,
   lineHeight: 1.05,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const trendDetail = {
   fontSize: 14,
-  color: "#475569",
+  color: appPalette.textDefault,
   fontWeight: 700,
 };
 
 const recommendationCard = {
-  padding: "14px 14px 15px",
-  borderRadius: 22,
-  background: "#fff7ed",
-  border: "1px solid #fed7aa",
-  boxShadow: "0 22px 36px rgba(15, 23, 42, 0.06)",
+  padding: "13px 14px 14px",
+  background: withAlpha(appPalette.warning, 0.12),
+  border: `1px solid ${withAlpha(appPalette.warning, 0.28)}`,
   display: "grid",
   gap: 5,
 };
@@ -382,19 +394,19 @@ const recommendationTitle = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#9a3412",
+  color: appPalette.warning,
 };
 
 const recommendationValue = {
   fontSize: 24,
   lineHeight: 1.05,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const recommendationDetail = {
   fontSize: 14,
-  color: "#7c2d12",
+  color: appPalette.textDefault,
   fontWeight: 700,
 };
 
@@ -405,11 +417,7 @@ const metricGrid = {
 };
 
 const metricCard = {
-  padding: "16px 16px 18px",
-  borderRadius: 24,
-  background: "#ffffff",
-  border: "1px solid #e8eef6",
-  boxShadow: "0 20px 34px rgba(15, 23, 42, 0.06)",
+  padding: "14px 14px 16px",
   display: "grid",
   gap: 6,
 };
@@ -419,31 +427,34 @@ const metricLabel = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#94a3b8",
+  color: appPalette.textSoft,
 };
 
 const metricValue = {
   fontSize: 28,
   lineHeight: 1.05,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const sectionCard = {
-  padding: "18px 16px",
-  borderRadius: 26,
-  background: "#ffffff",
-  border: "1px solid #e8eef6",
-  boxShadow: "0 22px 36px rgba(15, 23, 42, 0.06)",
+  padding: "16px 14px",
   display: "grid",
   gap: 12,
   scrollMarginBottom: "calc(96px + env(safe-area-inset-bottom))",
 };
 
+const sectionHead = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+};
+
 const sectionTitle = {
   fontSize: 20,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const fieldStack = {
@@ -456,7 +467,7 @@ const fieldLabel = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#94a3b8",
+  color: appPalette.textSoft,
 };
 
 const textInput = {
@@ -464,22 +475,16 @@ const textInput = {
   minHeight: 56,
   padding: "0 16px",
   borderRadius: 18,
-  border: "1px solid #dce5f0",
-  background: "#ffffff",
+  border: `1px solid ${appPalette.borderSoft}`,
+  background: appPalette.surface,
   fontSize: 17,
-  color: "#0f172a",
+  color: appPalette.textStrong,
   outline: "none",
 };
 
 const primaryButton = {
   width: "100%",
-  minHeight: 56,
-  borderRadius: 999,
-  background: "#dc2626",
-  color: "#ffffff",
-  fontSize: 17,
-  fontWeight: 800,
-  boxShadow: "0 18px 30px rgba(220, 38, 38, 0.22)",
+  minHeight: uiTheme.touch.comfortable,
 };
 
 const entryRow = {
@@ -487,46 +492,29 @@ const entryRow = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: 12,
-  padding: "14px 0",
-  borderTop: "1px solid #eef2f7",
 };
 
 const entryValue = {
   fontSize: 18,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const entryMeta = {
   marginTop: 4,
   fontSize: 13,
-  color: "#64748b",
+  color: appPalette.textDefault,
 };
 
 const deleteButton = {
-  minHeight: 42,
-  padding: "0 14px",
-  borderRadius: 999,
-  background: "#fef2f2",
-  color: "#dc2626",
-  fontSize: 13,
-  fontWeight: 800,
-  border: "1px solid #fecaca",
-  flexShrink: 0,
-};
-
-const emptySmall = {
-  fontSize: 14,
-  color: "#94a3b8",
+  color: appPalette.danger,
 };
 
 const moreButton = {
   width: "100%",
-  minHeight: 52,
-  borderRadius: 999,
-  background: "#ffffff",
-  color: "#0f172a",
+};
+
+const emptySmall = {
   fontSize: 14,
-  fontWeight: 800,
-  border: "1px solid #dce5f0",
+  color: appPalette.textDefault,
 };

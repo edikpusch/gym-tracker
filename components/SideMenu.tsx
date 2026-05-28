@@ -2,10 +2,14 @@
 
 import { useEffect } from "react";
 
+import { AppButton } from "@/components/ui/AppButton";
+import { appPalette, uiTheme, withAlpha } from "@/lib/theme";
+
 type SideMenuItem = {
   key: string;
   label: string;
   icon: string;
+  section?: string;
   href?: string;
   onClick?: () => void;
   active?: boolean;
@@ -31,6 +35,22 @@ export function SideMenu({
   onClose,
   items,
 }: SideMenuProps) {
+  const groupedItems = items.reduce<Array<{ label: string; items: SideMenuItem[] }>>(
+    (groups, item) => {
+      const label = item.section ?? "Navigation";
+      const existing = groups.find((group) => group.label === label);
+
+      if (existing) {
+        existing.items.push(item);
+        return groups;
+      }
+
+      groups.push({ label, items: [item] });
+      return groups;
+    },
+    []
+  );
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -51,20 +71,28 @@ export function SideMenu({
 
   return (
     <>
-      <button
-        type="button"
+      <div
         style={{
-          ...floatingToggle,
-          ...(side === "right" ? floatingToggleRight : null),
-          ...(hidden ? floatingToggleHidden : null),
-          ...(open ? floatingToggleOpen : null),
+          ...floatingDock,
+          ...(side === "right" ? floatingDockRight : null),
+          ...(hidden ? floatingDockHidden : null),
+          ...(open ? floatingDockOpen : null),
         }}
-        onClick={onToggle}
-        aria-label={open ? "Menü schließen" : "Menü öffnen"}
-        aria-expanded={open}
       >
-        <span style={hamburgerIcon}>☰</span>
-      </button>
+        <button
+          type="button"
+          style={{
+            ...floatingToggle,
+            ...(open ? floatingToggleOpen : null),
+          }}
+          onClick={onToggle}
+          aria-label={open ? "Menü schließen" : "Menü öffnen"}
+          aria-expanded={open}
+        >
+          <span style={hamburgerIcon}>☰</span>
+          <span style={toggleLabel}>{open ? "Schließen" : "Menü"}</span>
+        </button>
+      </div>
 
       <div
         style={{
@@ -89,63 +117,66 @@ export function SideMenu({
               <div style={drawerEyebrow}>Navigation</div>
               <div style={drawerTitle}>Gym Tracker</div>
             </div>
-            <button
-              type="button"
+            <AppButton
+              variant="secondary"
+              size="compact"
               style={closeButton}
               onClick={onClose}
               aria-label="Menü schließen"
             >
               ×
-            </button>
+            </AppButton>
           </div>
 
           <nav style={drawerList} aria-label="Hauptnavigation">
-            {items.map((item) => {
-              const sharedStyle = {
-                ...drawerItem,
-                ...(item.active ? drawerItemActive : null),
-                ...(item.disabled ? drawerItemDisabled : null),
-              };
+            {groupedItems.map((group) => (
+              <div key={group.label} style={drawerGroup}>
+                <div style={drawerGroupLabel}>{group.label}</div>
+                <div style={drawerGroupList}>
+                  {group.items.map((item) => {
+                    const sharedStyle = {
+                      ...drawerItem,
+                      ...(item.active ? drawerItemActive : null),
+                      ...(item.disabled ? drawerItemDisabled : null),
+                    };
 
-              const content = (
-                <>
-                  <span style={drawerIcon}>{item.icon}</span>
-                  <span style={drawerLabel}>{item.label}</span>
-                </>
-              );
+                    const content = (
+                      <>
+                        <span style={drawerIcon}>{item.icon}</span>
+                        <span style={drawerLabel}>{item.label}</span>
+                      </>
+                    );
 
-              if (item.href && !item.disabled) {
-                return (
-                  <a
-                    key={item.key}
-                    href={item.href}
-                    style={sharedStyle}
-                    onClick={onClose}
-                  >
-                    {content}
-                  </a>
-                );
-              }
+                    if (item.href && !item.disabled) {
+                      return (
+                        <a key={item.key} href={item.href} style={sharedStyle} onClick={onClose}>
+                          {content}
+                        </a>
+                      );
+                    }
 
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  style={sharedStyle}
-                  onClick={
-                    item.disabled
-                      ? undefined
-                      : () => {
-                          item.onClick?.();
-                          onClose();
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        style={sharedStyle}
+                        onClick={
+                          item.disabled
+                            ? undefined
+                            : () => {
+                                item.onClick?.();
+                                onClose();
+                              }
                         }
-                  }
-                  disabled={item.disabled}
-                >
-                  {content}
-                </button>
-              );
-            })}
+                        disabled={item.disabled}
+                      >
+                        {content}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
         </aside>
       </div>
@@ -153,64 +184,88 @@ export function SideMenu({
   );
 }
 
-const floatingToggle = {
+const floatingDock = {
   position: "fixed" as const,
-  left: 14,
-  bottom: "calc(18px + env(safe-area-inset-bottom))",
-  width: 56,
-  height: 56,
-  borderRadius: 20,
-  border: "1px solid rgba(214, 223, 235, 0.96)",
-  background: "rgba(255,255,255,0.98)",
-  color: "#111827",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  boxShadow: "0 18px 36px rgba(15, 23, 42, 0.16)",
-  cursor: "pointer",
+  left: 16,
+  bottom: "calc(16px + env(safe-area-inset-bottom))",
+  padding: 8,
+  borderRadius: 28,
+  background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.95)} 0%, ${withAlpha(appPalette.surfaceMuted, 0.93)} 100%)`,
+  border: `1px solid ${withAlpha(appPalette.borderSoft, 0.94)}`,
+  boxShadow: `0 20px 40px ${withAlpha(appPalette.surfaceDark, 0.12)}`,
   zIndex: 56,
-  transition:
-    "transform 220ms ease, box-shadow 220ms ease, background 220ms ease, opacity 220ms ease",
-  backdropFilter: "blur(18px)",
+  transition: `transform ${uiTheme.motion.smooth}, box-shadow ${uiTheme.motion.smooth}, opacity ${uiTheme.motion.smooth}, background ${uiTheme.motion.smooth}`,
+  backdropFilter: "blur(16px)",
 };
 
-const floatingToggleRight = {
+const floatingDockRight = {
   left: "auto",
-  right: 14,
+  right: 16,
 };
 
-const floatingToggleOpen = {
-  transform: "translateX(4px) scale(0.98)",
-  boxShadow: "0 12px 26px rgba(15, 23, 42, 0.12)",
-  background: "#111827",
-  color: "#ffffff",
+const floatingDockOpen = {
+  transform: "translateY(-1px)",
+  boxShadow: `0 22px 44px ${withAlpha(appPalette.surfaceDark, 0.16)}`,
 };
 
-const floatingToggleHidden = {
+const floatingDockHidden = {
   opacity: 0,
   pointerEvents: "none" as const,
   transform: "translateY(10px)",
 };
 
+const floatingToggle = {
+  minWidth: 136,
+  height: 52,
+  padding: "0 18px",
+  borderRadius: 20,
+  border: `1px solid ${withAlpha(appPalette.borderSoft, 0.82)}`,
+  background: withAlpha(appPalette.surface, 0.94),
+  color: appPalette.surfaceDark,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 10,
+  boxShadow: `0 14px 24px ${withAlpha(appPalette.surfaceDark, 0.1)}`,
+  cursor: "pointer",
+  transition: `transform ${uiTheme.motion.smooth}, box-shadow ${uiTheme.motion.smooth}, background ${uiTheme.motion.smooth}, border-color ${uiTheme.motion.smooth}`,
+  backdropFilter: "blur(14px)",
+};
+
+const floatingToggleOpen = {
+  transform: "scale(0.985)",
+  boxShadow: `0 10px 18px ${withAlpha(appPalette.surfaceDark, 0.08)}`,
+  background: appPalette.surfaceDark,
+  borderColor: withAlpha(appPalette.surfaceDark, 0.3),
+  color: appPalette.surface,
+};
+
 const hamburgerIcon = {
-  fontSize: 20,
+  fontSize: 21,
   lineHeight: 1,
+};
+
+const toggleLabel = {
+  fontSize: 15,
+  lineHeight: 1,
+  fontWeight: 800,
+  letterSpacing: 0.2,
 };
 
 const drawerOverlay = {
   position: "fixed" as const,
   inset: 0,
-  background: "rgba(15, 23, 42, 0)",
+  background: withAlpha(appPalette.surfaceDark, 0),
   opacity: 0,
   pointerEvents: "none" as const,
-  transition: "opacity 240ms ease, background 240ms ease",
+  transition: `opacity ${uiTheme.motion.smooth}, background ${uiTheme.motion.smooth}`,
   zIndex: 55,
 };
 
 const drawerOverlayOpen = {
   opacity: 1,
   pointerEvents: "auto" as const,
-  background: "rgba(15, 23, 42, 0.32)",
+  background: withAlpha(appPalette.surfaceDark, 0.32),
 };
 
 const drawer = {
@@ -220,25 +275,24 @@ const drawer = {
   bottom: 0,
   width: "min(78vw, 336px)",
   maxWidth: "100%",
-  padding: "18px 16px calc(24px + env(safe-area-inset-bottom))",
-  borderRadius: "0 32px 32px 0",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,0.99) 0%, rgba(248,250,252,0.99) 100%)",
-  borderRight: "1px solid rgba(214, 223, 235, 0.92)",
-  boxShadow: "0 30px 70px rgba(15, 23, 42, 0.18)",
+  padding: `${uiTheme.spacing.base + 2}px ${uiTheme.spacing.base}px calc(${uiTheme.spacing.large}px + env(safe-area-inset-bottom))`,
+  borderRadius: `0 ${uiTheme.radius.hero}px ${uiTheme.radius.hero}px 0`,
+  background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.99)} 0%, ${withAlpha(appPalette.surfaceMuted, 0.99)} 100%)`,
+  borderRight: `1px solid ${withAlpha(appPalette.borderSoft, 0.92)}`,
+  boxShadow: uiTheme.shadow.drawer,
   transform: "translateX(-104%)",
-  transition: "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+  transition: `transform ${uiTheme.motion.spring}`,
   display: "flex",
   flexDirection: "column" as const,
-  gap: 16,
+  gap: uiTheme.spacing.base - 2,
 };
 
 const drawerRight = {
   left: "auto",
   right: 0,
-  borderRadius: "32px 0 0 32px",
+  borderRadius: `${uiTheme.radius.hero}px 0 0 ${uiTheme.radius.hero}px`,
   borderRight: "none",
-  borderLeft: "1px solid rgba(214, 223, 235, 0.92)",
+  borderLeft: `1px solid ${withAlpha(appPalette.borderSoft, 0.92)}`,
   transform: "translateX(104%)",
 };
 
@@ -249,8 +303,8 @@ const drawerOpen = {
 const drawerHandle = {
   width: 42,
   height: 5,
-  borderRadius: 999,
-  background: "#e2e8f0",
+  borderRadius: uiTheme.radius.pill,
+  background: appPalette.borderDefault,
   alignSelf: "flex-start",
 };
 
@@ -259,15 +313,15 @@ const drawerHeader = {
   alignItems: "flex-start",
   justifyContent: "space-between",
   gap: 12,
-  paddingBottom: 12,
-  borderBottom: "1px solid #edf2f7",
+  paddingBottom: 10,
+  borderBottom: `1px solid ${appPalette.borderSoft}`,
 };
 
 const drawerEyebrow = {
   fontSize: 11,
   letterSpacing: 1.1,
   textTransform: "uppercase" as const,
-  color: "#94a3b8",
+  color: appPalette.textSoft,
   fontWeight: 700,
 };
 
@@ -275,66 +329,88 @@ const drawerTitle = {
   marginTop: 6,
   fontSize: 24,
   lineHeight: 1.05,
-  color: "#0f172a",
+  color: appPalette.textStrong,
   fontWeight: 800,
 };
 
 const closeButton = {
   width: 44,
-  height: 44,
-  borderRadius: 999,
-  border: "1px solid #dce5f0",
-  background: "#ffffff",
-  color: "#334155",
-  fontSize: 24,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  boxShadow: "0 12px 24px rgba(15, 23, 42, 0.08)",
+  minWidth: 44,
+  padding: 0,
+  fontSize: 20,
+  lineHeight: 1,
 };
 
 const drawerList = {
   display: "flex",
   flexDirection: "column" as const,
-  gap: 8,
-  paddingTop: 4,
+  gap: uiTheme.spacing.base - 4,
+  paddingTop: 2,
+};
+
+const drawerGroup = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: uiTheme.spacing.small - 2,
+};
+
+const drawerGroupLabel = {
+  padding: "0 6px",
+  fontSize: 11,
+  lineHeight: 1.2,
+  fontWeight: 800,
+  letterSpacing: 1.1,
+  textTransform: "uppercase" as const,
+  color: appPalette.textSoft,
+};
+
+const drawerGroupList = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 6,
 };
 
 const drawerItem = {
   width: "100%",
-  minHeight: 54,
-  padding: "13px 15px",
-  borderRadius: 22,
+  minHeight: uiTheme.touch.comfortable,
+  padding: "12px 14px",
+  borderRadius: uiTheme.radius.medium + 2,
   border: "1px solid transparent",
   background: "transparent",
-  color: "#334155",
+  color: appPalette.textDefault,
   textDecoration: "none",
   display: "flex",
   alignItems: "center",
-  gap: 14,
+  gap: 12,
   textAlign: "left" as const,
-  fontSize: 17,
+  fontSize: 16,
   fontWeight: 700,
-  boxShadow: "0 14px 26px rgba(15, 23, 42, 0)",
+  transition: `transform ${uiTheme.motion.quick}, background ${uiTheme.motion.quick}, box-shadow ${uiTheme.motion.quick}, border-color ${uiTheme.motion.quick}, color ${uiTheme.motion.quick}`,
 };
 
 const drawerItemActive = {
-  background: "#0f172a",
-  color: "#ffffff",
-  boxShadow: "0 24px 44px rgba(15, 23, 42, 0.18)",
+  background: appPalette.surfaceDark,
+  color: appPalette.surface,
+  borderColor: withAlpha(appPalette.surfaceDark, 0.32),
+  boxShadow: uiTheme.shadow.medium,
 };
 
 const drawerItemDisabled = {
   opacity: 0.42,
+  cursor: "not-allowed",
 };
 
 const drawerIcon = {
-  width: 28,
-  textAlign: "center" as const,
-  fontSize: 22,
-  flexShrink: 0,
+  width: 22,
+  minWidth: 22,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 18,
+  lineHeight: 1,
 };
 
 const drawerLabel = {
   flex: 1,
+  minWidth: 0,
 };

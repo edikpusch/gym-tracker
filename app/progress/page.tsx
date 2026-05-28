@@ -3,13 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AppPageFrame } from "@/components/AppPageFrame";
+import { AppBadge } from "@/components/ui/AppBadge";
+import { AppButton } from "@/components/ui/AppButton";
+import { AppCard } from "@/components/ui/AppCard";
+import { appPalette, splitThemes, uiTheme, withAlpha } from "@/lib/theme";
 import {
+  getCoachDecisionForRange,
+  getExerciseTrendInsight,
+  getLoggedSetExerciseReference,
   getSetComparison,
   getTopSet,
   isLoggedSetEntry,
+  isWorkSetEntry,
   type SetType,
   type WorkoutLogEntry,
 } from "@/lib/workoutEngine";
+import { getSuggestedExerciseSetup } from "@/lib/trainingCatalog";
 import { getExerciseLabel, getExerciseMeta } from "@/lib/workoutUi";
 
 type ExerciseProgress = {
@@ -18,6 +27,9 @@ type ExerciseProgress = {
   latest: SetType;
   previous: SetType | null;
   best: SetType | null;
+  coach: ReturnType<typeof getCoachDecisionForRange>;
+  recentTrend: SetType[];
+  trendInsight: ReturnType<typeof getExerciseTrendInsight>;
   deltaWeight: number;
   deltaReps: number;
   kind: "better" | "worse" | "same" | "new";
@@ -106,8 +118,7 @@ export default function ProgressPage() {
     const topGain =
       [...values]
         .filter((item) => item.better > 0)
-        .sort((a, b) => b.better - a.better || b.latestTimestamp - a.latestTimestamp)[0] ??
-      null;
+        .sort((a, b) => b.better - a.better || b.latestTimestamp - a.latestTimestamp)[0] ?? null;
 
     return { topStall, topGain };
   }, [progressCards]);
@@ -149,46 +160,34 @@ export default function ProgressPage() {
 
   const recommendations = useMemo(() => {
     if (progressCards.length === 0) {
-      return [
-        "Noch fehlen genug Vergleichssätze. Halte erst ein paar Trainings sauber fest.",
-      ];
+      return ["Noch fehlen genug Vergleichssätze. Halte erst ein paar Trainings sauber fest."];
     }
 
     const items: string[] = [];
     const primaryStall = biggestStalls[0] ?? null;
     const primaryGain = topImprovers[0] ?? null;
-    const stallMeta = focusExercises.topStall
-      ? getExerciseMeta(focusExercises.topStall.exercise)
-      : null;
-    const gainMeta = focusExercises.topGain
-      ? getExerciseMeta(focusExercises.topGain.exercise)
-      : null;
+    const stallMeta = focusExercises.topStall ? getExerciseMeta(focusExercises.topStall.exercise) : null;
+    const gainMeta = focusExercises.topGain ? getExerciseMeta(focusExercises.topGain.exercise) : null;
 
     if (primaryStall?.kind === "worse") {
       items.push(
-        `${getExerciseLabel(primaryStall.exercise)} fällt zurück${
-          stallMeta?.category ? ` (${stallMeta.category})` : ""
-        }. Prüfe Gewicht, Erholung oder Satzqualität.`
+        `${getExerciseLabel(primaryStall.exercise)} fällt zurück${stallMeta?.category ? ` (${stallMeta.category})` : ""}. Prüfe Gewicht, Erholung oder Satzqualität.`
       );
     } else if (primaryStall?.kind === "same") {
       items.push(
-        `${getExerciseLabel(primaryStall.exercise)} stagniert${
-          stallMeta?.category ? ` (${stallMeta.category})` : ""
-        }. Ein kleiner Reiz über Gewicht, Wiederholungen oder Pause kann helfen.`
+        `${getExerciseLabel(primaryStall.exercise)} stagniert${stallMeta?.category ? ` (${stallMeta.category})` : ""}. Ein kleiner Reiz über Gewicht, Wiederholungen oder Pause kann helfen.`
       );
     }
 
     if (primaryGain) {
       items.push(
-        `${getExerciseLabel(primaryGain.exercise)} läuft gut${
-          gainMeta?.category ? ` (${gainMeta.category})` : ""
-        }. Halte dort die Progression kontrolliert weiter.`
+        `${getExerciseLabel(primaryGain.exercise)} läuft gut${gainMeta?.category ? ` (${gainMeta.category})` : ""}. Halte dort die Progression kontrolliert weiter.`
       );
     }
 
     if (sameCount >= betterCount && sameCount > 0) {
       items.push(
-        "Viele Sätze bewegen sich seitwärts. Ein klarerer Fokus auf 1–2 Schlüsselübungen könnte den nächsten Schub bringen."
+        "Viele Sätze bewegen sich seitwärts. Ein klarerer Fokus auf 1-2 Schlüsselübungen könnte den nächsten Schub bringen."
       );
     }
 
@@ -203,9 +202,7 @@ export default function ProgressPage() {
     }
 
     if (items.length === 0) {
-      items.push(
-        "Deine aktuellen Vergleiche wirken stabil. Jetzt lohnt sich vor allem Konstanz statt hektischer Änderungen."
-      );
+      items.push("Deine aktuellen Vergleiche wirken stabil. Jetzt lohnt sich vor allem Konstanz statt hektischer Änderungen.");
     }
 
     return items.slice(0, 3);
@@ -218,83 +215,89 @@ export default function ProgressPage() {
       title="Wirst du stärker?"
       subtitle="Vergleiche deine neuesten Sätze direkt mit dem vorherigen passenden Training."
     >
-      {loading ? <div style={emptyCard}>Lade Fortschritte...</div> : null}
+      {loading ? <AppCard style={emptyCard}>Lade Fortschritte...</AppCard> : null}
 
       {!loading ? (
         <>
           <div style={heroStats}>
-            <ProgressBadge label="stärker" value={betterCount} tone="good" />
-            <ProgressBadge label="gleich" value={sameCount} tone="neutral" />
-            <ProgressBadge label="schwächer" value={worseCount} tone="warn" />
-            {newCount > 0 ? <ProgressBadge label="neu" value={newCount} tone="new" /> : null}
+            <ProgressBadge label="stärker" value={betterCount} variant="better" />
+            <ProgressBadge label="gleich" value={sameCount} variant="equal" />
+            <ProgressBadge label="schwächer" value={worseCount} variant="worse" />
+            {newCount > 0 ? <ProgressBadge label="neu" value={newCount} variant="new" /> : null}
           </div>
 
-          <div
+          <AppCard
             style={{
               ...focusCard,
-              ...(focusInsight.tone === "good"
-                ? goodBadge
-                : focusInsight.tone === "warn"
-                  ? warnBadge
-                  : neutralBadge),
+              ...(focusInsight.tone === "good" ? goodCard : focusInsight.tone === "warn" ? warnCard : neutralCard),
             }}
           >
             <div style={focusTitle}>{focusInsight.title}</div>
             <div style={focusValue}>{focusInsight.value}</div>
             <div style={focusDetail}>{focusInsight.detail}</div>
-          </div>
+          </AppCard>
 
-          <section style={sectionCard}>
-            <div style={sectionTitle}>Was jetzt?</div>
+          <AppCard style={sectionCard}>
+            <div style={sectionHead}>
+              <div style={sectionTitle}>Was jetzt?</div>
+              <AppBadge variant="template">Fokus</AppBadge>
+            </div>
             <div style={adviceList}>
               {recommendations.map((item, index) => (
                 <div key={`${item}-${index}`} style={adviceRow}>
-                  <span style={adviceDot}>{index + 1}</span>
+                  <AppBadge variant="exercise" style={adviceDot}>
+                    {index + 1}
+                  </AppBadge>
                   <span style={adviceText}>{item}</span>
                 </div>
               ))}
             </div>
-          </section>
+          </AppCard>
 
-          <section style={sectionCard}>
-            <div style={sectionTitle}>Größte Verbesserungen</div>
-            {topImprovers.length === 0 ? (
-              <div style={emptySmall}>Noch keine direkten Verbesserungen gefunden.</div>
-            ) : null}
+          <AppCard style={sectionCard}>
+            <div style={sectionHead}>
+              <div style={sectionTitle}>Größte Verbesserungen</div>
+              <AppBadge variant="better">{topImprovers.length}</AppBadge>
+            </div>
+            {topImprovers.length === 0 ? <div style={emptySmall}>Noch keine direkten Verbesserungen gefunden.</div> : null}
             {topImprovers.slice(0, 3).map((item) => (
               <ProgressRow key={`${item.exerciseId}-${item.latest.timestamp}`} item={item} />
             ))}
-          </section>
+          </AppCard>
 
-          <section style={sectionCard}>
-            <div style={sectionTitle}>Darauf achten</div>
-            {biggestStalls.length === 0 ? (
-              <div style={emptySmall}>Aktuell gibt es keine klaren Stagnationen oder Rückgänge.</div>
-            ) : null}
+          <AppCard style={sectionCard}>
+            <div style={sectionHead}>
+              <div style={sectionTitle}>Darauf achten</div>
+              <AppBadge variant="worse">{biggestStalls.length}</AppBadge>
+            </div>
+            {biggestStalls.length === 0 ? <div style={emptySmall}>Aktuell gibt es keine klaren Stagnationen oder Rückgänge.</div> : null}
             {biggestStalls.slice(0, 3).map((item) => (
               <ProgressRow key={`${item.exerciseId}-${item.latest.timestamp}-stall`} item={item} />
             ))}
-          </section>
+          </AppCard>
 
-          {(progressCards.length > 3 || topImprovers.length > 3 || biggestStalls.length > 3) ? (
-            <button
+          {progressCards.length > 3 || topImprovers.length > 3 || biggestStalls.length > 3 ? (
+            <AppButton
+              block
+              variant="secondary"
               style={moreButton}
               onClick={() => setShowAllComparisons((current) => !current)}
             >
               {showAllComparisons ? "Weniger Vergleiche anzeigen" : "Alle Vergleiche anzeigen"}
-            </button>
+            </AppButton>
           ) : null}
 
           {showAllComparisons ? (
-            <section style={sectionCard}>
-              <div style={sectionTitle}>Alle aktuellen Vergleiche</div>
-              {progressCards.length === 0 ? (
-                <div style={emptySmall}>Noch nicht genug Trainingsdaten vorhanden.</div>
-              ) : null}
+            <AppCard style={sectionCard}>
+              <div style={sectionHead}>
+                <div style={sectionTitle}>Alle aktuellen Vergleiche</div>
+                <AppBadge variant="active">{progressCards.length}</AppBadge>
+              </div>
+              {progressCards.length === 0 ? <div style={emptySmall}>Noch nicht genug Trainingsdaten vorhanden.</div> : null}
               {progressCards.map((item) => (
                 <ProgressRow key={`${item.exerciseId}-${item.latest.timestamp}-all`} item={item} />
               ))}
-            </section>
+            </AppCard>
           ) : null}
         </>
       ) : null}
@@ -305,90 +308,82 @@ export default function ProgressPage() {
 function ProgressBadge({
   label,
   value,
-  tone,
+  variant,
 }: {
   label: string;
   value: number;
-  tone: "good" | "neutral" | "warn" | "new";
+  variant: "better" | "equal" | "worse" | "new";
 }) {
-  const toneStyle =
-    tone === "good"
-      ? goodBadge
-      : tone === "warn"
-        ? warnBadge
-        : tone === "new"
-          ? newBadge
-          : neutralBadge;
-
   return (
-    <div style={{ ...heroBadge, ...toneStyle }}>
+    <AppCard style={{ ...heroBadge, ...heroBadgeTone[variant] }}>
       <span style={heroBadgeValue}>{value}</span>
       <span style={heroBadgeLabel}>{label}</span>
-    </div>
+    </AppCard>
   );
 }
 
 function ProgressRow({ item }: { item: ExerciseProgress }) {
+  const badgeVariant =
+    item.kind === "better" ? "better" : item.kind === "worse" ? "worse" : item.kind === "new" ? "new" : "equal";
+
   return (
     <div style={progressRow}>
       <div style={progressRowTop}>
         <div style={progressExercise}>{getExerciseLabel(item.exercise)}</div>
-        <div
-          style={{
-            ...miniBadge,
-            ...(item.kind === "better"
-              ? goodBadge
-              : item.kind === "worse"
-                ? warnBadge
-                : item.kind === "new"
-                  ? newBadge
-                  : neutralBadge),
-          }}
-        >
-          {item.kind === "better"
-            ? "stärker"
-            : item.kind === "worse"
-              ? "schwächer"
-              : item.kind === "new"
-                ? "neu"
-                : "gleich"}
-        </div>
+        <AppBadge variant={badgeVariant}>
+          {getProgressStatusLabel(item.kind)}
+        </AppBadge>
       </div>
       <div style={progressMetricRow}>
-        <div style={progressMetricBlock}>
+        <AppCard variant="soft" style={progressMetricBlock}>
           <div style={metricLabel}>Aktuell</div>
           <div style={metricValueSmall}>
             {item.latest.weight} kg × {item.latest.reps}
           </div>
-        </div>
-        <div style={progressMetricBlock}>
+        </AppCard>
+        <AppCard variant="soft" style={progressMetricBlock}>
           <div style={metricLabel}>Vorher</div>
           <div style={metricValueSmall}>
             {item.previous ? `${item.previous.weight} kg × ${item.previous.reps}` : "—"}
           </div>
-        </div>
-        <div style={progressMetricBlock}>
+        </AppCard>
+        <AppCard variant="soft" style={progressMetricBlock}>
           <div style={metricLabel}>Bestwert</div>
-          <div style={metricValueSmall}>
-            {item.best ? `${item.best.weight} kg × ${item.best.reps}` : "—"}
-          </div>
+          <div style={metricValueSmall}>{item.best ? `${item.best.weight} kg × ${item.best.reps}` : "—"}</div>
+        </AppCard>
+      </div>
+      <div style={trendRow}>
+        <div style={trendLabel}>Letzte 3 passende Sätze</div>
+        <div style={trendChips}>
+          {item.recentTrend.map((set) => (
+            <span
+              key={`${item.exerciseId}-${set.timestamp}-${set.set}`}
+              style={trendChip}
+            >
+              {set.weight} kg × {set.reps}
+            </span>
+          ))}
+        </div>
+        <div style={trendInsightLine}>
+          {item.trendInsight.label} · {item.trendInsight.detail}
         </div>
       </div>
+      <div style={progressCoachLine}>
+        Coach: {item.coach.label} · {item.coach.detail}
+      </div>
       <div style={deltaLine}>
-        {item.previous
-          ? `${formatSigned(item.deltaWeight)} kg · ${formatSigned(item.deltaReps)} Wdh.`
-          : "Erster Vergleich für diese Übung"}
+        {getProgressComparisonLine(item)}
       </div>
     </div>
   );
 }
 
 function buildExerciseProgress(entries: WorkoutLogEntry[]): ExerciseProgress[] {
-  const sets = entries.filter(isLoggedSetEntry).filter((set) => set.set > 0);
+  const sets = entries.filter(isLoggedSetEntry).filter(isWorkSetEntry);
   const grouped = new Map<string, SetType[]>();
 
   sets.forEach((set) => {
-    const key = `${set.exerciseId ?? set.exercise}:${set.set}`;
+    const key = `${getLoggedSetExerciseReference(set)}:${set.set}`;
     grouped.set(key, [...(grouped.get(key) ?? []), set]);
   });
 
@@ -400,13 +395,19 @@ function buildExerciseProgress(entries: WorkoutLogEntry[]): ExerciseProgress[] {
     const previous = ordered.length > 1 ? ordered[ordered.length - 2] : null;
     const best = getTopSet(ordered);
     const comparison = getSetComparison(latest, previous);
+    const scheme = getSuggestedExerciseSetup(getLoggedSetExerciseReference(latest));
 
     rows.push({
       exercise: latest.exercise,
-      exerciseId: latest.exerciseId ?? latest.exercise,
+      exerciseId: getLoggedSetExerciseReference(latest),
       latest,
       previous,
       best,
+      coach: getCoachDecisionForRange(ordered, scheme.minReps, scheme.maxReps),
+      recentTrend: ordered.slice(-3),
+      trendInsight: getExerciseTrendInsight(
+        groupSessionsDescending(ordered).slice(0, 3)
+      ),
       deltaWeight: previous ? latest.weight - previous.weight : 0,
       deltaReps: previous ? latest.reps - previous.reps : 0,
       kind: comparison?.kind ?? "same",
@@ -416,31 +417,76 @@ function buildExerciseProgress(entries: WorkoutLogEntry[]): ExerciseProgress[] {
   return rows.sort((a, b) => b.latest.timestamp - a.latest.timestamp);
 }
 
+function groupSessionsDescending(sets: SetType[]) {
+  const bySession = new Map<number, SetType[]>();
+
+  [...sets]
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .forEach((set) => {
+      const current = bySession.get(set.sessionId) ?? [];
+      current.push(set);
+      bySession.set(set.sessionId, current);
+    });
+
+  return Array.from(bySession.values()).map((sessionSets) =>
+    sessionSets.slice().sort((a, b) => a.timestamp - b.timestamp)
+  );
+}
+
 function formatSigned(value: number) {
   if (value > 0) return `+${value}`;
   if (value < 0) return `${value}`;
   return "±0";
 }
 
+function getProgressStatusLabel(kind: ExerciseProgress["kind"]) {
+  if (kind === "better") return "stärker";
+  if (kind === "worse") return "schwächer";
+  if (kind === "new") return "neu";
+  return "gleich";
+}
+
+function getProgressComparisonLine(item: ExerciseProgress) {
+  if (!item.previous) {
+    return "Erster Vergleich für diese Übung";
+  }
+
+  const delta = `${formatSigned(item.deltaWeight)} kg · ${formatSigned(item.deltaReps)} Wdh.`;
+  if (item.kind === "better") {
+    return `${delta} stärker als der letzte passende Satz`;
+  }
+  if (item.kind === "worse") {
+    return `${delta} unter dem letzten passenden Satz`;
+  }
+  return `${delta} gleich zum letzten passenden Satz`;
+}
+
 const heroStats = {
   display: "flex",
   flexWrap: "wrap" as const,
-  gap: 8,
+  gap: uiTheme.spacing.small,
 };
 
 const heroBadge = {
-  minWidth: 86,
+  minWidth: 92,
   padding: "10px 12px",
-  borderRadius: 18,
   display: "grid",
   gap: 4,
   justifyItems: "start" as const,
 };
 
+const heroBadgeTone = {
+  better: { background: withAlpha(appPalette.success, 0.14) },
+  equal: { background: appPalette.surfaceMuted },
+  worse: { background: withAlpha(appPalette.danger, 0.12) },
+  new: { background: withAlpha(splitThemes.pull.primary, 0.12) },
+} as const;
+
 const heroBadgeValue = {
   fontSize: 22,
   fontWeight: 800,
   lineHeight: 1,
+  color: appPalette.textStrong,
 };
 
 const heroBadgeLabel = {
@@ -448,13 +494,11 @@ const heroBadgeLabel = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 700,
+  color: appPalette.textDefault,
 };
 
 const focusCard = {
   padding: "14px 14px 15px",
-  borderRadius: 22,
-  border: "1px solid #e8eef6",
-  boxShadow: "0 22px 36px rgba(15, 23, 42, 0.06)",
   display: "grid",
   gap: 5,
 };
@@ -464,21 +508,25 @@ const focusTitle = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const focusValue = {
   fontSize: 24,
   lineHeight: 1.05,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const focusDetail = {
   fontSize: 14,
-  color: "#475569",
+  color: appPalette.textDefault,
   fontWeight: 700,
 };
+
+const goodCard = { background: withAlpha(appPalette.success, 0.12) };
+const warnCard = { background: withAlpha(appPalette.warning, 0.12) };
+const neutralCard = { background: appPalette.surface };
 
 const adviceList = {
   display: "grid",
@@ -490,51 +538,46 @@ const adviceRow = {
   alignItems: "flex-start",
   gap: 10,
   paddingTop: 12,
-  borderTop: "1px solid #eef2f7",
+  borderTop: `1px solid ${appPalette.borderSoft}`,
 };
 
 const adviceDot = {
-  width: 26,
-  height: 26,
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#fff7ed",
-  color: "#ea580c",
-  fontWeight: 800,
-  fontSize: 13,
-  flexShrink: 0,
+  minWidth: 34,
+  minHeight: 34,
+  padding: "0 10px",
 };
 
 const adviceText = {
   fontSize: 15,
   lineHeight: 1.45,
-  color: "#334155",
+  color: appPalette.textDefault,
   fontWeight: 700,
 };
 
 const sectionCard = {
-  padding: "16px 14px",
-  borderRadius: 22,
-  background: "#ffffff",
-  border: "1px solid #e8eef6",
-  boxShadow: "0 22px 36px rgba(15, 23, 42, 0.06)",
+  padding: "14px 14px",
   display: "grid",
-  gap: 12,
+  gap: 10,
+};
+
+const sectionHead = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
 };
 
 const sectionTitle = {
   fontSize: 18,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const progressRow = {
-  padding: "12px 0 0",
-  borderTop: "1px solid #eef2f7",
+  padding: "10px 0 0",
+  borderTop: `1px solid ${appPalette.borderSoft}`,
   display: "grid",
-  gap: 10,
+  gap: 8,
 };
 
 const progressRowTop = {
@@ -547,7 +590,7 @@ const progressRowTop = {
 const progressExercise = {
   fontSize: 17,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const progressMetricRow = {
@@ -557,12 +600,9 @@ const progressMetricRow = {
 };
 
 const progressMetricBlock = {
+  padding: "8px 8px 9px",
   display: "grid",
   gap: 4,
-  padding: "9px 9px 10px",
-  borderRadius: 16,
-  background: "#f8fafc",
-  border: "1px solid #edf2f7",
 };
 
 const metricLabel = {
@@ -570,73 +610,78 @@ const metricLabel = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#94a3b8",
+  color: appPalette.textSoft,
 };
 
 const metricValueSmall = {
   fontSize: 15,
   fontWeight: 800,
-  color: "#111827",
+  color: appPalette.textStrong,
+};
+
+const trendRow = {
+  display: "grid",
+  gap: 6,
+};
+
+const trendLabel = {
+  fontSize: 11,
+  textTransform: "uppercase" as const,
+  letterSpacing: 1,
+  fontWeight: 800,
+  color: appPalette.textMuted,
+};
+
+const trendChips = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 6,
+};
+
+const trendInsightLine = {
+  fontSize: 12,
+  lineHeight: 1.4,
+  color: appPalette.textMuted,
+  fontWeight: 700,
+};
+
+const trendChip = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 28,
+  padding: "4px 10px",
+  borderRadius: 999,
+  background: appPalette.surfaceMuted,
+  border: `1px solid ${appPalette.borderSoft}`,
+  color: appPalette.textDefault,
+  fontSize: 12,
+  fontWeight: 700,
 };
 
 const deltaLine = {
   fontSize: 13,
   fontWeight: 700,
-  color: "#475569",
+  color: appPalette.textDefault,
 };
 
-const miniBadge = {
-  minHeight: 26,
-  padding: "0 10px",
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 12,
-  fontWeight: 800,
-};
-
-const goodBadge = {
-  background: "#e8fbef",
-  color: "#15803d",
-};
-
-const warnBadge = {
-  background: "#fff1f2",
-  color: "#be123c",
-};
-
-const neutralBadge = {
-  background: "#f1f5f9",
-  color: "#475569",
-};
-
-const newBadge = {
-  background: "#eff6ff",
-  color: "#2563eb",
+const progressCoachLine = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: appPalette.textMuted,
 };
 
 const emptyCard = {
   padding: "18px 16px",
-  borderRadius: 22,
-  background: "#ffffff",
-  border: "1px solid #e8eef6",
-  color: "#64748b",
+  color: appPalette.textMuted,
   fontSize: 15,
 };
 
 const emptySmall = {
   fontSize: 14,
-  color: "#94a3b8",
+  color: appPalette.textSoft,
 };
 
 const moreButton = {
   width: "100%",
   minHeight: 50,
-  borderRadius: 999,
-  background: "#ffffff",
-  color: "#0f172a",
-  fontSize: 14,
-  fontWeight: 800,
-  border: "1px solid #dce5f0",
 };

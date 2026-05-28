@@ -3,8 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AppPageFrame } from "@/components/AppPageFrame";
-import { getAllSets, isLoggedSetEntry, type WorkoutLogEntry } from "@/lib/workoutEngine";
-import { getExerciseMeta } from "@/lib/workoutUi";
+import { AppBadge } from "@/components/ui/AppBadge";
+import { AppButton } from "@/components/ui/AppButton";
+import { AppCard } from "@/components/ui/AppCard";
+import { appPalette, splitThemes, uiTheme, withAlpha } from "@/lib/theme";
+import {
+  getAllSets,
+  getCoachDecisionForRange,
+  getLoggedSetExerciseReference,
+  isLoggedSetEntry,
+  isWorkSetEntry,
+  type WorkoutLogEntry,
+} from "@/lib/workoutEngine";
+import { getSuggestedExerciseSetup } from "@/lib/trainingCatalog";
+import { getExerciseMeta, getExerciseLabel } from "@/lib/workoutUi";
 
 type SessionSummary = {
   sessionId: number;
@@ -18,6 +30,14 @@ type SessionSummary = {
 type TopStat = {
   label: string;
   value: number;
+};
+
+type InsightTone = "good" | "info" | "neutral";
+type TrainingGuidance = {
+  title: string;
+  value: string;
+  detail: string;
+  tone: InsightTone;
 };
 
 export default function StatisticsPage() {
@@ -42,16 +62,13 @@ export default function StatisticsPage() {
 
   const stats = useMemo(() => {
     const loggedSets = sessions.flatMap((session) => session.entries.filter(isLoggedSetEntry));
-    const workSets = loggedSets.filter((set) => set.set > 0);
+    const workSets = loggedSets.filter(isWorkSetEntry);
     const now = Date.now();
 
     const monthSessions = sessions.filter((session) => {
       const date = new Date(session.timestamp);
       const current = new Date(now);
-      return (
-        date.getMonth() === current.getMonth() &&
-        date.getFullYear() === current.getFullYear()
-      );
+      return date.getMonth() === current.getMonth() && date.getFullYear() === current.getFullYear();
     }).length;
 
     const weekSessions = sessions.filter((session) => now - session.timestamp <= 7 * 86400000).length;
@@ -62,17 +79,17 @@ export default function StatisticsPage() {
 
     const totalMinutes = sessions.reduce((sum, session) => sum + session.durationMinutes, 0);
     const averageMinutes = sessions.length > 0 ? Math.round(totalMinutes / sessions.length) : 0;
-    const totalVolume = Math.round(
-      workSets.reduce((sum, set) => sum + set.weight * set.reps, 0)
-    );
+    const totalVolume = Math.round(workSets.reduce((sum, set) => sum + set.weight * set.reps, 0));
 
     const exerciseMap = new Map<string, number>();
     const categoryMap = new Map<string, number>();
     const planMap = new Map<string, number>();
 
     workSets.forEach((set) => {
-      exerciseMap.set(set.exercise, (exerciseMap.get(set.exercise) ?? 0) + 1);
-      const category = getExerciseMeta(set.exercise)?.category ?? "Andere";
+      const exerciseLabel = getExerciseLabel(getLoggedSetExerciseReference(set));
+      exerciseMap.set(exerciseLabel, (exerciseMap.get(exerciseLabel) ?? 0) + 1);
+      const category =
+        getExerciseMeta(getLoggedSetExerciseReference(set))?.category ?? "Andere";
       categoryMap.set(category, (categoryMap.get(category) ?? 0) + 1);
     });
 
@@ -106,44 +123,35 @@ export default function StatisticsPage() {
       {
         title: "Trainingsrhythmus",
         value: `${stats.weekSessions} diese Woche`,
-        detail:
-          weekDelta === 0
-            ? "gleich wie letzte Woche"
-            : `${formatSignedInt(weekDelta)} vs. letzte Woche`,
+        detail: weekDelta === 0 ? "gleich wie letzte Woche" : `${formatSignedInt(weekDelta)} vs. letzte Woche`,
         tone: stats.weekSessions >= 4 ? "good" : stats.weekSessions >= 1 ? "info" : "neutral",
       },
       {
         title: "Dein Fokus",
         value: topCategory ? topCategory.label : "Noch offen",
-        detail: topExercise
-          ? `${topExercise.label} am häufigsten trainiert`
-          : "Noch keine Übungsdaten",
+        detail: topExercise ? `${topExercise.label} am häufigsten trainiert` : "Noch keine Übungsdaten",
         tone: "info",
       },
       {
         title: "Aktivster Plan",
         value: topPlan ? topPlan.label : "Noch keiner",
-        detail: topPlan
-          ? `${topPlan.value} Sessions insgesamt`
-          : "Sobald du trainierst, erscheint hier dein Schwerpunkt",
+        detail: topPlan ? `${topPlan.value} Sessions insgesamt` : "Sobald du trainierst, erscheint hier dein Schwerpunkt",
         tone: "neutral",
       },
-    ] as const;
+    ] as Array<{ title: string; value: string; detail: string; tone: InsightTone }>;
   }, [stats]);
 
   const recommendation = useMemo(() => {
     const topCategory = stats.topCategories[0] ?? null;
     const topExercise = stats.topExercises[0] ?? null;
     const topPlan = stats.topPlans[0] ?? null;
-    const dominantPlanShare =
-      topPlan && stats.totalSessions > 0 ? topPlan.value / stats.totalSessions : 0;
+    const dominantPlanShare = topPlan && stats.totalSessions > 0 ? topPlan.value / stats.totalSessions : 0;
 
     if (stats.totalSessions === 0) {
       return {
         title: "Was jetzt?",
         value: "Mit 1 Workout starten",
-        detail:
-          "Sobald die ersten Sessions drin sind, werden Rhythmus, Fokus und aktive Pläne hier viel aussagekräftiger.",
+        detail: "Sobald die ersten Sessions drin sind, werden Rhythmus, Fokus und aktive Pläne hier viel aussagekräftiger.",
       };
     }
 
@@ -151,8 +159,7 @@ export default function StatisticsPage() {
       return {
         title: "Was jetzt?",
         value: "Rhythmus wieder aufnehmen",
-        detail:
-          "Diese Woche ist noch kein Training geloggt. Eine kurze Session bringt dich sofort zurück in den Flow.",
+        detail: "Diese Woche ist noch kein Training geloggt. Eine kurze Session bringt dich sofort zurück in den Flow.",
       };
     }
 
@@ -160,8 +167,7 @@ export default function StatisticsPage() {
       return {
         title: "Was jetzt?",
         value: "Eine zweite Session anpeilen",
-        detail:
-          "Mit zwei Einheiten pro Woche werden Frequenz, Vergleichswerte und Fortschritte spürbar stabiler.",
+        detail: "Mit zwei Einheiten pro Woche werden Frequenz, Vergleichswerte und Fortschritte spürbar stabiler.",
       };
     }
 
@@ -189,23 +195,120 @@ export default function StatisticsPage() {
       return {
         title: "Was jetzt?",
         value: "Sessions sind eher kurz",
-        detail:
-          "Wenn du mehr Fortschritt willst, hilft oft schon ein zusätzlicher Arbeitssatz oder ein klarer Zusatzblock.",
+        detail: "Wenn du mehr Fortschritt willst, hilft oft schon ein zusätzlicher Arbeitssatz oder ein klarer Zusatzblock.",
       };
     }
 
     return {
       title: "Was jetzt?",
       value: "Rhythmus stabil halten",
-      detail:
-        "Deine Daten wirken aktuell ausgeglichen. Jetzt lohnt es sich, denselben Trainingsfluss konsequent weiterzuführen.",
+      detail: "Deine Daten wirken aktuell ausgeglichen. Jetzt lohnt es sich, denselben Trainingsfluss konsequent weiterzuführen.",
+    };
+  }, [stats]);
+
+  const trainingGuidance = useMemo(() => {
+    const workSets = sessions
+      .flatMap((session) => session.entries.filter(isLoggedSetEntry))
+      .filter(isWorkSetEntry);
+    const grouped = new Map<string, typeof workSets>();
+
+    workSets.forEach((set) => {
+      const key = getLoggedSetExerciseReference(set);
+      grouped.set(key, [...(grouped.get(key) ?? []), set]);
+    });
+
+    const decisions = Array.from(grouped.entries())
+      .map(([exerciseId, sets]) => {
+        const ordered = [...sets].sort((a, b) => a.timestamp - b.timestamp);
+        const scheme = getSuggestedExerciseSetup(exerciseId);
+        return {
+          exerciseId,
+          exercise: ordered[0]?.exercise ?? exerciseId,
+          decision: getCoachDecisionForRange(ordered, scheme.minReps, scheme.maxReps),
+          latestTimestamp: ordered[ordered.length - 1]?.timestamp ?? 0,
+        };
+      })
+      .sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+
+    const increase = decisions.filter((item) => item.decision.action === "increase");
+    const keep = decisions.filter((item) => item.decision.action === "keep");
+    const decrease = decisions.filter((item) => item.decision.action === "decrease");
+
+    if (decisions.length === 0) {
+      return {
+        title: "Trainingssteuerung",
+        value: "Noch keine Coach-Daten",
+        detail: "Sobald genug Arbeitssätze vorhanden sind, bekommst du hier Hinweise zu Steigern, Halten oder Entlasten.",
+        tone: "neutral" as const,
+      };
+    }
+
+    if (decrease.length > increase.length && decrease.length > 0) {
+      const focus = decrease[0];
+      return {
+        title: "Trainingssteuerung",
+        value: "Belastung genauer prüfen",
+        detail: `${getExerciseLabel(focus.exercise)} wirkt aktuell eher ermüdet. Dort lohnt sich zuerst saubere Stabilisierung statt mehr Last.`,
+        tone: "neutral" as const,
+      };
+    }
+
+    if (increase.length > 0) {
+      const focus = increase[0];
+      return {
+        title: "Trainingssteuerung",
+        value: `${increase.length} Übungen bereit zum Steigern`,
+        detail: `${getExerciseLabel(focus.exercise)} ist ein guter Kandidat für den nächsten kleinen Progressionsschritt.`,
+        tone: "good" as const,
+      };
+    }
+
+    return {
+      title: "Trainingssteuerung",
+      value: `${keep.length} Übungen stabil`,
+      detail: "Die meisten aktuellen Muster sprechen eher für Halten und saubere Wiederholungsqualität als für hektische Änderungen.",
+      tone: "info" as const,
+    };
+  }, [sessions]);
+
+  const dataCoverage = useMemo(() => {
+    if (stats.totalSessions === 0) {
+      return {
+        title: "Datenbasis",
+        value: "Noch im Aufbau",
+        detail: "Mit den ersten Sessions werden Verlauf, Coach-Logik und Statistik Schritt fuer Schritt aussagekraeftiger.",
+        tone: "neutral" as const,
+      };
+    }
+
+    if (stats.totalSessions >= 12 && stats.totalWorkSets >= 80) {
+      return {
+        title: "Datenbasis",
+        value: "Sehr belastbar",
+        detail: `${stats.totalSessions} Sessions und ${stats.totalWorkSets} Arbeitssaetze geben deinen Auswertungen bereits eine starke Grundlage.`,
+        tone: "good" as const,
+      };
+    }
+
+    if (stats.totalSessions >= 4 && stats.totalWorkSets >= 24) {
+      return {
+        title: "Datenbasis",
+        value: "Gut lesbar",
+        detail: `Mit ${stats.totalSessions} Sessions lassen sich erste klare Muster und Uebungstrends schon solide erkennen.`,
+        tone: "info" as const,
+      };
+    }
+
+    return {
+      title: "Datenbasis",
+      value: "Erste Richtung sichtbar",
+      detail: "Die App erkennt bereits Tendenzen, aber noch nicht jede Uebung hat genug Historie fuer harte Aussagen.",
+      tone: "neutral" as const,
     };
   }, [stats]);
 
   const rankingOverflow =
-    stats.topExercises.length > 3 ||
-    stats.topCategories.length > 3 ||
-    stats.topPlans.length > 3;
+    stats.topExercises.length > 3 || stats.topCategories.length > 3 || stats.topPlans.length > 3;
 
   return (
     <AppPageFrame
@@ -214,27 +317,20 @@ export default function StatisticsPage() {
       title="Dein Überblick"
       subtitle="Gesamtzahlen, Trainingsfrequenz und Schwerpunkte auf einen Blick."
     >
-      {loading ? <div style={emptyCard}>Lade Statistiken...</div> : null}
+      {loading ? <AppCard style={emptyCard}>Lade Statistiken...</AppCard> : null}
 
       {!loading ? (
         <>
           <div style={insightGrid}>
             {insights.map((insight) => (
-              <InsightCard
-                key={insight.title}
-                title={insight.title}
-                value={insight.value}
-                detail={insight.detail}
-                tone={insight.tone}
-              />
+              <InsightCard key={insight.title} {...insight} />
             ))}
           </div>
 
-          <RecommendationCard
-            title={recommendation.title}
-            value={recommendation.value}
-            detail={recommendation.detail}
-          />
+          <InsightCard {...trainingGuidance} />
+          <InsightCard {...dataCoverage} />
+
+          <RecommendationCard {...recommendation} />
 
           <div style={metricGrid}>
             <MetricCard label="Trainings gesamt" value={stats.totalSessions} />
@@ -266,12 +362,14 @@ export default function StatisticsPage() {
           />
 
           {rankingOverflow ? (
-            <button
+            <AppButton
+              block
+              variant="secondary"
               style={moreButton}
               onClick={() => setShowExtendedRankings((current) => !current)}
             >
               {showExtendedRankings ? "Weniger Rankings anzeigen" : "Weitere Rankings anzeigen"}
-            </button>
+            </AppButton>
           ) : null}
         </>
       ) : null}
@@ -289,11 +387,11 @@ function MetricCard({
   smallSuffix?: string;
 }) {
   return (
-    <div style={metricCard}>
+    <AppCard style={metricCard}>
       <div style={metricLabel}>{label}</div>
       <div style={metricValue}>{value}</div>
       {smallSuffix ? <div style={metricSuffix}>{smallSuffix}</div> : null}
-    </div>
+    </AppCard>
   );
 }
 
@@ -306,17 +404,16 @@ function InsightCard({
   title: string;
   value: string;
   detail: string;
-  tone: "good" | "info" | "neutral";
+  tone: InsightTone;
 }) {
-  const toneStyle =
-    tone === "good" ? insightGood : tone === "info" ? insightInfo : insightNeutral;
+  const toneStyle = tone === "good" ? insightGood : tone === "info" ? insightInfo : insightNeutral;
 
   return (
-    <div style={{ ...insightCard, ...toneStyle }}>
+    <AppCard style={{ ...insightCard, ...toneStyle }}>
       <div style={insightTitle}>{title}</div>
       <div style={insightValue}>{value}</div>
       <div style={insightDetail}>{detail}</div>
-    </div>
+    </AppCard>
   );
 }
 
@@ -330,11 +427,11 @@ function RecommendationCard({
   detail: string;
 }) {
   return (
-    <div style={recommendationCard}>
+    <AppCard style={recommendationCard}>
       <div style={recommendationTitle}>{title}</div>
       <div style={recommendationValue}>{value}</div>
       <div style={recommendationDetail}>{detail}</div>
-    </div>
+    </AppCard>
   );
 }
 
@@ -348,19 +445,24 @@ function StatsSection({
   emptyLabel: string;
 }) {
   return (
-    <section style={sectionCard}>
-      <div style={sectionTitle}>{title}</div>
+    <AppCard style={sectionCard}>
+      <div style={sectionHead}>
+        <div style={sectionTitle}>{title}</div>
+        {items.length > 0 ? <AppBadge variant="template">{items.length} Einträge</AppBadge> : null}
+      </div>
       {items.length === 0 ? <div style={emptySmall}>{emptyLabel}</div> : null}
       {items.map((item, index) => (
         <div key={`${item.label}-${index}`} style={rankRow}>
           <div style={rankLeft}>
-            <span style={rankBadge}>{index + 1}</span>
+            <AppBadge variant="exercise" style={rankBadge}>
+              {index + 1}
+            </AppBadge>
             <span style={rankLabel}>{item.label}</span>
           </div>
           <div style={rankValue}>{item.value}</div>
         </div>
       ))}
-    </section>
+    </AppCard>
   );
 }
 
@@ -405,28 +507,25 @@ function formatSignedInt(value: number) {
 
 const insightGrid = {
   display: "grid",
-  gap: 10,
+  gap: uiTheme.spacing.small,
 };
 
 const insightCard = {
-  padding: "14px 14px 15px",
-  borderRadius: 20,
-  border: "1px solid #e8eef6",
-  boxShadow: "0 20px 34px rgba(15, 23, 42, 0.06)",
+  padding: "13px 14px 14px",
   display: "grid",
   gap: 5,
 };
 
 const insightGood = {
-  background: "#f0fdf4",
+  background: withAlpha(appPalette.success, 0.12),
 };
 
 const insightInfo = {
-  background: "#eff6ff",
+  background: withAlpha(splitThemes.pull.primary, 0.12),
 };
 
 const insightNeutral = {
-  background: "#ffffff",
+  background: appPalette.surface,
 };
 
 const insightTitle = {
@@ -434,28 +533,26 @@ const insightTitle = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const insightValue = {
   fontSize: 24,
   lineHeight: 1.05,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const insightDetail = {
   fontSize: 13,
-  color: "#475569",
+  color: appPalette.textDefault,
   fontWeight: 700,
 };
 
 const recommendationCard = {
-  padding: "14px 14px 15px",
-  borderRadius: 20,
-  background: "#fff7ed",
-  border: "1px solid #fed7aa",
-  boxShadow: "0 20px 34px rgba(15, 23, 42, 0.06)",
+  padding: "13px 14px 14px",
+  background: withAlpha(appPalette.warning, 0.12),
+  border: `1px solid ${withAlpha(appPalette.warning, 0.28)}`,
   display: "grid",
   gap: 5,
 };
@@ -465,34 +562,30 @@ const recommendationTitle = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#9a3412",
+  color: appPalette.warning,
 };
 
 const recommendationValue = {
   fontSize: 24,
   lineHeight: 1.05,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const recommendationDetail = {
   fontSize: 14,
-  color: "#7c2d12",
+  color: appPalette.textDefault,
   fontWeight: 700,
 };
 
 const metricGrid = {
   display: "grid",
   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 10,
+  gap: uiTheme.spacing.small,
 };
 
 const metricCard = {
-  padding: "14px 14px 15px",
-  borderRadius: 20,
-  background: "#ffffff",
-  border: "1px solid #e8eef6",
-  boxShadow: "0 20px 34px rgba(15, 23, 42, 0.06)",
+  padding: "13px 14px 14px",
   display: "grid",
   gap: 6,
 };
@@ -502,35 +595,38 @@ const metricLabel = {
   textTransform: "uppercase" as const,
   letterSpacing: 1,
   fontWeight: 800,
-  color: "#94a3b8",
+  color: appPalette.textSoft,
 };
 
 const metricValue = {
   fontSize: 24,
   lineHeight: 1.05,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const metricSuffix = {
   fontSize: 12,
-  color: "#64748b",
+  color: appPalette.textMuted,
 };
 
 const sectionCard = {
-  padding: "16px 14px",
-  borderRadius: 22,
-  background: "#ffffff",
-  border: "1px solid #e8eef6",
-  boxShadow: "0 22px 36px rgba(15, 23, 42, 0.06)",
+  padding: "14px 14px",
   display: "grid",
-  gap: 12,
+  gap: 10,
+};
+
+const sectionHead = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
 };
 
 const sectionTitle = {
   fontSize: 18,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const rankRow = {
@@ -538,8 +634,8 @@ const rankRow = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: 10,
-  paddingTop: 12,
-  borderTop: "1px solid #eef2f7",
+  paddingTop: 10,
+  borderTop: `1px solid ${appPalette.borderSoft}`,
 };
 
 const rankLeft = {
@@ -549,52 +645,35 @@ const rankLeft = {
 };
 
 const rankBadge = {
-  width: 30,
-  height: 30,
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#eef4ff",
-  color: "#2563eb",
-  fontWeight: 800,
-  fontSize: 15,
+  minWidth: 36,
+  minHeight: 34,
+  padding: "0 10px",
 };
 
 const rankLabel = {
   fontSize: 16,
   fontWeight: 700,
-  color: "#111827",
+  color: appPalette.textStrong,
 };
 
 const rankValue = {
   fontSize: 22,
   fontWeight: 800,
-  color: "#0f172a",
+  color: appPalette.textStrong,
 };
 
 const emptyCard = {
   padding: "18px 16px",
-  borderRadius: 22,
-  background: "#ffffff",
-  border: "1px solid #e8eef6",
-  color: "#64748b",
+  color: appPalette.textMuted,
   fontSize: 15,
 };
 
 const emptySmall = {
   fontSize: 14,
-  color: "#94a3b8",
+  color: appPalette.textSoft,
 };
 
 const moreButton = {
   width: "100%",
-  minHeight: 54,
-  borderRadius: 999,
-  background: "#ffffff",
-  color: "#0f172a",
-  fontSize: 15,
-  fontWeight: 800,
-  border: "1px solid #dce5f0",
-  boxShadow: "0 18px 30px rgba(15, 23, 42, 0.06)",
+  minHeight: 50,
 };

@@ -1,3 +1,5 @@
+import { getStorageItem, hasAppStorage, setStorageItem } from "@/lib/appStorage";
+
 export type BodyWeightEntry = {
   id: string;
   weight: number;
@@ -6,10 +8,6 @@ export type BodyWeightEntry = {
 };
 
 export const BODY_WEIGHT_KEY = "gym-tracker-body-weight";
-
-function canUseStorage() {
-  return typeof window !== "undefined" && "localStorage" in window;
-}
 
 function isValidEntry(value: unknown): value is BodyWeightEntry {
   if (!value || typeof value !== "object") {
@@ -26,12 +24,12 @@ function isValidEntry(value: unknown): value is BodyWeightEntry {
 }
 
 function readEntries() {
-  if (!canUseStorage()) {
+  if (!hasAppStorage()) {
     return [] as BodyWeightEntry[];
   }
 
   try {
-    const raw = window.localStorage.getItem(BODY_WEIGHT_KEY);
+    const raw = getStorageItem(BODY_WEIGHT_KEY);
     if (!raw) {
       return [] as BodyWeightEntry[];
     }
@@ -51,12 +49,12 @@ function readEntries() {
 }
 
 function writeEntries(entries: BodyWeightEntry[]) {
-  if (!canUseStorage()) {
+  if (!hasAppStorage()) {
     return;
   }
 
   try {
-    window.localStorage.setItem(BODY_WEIGHT_KEY, JSON.stringify(entries));
+    setStorageItem(BODY_WEIGHT_KEY, JSON.stringify(entries));
   } catch (error) {
     console.error("Body weight entries could not be written:", error);
   }

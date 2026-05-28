@@ -10,6 +10,8 @@
     "lint": "eslint",
     "cap:sync": "node scripts/sync-capacitor.mjs",
     "cap:prepare": "npm run build:capacitor && npm run cap:sync",
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync:ios": "npx cap sync ios",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios"
   },
@@ -17,7 +19,9 @@
     "@capacitor/android": "^8.3.1",
     "@capacitor/cli": "^8.3.1",
     "@capacitor/core": "^8.3.1",
+    "@capacitor/ios": "^8.3.4",
     "@capacitor/local-notifications": "^8.0.2",
+    "@capacitor/preferences": "^8.0.1",
     "firebase": "^12.12.0",
     "next": "16.2.4",
     "react": "19.2.4",
