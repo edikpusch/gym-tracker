@@ -2034,6 +2034,33 @@ export function WorkoutScreen({
       </div>
     );
   };
+  const renderCompactActiveSummaryPanel = () => (
+    <div
+      style={{
+        ...compactActiveSummaryPanel,
+        border: `1px solid ${accentBorder}`,
+        background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.96)} 0%, ${toRgba(
+          theme.accent,
+          0.04
+        )} 100%)`,
+      }}
+    >
+      <div style={compactActiveSummaryGrid}>
+        <div style={compactActiveSummaryItem}>
+          <div style={compactActiveSummaryLabel}>Jetzt</div>
+          <div style={compactActiveSummaryValue}>{flowMeta.flowNowLabel}</div>
+        </div>
+        <div style={compactActiveSummaryItem}>
+          <div style={compactActiveSummaryLabel}>Danach</div>
+          <div style={compactActiveSummaryValue}>{flowMeta.flowNextLabel}</div>
+        </div>
+      </div>
+      <div style={compactActiveSummaryCoach}>
+        Coach: {progressionDecision.label}
+        {exerciseSuggestion ? ` · ${exerciseSuggestion.label}` : ""}
+      </div>
+    </div>
+  );
   const navigateHome = () => {
     if (typeof window !== "undefined") {
       window.location.assign("/index.html");
@@ -2261,22 +2288,24 @@ export function WorkoutScreen({
                 </div>
               </div>
 
-              {renderFlowContextPanel(
-                referenceLabel
-                  ? `${referenceLabel}: ${
-                      referenceSet
-                        ? `${formatWeight(referenceSet.weight)} kg × ${formatReps(referenceSet.reps)}`
-                        : "—"
-                    }`
-                  : undefined,
-                referenceLabel
-                  ? {
-                      color: theme.accent,
-                      background: toRgba(theme.accent, 0.1),
-                    }
-                  : null,
-                compactMode
-              )}
+              {compactMode
+                ? renderCompactActiveSummaryPanel()
+                : renderFlowContextPanel(
+                    referenceLabel
+                      ? `${referenceLabel}: ${
+                          referenceSet
+                            ? `${formatWeight(referenceSet.weight)} kg × ${formatReps(referenceSet.reps)}`
+                            : "—"
+                        }`
+                      : undefined,
+                    referenceLabel
+                      ? {
+                          color: theme.accent,
+                          background: toRgba(theme.accent, 0.1),
+                        }
+                      : null,
+                    compactMode
+                  )}
 
               <div
                 style={{
@@ -5129,6 +5158,47 @@ const compactExerciseCard = {
   gap: 10,
   padding: "12px 12px 10px",
   borderRadius: 20,
+};
+
+const compactActiveSummaryPanel = {
+  display: "grid",
+  gap: 8,
+  padding: "10px 12px",
+  borderRadius: 18,
+  boxShadow: `0 10px 24px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
+};
+
+const compactActiveSummaryGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
+};
+
+const compactActiveSummaryItem = {
+  minWidth: 0,
+};
+
+const compactActiveSummaryLabel = {
+  fontSize: 9,
+  textTransform: "uppercase" as const,
+  letterSpacing: 1,
+  color: appPalette.textSoft,
+  fontWeight: 800,
+};
+
+const compactActiveSummaryValue = {
+  marginTop: 3,
+  fontSize: 14,
+  lineHeight: 1.25,
+  color: appPalette.textDefault,
+  fontWeight: 700,
+};
+
+const compactActiveSummaryCoach = {
+  fontSize: 11,
+  lineHeight: 1.3,
+  color: appPalette.textMuted,
+  fontWeight: 700,
 };
 
 const compactExerciseInputStage = {
