@@ -1850,14 +1850,17 @@ export function WorkoutScreen({
       : restSuggestionNeutral;
   const pauseButtonLabel = isWorkoutPaused ? "▶ Weiter" : "⏸ Pause";
   const progressExerciseName = getExerciseLabel(currentExercise.name).toUpperCase();
-  const renderExerciseInsightCards = (dense = false) => (
+  const renderExerciseInsightCards = (dense = false) => {
+    const compactInsights = compactMode || dense;
+
+    return (
     <div style={compareSection}>
-      <div style={{ ...compareGrid, ...(compactMode || dense ? compactCompareGrid : null) }}>
+      <div style={{ ...compareGrid, ...(compactInsights ? compactCompareGrid : null) }}>
         <AppCard
           variant="theme"
           accentColor={theme.accent}
           interactive={lastExerciseSessionSets.length > 0}
-          style={{ ...insightCard, ...(compactMode || dense ? compactInsightCard : null) }}
+          style={{ ...insightCard, ...(compactInsights ? compactInsightCard : null) }}
           onClick={() => {
             if (lastExerciseSessionSets.length > 0) {
               setShowLastTrainingSheet(true);
@@ -1870,11 +1873,13 @@ export function WorkoutScreen({
               Letztes Training
             </AppBadge>
           </div>
-          <div style={compareMeta}>
-            {lastExerciseSessionSets[0]
-              ? formatDate(lastExerciseSessionSets[0].timestamp)
-              : "Noch kein letztes Training"}
-          </div>
+          {!compactInsights ? (
+            <div style={compareMeta}>
+              {lastExerciseSessionSets[0]
+                ? formatDate(lastExerciseSessionSets[0].timestamp)
+                : "Noch kein letztes Training"}
+            </div>
+          ) : null}
           <div style={compactInsightValue}>
             {lastExerciseSessionTopSet
               ? `${formatWeight(lastExerciseSessionTopSet.weight)} kg × ${formatReps(
@@ -1900,11 +1905,11 @@ export function WorkoutScreen({
                 ? `${lastExerciseSessionSets.length} Sätze`
                 : "noch leer"}
             </span>
-            {lastExerciseSessionSets.length > 0 ? (
+            {lastExerciseSessionSets.length > 0 && !compactInsights ? (
               <span style={insightActionHint}>Tippen für Verlauf</span>
             ) : null}
           </div>
-          {exerciseTrendInsight ? (
+          {exerciseTrendInsight && !compactInsights ? (
             <div style={insightSupportText}>
               {exerciseTrendInsight.label} · {exerciseTrendInsight.detail}
             </div>
@@ -1913,7 +1918,7 @@ export function WorkoutScreen({
         <AppCard
           variant="theme"
           accentColor={theme.accent}
-          style={{ ...insightCard, ...(compactMode || dense ? compactInsightCard : null) }}
+          style={{ ...insightCard, ...(compactInsights ? compactInsightCard : null) }}
         >
           <div style={compareCardTop}>
             <span style={{ ...compareIcon, color: theme.accent }}>🏆</span>
@@ -1921,9 +1926,11 @@ export function WorkoutScreen({
               Deine Bestleistung
             </AppBadge>
           </div>
-          <div style={compareMeta}>
-            {bestExerciseSet ? formatDate(bestExerciseSet.timestamp) : "Noch keine Bestleistung"}
-          </div>
+          {!compactInsights ? (
+            <div style={compareMeta}>
+              {bestExerciseSet ? formatDate(bestExerciseSet.timestamp) : "Noch keine Bestleistung"}
+            </div>
+          ) : null}
           <div style={compactInsightValue}>
             {bestExerciseSet
               ? `${formatWeight(bestExerciseSet.weight)} kg × ${formatReps(bestExerciseSet.reps)}`
@@ -1940,13 +1947,14 @@ export function WorkoutScreen({
                 {bestSetSummaryLabel ?? "baut sich auf"}
               </span>
             </div>
-            {bestExerciseSet && bestExerciseInsightDetail ? (
+            {bestExerciseSet && bestExerciseInsightDetail && !compactInsights ? (
               <div style={insightSupportText}>{bestExerciseInsightDetail}</div>
             ) : null}
           </AppCard>
       </div>
     </div>
   );
+  };
   const renderFlowContextPanel = (
     badgeLabel?: string,
     badgeStyle?: CSSProperties | null,
@@ -1970,12 +1978,12 @@ export function WorkoutScreen({
         <div style={restContextColumn}>
           <div style={restContextLabel}>Jetzt</div>
           <div style={restContextValue}>{flowMeta.flowNowLabel}</div>
-          <div style={restContextSubline}>{flowMeta.flowNowDetail}</div>
+          {!isCompactPanel ? <div style={restContextSubline}>{flowMeta.flowNowDetail}</div> : null}
         </div>
         <div style={restContextColumn}>
           <div style={restContextLabel}>Danach</div>
           <div style={restContextValue}>{flowMeta.flowNextLabel}</div>
-          <div style={restContextSubline}>{flowMeta.flowNextDetail}</div>
+          {!isCompactPanel ? <div style={restContextSubline}>{flowMeta.flowNextDetail}</div> : null}
         </div>
         </div>
         <div style={{ ...restContextMetaStack, ...(isCompactPanel ? compactRestContextMetaStack : null) }}>
@@ -1994,7 +2002,7 @@ export function WorkoutScreen({
         {exerciseSuggestion ? (
           <div style={{ ...suggestionHint, ...(dense ? compactSuggestionHint : null) }}>
             <strong>{exerciseSuggestion.label}</strong>
-            <span>{exerciseSuggestion.detail}</span>
+            {!isCompactPanel ? <span>{exerciseSuggestion.detail}</span> : null}
           </div>
         ) : null}
         <div
@@ -2005,7 +2013,7 @@ export function WorkoutScreen({
         >
           Coach: {progressionDecision.label}
         </div>
-        <div style={restCoachDetail}>{progressionDecision.detail}</div>
+        {!isCompactPanel ? <div style={restCoachDetail}>{progressionDecision.detail}</div> : null}
         {exerciseTrendInsight && !isCompactPanel ? (
           <div style={restCoachDetail}>
             Trend: {exerciseTrendInsight.label} · {exerciseTrendInsight.detail}
@@ -2325,7 +2333,7 @@ export function WorkoutScreen({
                       onClick={() => openManualEntry("weight")}
                     >
                       {displayedWeight}
-                      <span style={weightUnit}>kg</span>
+                      <span style={{ ...weightUnit, ...(compactMode ? compactWeightUnit : null) }}>kg</span>
                     </button>
                   </div>
                   <div style={weightSideColumn}>
@@ -5148,30 +5156,35 @@ const compactLiveDeltaHint = {
 };
 
 const compactWeightPanel = {
-  gridTemplateColumns: "58px minmax(0, 1fr) 58px",
-  minHeight: 102,
-  gap: 8,
+  gridTemplateColumns: "52px minmax(0, 1fr) 52px",
+  minHeight: 88,
+  gap: 6,
 };
 
 const compactWeightSideButton = {
-  minHeight: 34,
+  minHeight: 30,
   borderRadius: 10,
-  fontSize: 14,
+  fontSize: 13,
 };
 
 const compactWeightBox = {
-  fontSize: 34,
-  minHeight: 42,
+  fontSize: 28,
+  minHeight: 34,
 };
 
 const compactWeightCenterLabel = {
-  fontSize: 11,
-  letterSpacing: 0.8,
+  fontSize: 10,
+  letterSpacing: 0.6,
+};
+
+const compactWeightUnit = {
+  marginLeft: 5,
+  fontSize: 16,
 };
 
 const compactSectionLabel = {
-  fontSize: 11,
-  letterSpacing: 0.8,
+  fontSize: 10,
+  letterSpacing: 0.6,
 };
 
 const compactWeightRow = {
@@ -5189,7 +5202,7 @@ const compactRepsGrid = {
 };
 
 const compactRepsRowModern = {
-  gridTemplateColumns: "38px minmax(0, 1fr) 38px",
+  gridTemplateColumns: "34px minmax(0, 1fr) 34px",
   gap: 4,
 };
 
@@ -5244,27 +5257,27 @@ const compactContinueButton = {
 };
 
 const compactSaveBarButton = {
-  minHeight: 46,
-  fontSize: 14,
+  minHeight: 42,
+  fontSize: 13,
 };
 
 const compactRepsRoundButton = {
-  minHeight: 36,
-  fontSize: 18,
+  minHeight: 32,
+  fontSize: 16,
 };
 
 const compactRepsValueCard = {
-  minHeight: 54,
-  borderRadius: 16,
+  minHeight: 48,
+  borderRadius: 14,
 };
 
 const compactRepsValueMeta = {
-  fontSize: 9,
+  fontSize: 8,
 };
 
 const compactRepsValueNumber = {
-  marginTop: 3,
-  fontSize: 24,
+  marginTop: 2,
+  fontSize: 20,
 };
 
 const compactStretchNextValue = {
