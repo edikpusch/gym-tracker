@@ -56,7 +56,6 @@ import {
   stopRestOverlay,
 } from "@/lib/restPictureInPicture";
 import {
-  getRestBackgroundBehaviorLabel,
   supportsRestOverlay,
 } from "@/lib/platform";
 import {
@@ -310,7 +309,6 @@ export function WorkoutScreen({
   ];
   const activeStretchBlock = currentStretchBlocks[stretchIndex] ?? null;
   const isStretching = activeStretchBlock !== null && !isResting;
-  const restBackgroundBehaviorLabel = getRestBackgroundBehaviorLabel();
   const isWorkoutPaused = workoutPausedAt !== null;
   const canPersistPlanChange = Boolean(planId && dayId && isCustomTrainingPlan(planId));
 
@@ -2507,8 +2505,8 @@ export function WorkoutScreen({
                   totalSeconds={getStretchDurationSeconds(activeStretchBlock)}
                   remainingSeconds={stretchTime}
                   color={theme.accent}
-                  size={smallMobileMode ? 172 : compactMode ? 188 : 236}
-                  strokeWidth={smallMobileMode ? 9 : compactMode ? 10 : 13}
+                  size={smallMobileMode ? 156 : compactMode ? 188 : 236}
+                  strokeWidth={smallMobileMode ? 8 : compactMode ? 10 : 13}
                   label="Dehnen"
                   subLabel={formatRest(getStretchDurationSeconds(activeStretchBlock))}
                   valueText={
@@ -2859,8 +2857,8 @@ export function WorkoutScreen({
                   totalSeconds={activeRestDurationSec}
                   remainingSeconds={restTime}
                   color={theme.accent}
-                  size={smallMobileMode ? 172 : compactMode ? 188 : 236}
-                  strokeWidth={smallMobileMode ? 9 : compactMode ? 10 : 13}
+                  size={smallMobileMode ? 156 : compactMode ? 188 : 236}
+                  strokeWidth={smallMobileMode ? 8 : compactMode ? 10 : 13}
                   label="Pause"
                   subLabel={formatRest(activeRestDurationSec)}
                   valueText={
@@ -2884,7 +2882,6 @@ export function WorkoutScreen({
               {smallMobileMode
                 ? renderSmallMobileRestSummaryPanel()
                 : renderFlowContextPanel(restSuggestion.label, activeSetRecommendationTone, true)}
-              <div style={restPlatformHint}>{restBackgroundBehaviorLabel}</div>
               {!smallMobileMode ? renderExerciseInsightCards(true) : null}
               <div style={restWeightSection}>
                 <div style={restWeightLabel}>Nächster Satz</div>
@@ -4951,17 +4948,6 @@ const restContextStatus = {
   fontWeight: 700,
 };
 
-const restPlatformHint = {
-  padding: "10px 12px",
-  borderRadius: 16,
-  background: withAlpha(appPalette.surface, 0.72),
-  border: `1px solid ${withAlpha(appPalette.borderDefault, 0.76)}`,
-  color: appPalette.textMuted,
-  fontSize: 12,
-  lineHeight: 1.45,
-  fontWeight: 600,
-  textAlign: "center" as const,
-};
 
 const restCircle = {
   position: "relative" as const,
