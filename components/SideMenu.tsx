@@ -186,7 +186,7 @@ export function SideMenu({
 
 const floatingDock = {
   position: "fixed" as const,
-  left: 16,
+  left: "calc(16px + env(safe-area-inset-left))",
   bottom: "calc(16px + env(safe-area-inset-bottom))",
   padding: 8,
   borderRadius: 28,
@@ -196,11 +196,12 @@ const floatingDock = {
   zIndex: 56,
   transition: `transform ${uiTheme.motion.smooth}, box-shadow ${uiTheme.motion.smooth}, opacity ${uiTheme.motion.smooth}, background ${uiTheme.motion.smooth}`,
   backdropFilter: "blur(16px)",
+  WebkitBackdropFilter: "blur(16px)",
 };
 
 const floatingDockRight = {
   left: "auto",
-  right: 16,
+  right: "calc(16px + env(safe-area-inset-right))",
 };
 
 const floatingDockOpen = {
@@ -230,6 +231,7 @@ const floatingToggle = {
   cursor: "pointer",
   transition: `transform ${uiTheme.motion.smooth}, box-shadow ${uiTheme.motion.smooth}, background ${uiTheme.motion.smooth}, border-color ${uiTheme.motion.smooth}`,
   backdropFilter: "blur(14px)",
+  WebkitBackdropFilter: "blur(14px)",
 };
 
 const floatingToggleOpen = {
@@ -275,7 +277,10 @@ const drawer = {
   bottom: 0,
   width: "min(78vw, 336px)",
   maxWidth: "100%",
-  padding: `${uiTheme.spacing.base + 2}px ${uiTheme.spacing.base}px calc(${uiTheme.spacing.large}px + env(safe-area-inset-bottom))`,
+  paddingTop: `calc(${uiTheme.spacing.base + 2}px + env(safe-area-inset-top))`,
+  paddingRight: `${uiTheme.spacing.base}px`,
+  paddingBottom: `calc(${uiTheme.spacing.large}px + env(safe-area-inset-bottom))`,
+  paddingLeft: `${uiTheme.spacing.base}px`,
   borderRadius: `0 ${uiTheme.radius.hero}px ${uiTheme.radius.hero}px 0`,
   background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.99)} 0%, ${withAlpha(appPalette.surfaceMuted, 0.99)} 100%)`,
   borderRight: `1px solid ${withAlpha(appPalette.borderSoft, 0.92)}`,
@@ -346,6 +351,10 @@ const drawerList = {
   flexDirection: "column" as const,
   gap: uiTheme.spacing.base - 4,
   paddingTop: 2,
+  overflowY: "auto" as const,
+  WebkitOverflowScrolling: "touch" as const,
+  flex: 1,
+  minHeight: 0,
 };
 
 const drawerGroup = {
