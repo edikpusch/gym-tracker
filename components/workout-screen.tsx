@@ -1852,7 +1852,7 @@ export function WorkoutScreen({
   const progressExerciseName = getExerciseLabel(currentExercise.name).toUpperCase();
   const renderExerciseInsightCards = (dense = false) => (
     <div style={compareSection}>
-      <div style={compareGrid}>
+      <div style={{ ...compareGrid, ...(compactMode || dense ? compactCompareGrid : null) }}>
         <AppCard
           variant="theme"
           accentColor={theme.accent}
@@ -1951,19 +1951,22 @@ export function WorkoutScreen({
     badgeLabel?: string,
     badgeStyle?: CSSProperties | null,
     dense = false
-  ) => (
-    <div
-      style={{
-        ...restContextPanel,
-        ...(dense ? compactRestContextPanel : null),
+  ) => {
+    const isCompactPanel = dense || compactMode;
+
+    return (
+      <div
+        style={{
+          ...restContextPanel,
+          ...(isCompactPanel ? compactRestContextPanel : null),
         border: `1px solid ${accentBorder}`,
         background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.96)} 0%, ${toRgba(
           theme.accent,
           0.04
         )} 100%)`,
-      }}
-    >
-      <div style={restContextContent}>
+        }}
+      >
+        <div style={{ ...restContextContent, ...(isCompactPanel ? compactRestContextContent : null) }}>
         <div style={restContextColumn}>
           <div style={restContextLabel}>Jetzt</div>
           <div style={restContextValue}>{flowMeta.flowNowLabel}</div>
@@ -1974,10 +1977,10 @@ export function WorkoutScreen({
           <div style={restContextValue}>{flowMeta.flowNextLabel}</div>
           <div style={restContextSubline}>{flowMeta.flowNextDetail}</div>
         </div>
-      </div>
-      <div style={restContextMetaStack}>
+        </div>
+        <div style={{ ...restContextMetaStack, ...(isCompactPanel ? compactRestContextMetaStack : null) }}>
         <div style={restContextStatus}>{flowMeta.flowStatusText}</div>
-        {referenceSet ? (
+        {referenceSet && !isCompactPanel ? (
           <div
             style={{
               ...restDeltaHint,
@@ -2003,24 +2006,26 @@ export function WorkoutScreen({
           Coach: {progressionDecision.label}
         </div>
         <div style={restCoachDetail}>{progressionDecision.detail}</div>
-        {exerciseTrendInsight ? (
+        {exerciseTrendInsight && !isCompactPanel ? (
           <div style={restCoachDetail}>
             Trend: {exerciseTrendInsight.label} · {exerciseTrendInsight.detail}
           </div>
         ) : null}
+        </div>
+        {badgeLabel ? (
+          <span
+            style={{
+              ...restSuggestionBadge,
+              ...(isCompactPanel ? compactRestSuggestionBadge : null),
+              ...(badgeStyle ?? null),
+            }}
+          >
+            {badgeLabel}
+          </span>
+        ) : null}
       </div>
-      {badgeLabel ? (
-        <span
-          style={{
-            ...restSuggestionBadge,
-            ...(badgeStyle ?? null),
-          }}
-        >
-          {badgeLabel}
-        </span>
-      ) : null}
-    </div>
-  );
+    );
+  };
   const navigateHome = () => {
     if (typeof window !== "undefined") {
       window.location.assign("/index.html");
@@ -3770,6 +3775,10 @@ const compareGrid = {
   alignItems: "stretch" as const,
 };
 
+const compactCompareGrid = {
+  gridTemplateColumns: "minmax(0, 1fr)",
+};
+
 const insightCard = {
   minHeight: 92,
   padding: "10px 11px",
@@ -3878,7 +3887,9 @@ const exerciseCard = {
   background: withAlpha(appPalette.surface, 0.98),
   border: `1px solid ${appPalette.borderSoft}`,
   boxShadow: `0 20px 42px ${withAlpha(appPalette.surfaceDark, 0.08)}`,
-  overflow: "hidden" as const,
+  overflowX: "hidden" as const,
+  overflowY: "auto" as const,
+  WebkitOverflowScrolling: "touch" as const,
 };
 
 const exerciseCardHeader = {
@@ -4212,6 +4223,9 @@ const restFocusStage = {
   gridTemplateRows: "minmax(0, 1fr) auto auto auto auto",
   gap: 8,
   alignContent: "stretch" as const,
+  overflowY: "auto" as const,
+  WebkitOverflowScrolling: "touch" as const,
+  paddingRight: 2,
 };
 
 const restCompareRow = {
@@ -4507,6 +4521,8 @@ const restContextPanel = {
 };
 
 const compactRestContextPanel = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr)",
   padding: "10px 12px",
   gap: 8,
 };
@@ -4517,6 +4533,11 @@ const restContextContent = {
   gap: 12,
   flex: 1,
   minWidth: 0,
+};
+
+const compactRestContextContent = {
+  gridTemplateColumns: "minmax(0, 1fr)",
+  gap: 8,
 };
 
 const restContextColumn = {
@@ -4551,6 +4572,10 @@ const restContextMetaStack = {
   display: "grid",
   gap: 7,
   width: "100%",
+};
+
+const compactRestContextMetaStack = {
+  gap: 5,
 };
 
 const restContextStatus = {
@@ -4754,6 +4779,9 @@ const stretchFocusStage = {
   gridTemplateRows: "minmax(0, 1fr) auto auto",
   gap: 8,
   alignContent: "stretch" as const,
+  overflowY: "auto" as const,
+  WebkitOverflowScrolling: "touch" as const,
+  paddingRight: 2,
 };
 
 const stretchNextValue = {
@@ -4778,6 +4806,10 @@ const restSuggestionBadge = {
   borderRadius: 999,
   fontSize: 12,
   fontWeight: 800,
+};
+
+const compactRestSuggestionBadge = {
+  justifySelf: "start" as const,
 };
 
 const restSuggestionGood = {
@@ -5094,7 +5126,7 @@ const compactLiveDeltaHint = {
 
 const compactWeightPanel = {
   gridTemplateColumns: "72px minmax(0, 1fr) 72px",
-  minHeight: 146,
+  minHeight: 122,
   gap: 10,
 };
 
@@ -5104,8 +5136,8 @@ const compactWeightSideButton = {
 };
 
 const compactWeightBox = {
-  fontSize: 50,
-  minHeight: 54,
+  fontSize: 42,
+  minHeight: 48,
 };
 
 const compactWeightRow = {
@@ -5159,7 +5191,7 @@ const compactRestWeightValue = {
 };
 
 const compactRestWeightValueLarge = {
-  fontSize: 44,
+  fontSize: 38,
 };
 
 const compactRestWeightRow = {
@@ -5198,7 +5230,7 @@ const compactRepsValueMeta = {
 
 const compactRepsValueNumber = {
   marginTop: 3,
-  fontSize: 36,
+  fontSize: 30,
 };
 
 const compactStretchNextValue = {
