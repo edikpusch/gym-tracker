@@ -2270,8 +2270,18 @@ export function WorkoutScreen({
                 compactMode
               )}
 
-              <div style={exerciseInputStage}>
-                <div style={{ ...weightPanel, ...(compactMode ? compactWeightPanel : null) }}>
+              <div
+                style={{
+                  ...exerciseInputStage,
+                  ...(compactMode ? compactExerciseInputStage : null),
+                }}
+              >
+                <div
+                  style={{
+                    ...weightPanel,
+                    ...(compactMode ? compactWeightPanel : null),
+                  }}
+                >
                   <div style={weightSideColumn}>
                     {activeWeightSteps.map((step) => (
                       <button
@@ -2293,7 +2303,14 @@ export function WorkoutScreen({
                     ))}
                   </div>
                   <div style={weightCenter}>
-                    <div style={weightCenterLabel}>Gewicht</div>
+                    <div
+                      style={{
+                        ...weightCenterLabel,
+                        ...(compactMode ? compactWeightCenterLabel : null),
+                      }}
+                    >
+                      Gewicht
+                    </div>
                     <button
                       type="button"
                       style={{
@@ -2337,7 +2354,9 @@ export function WorkoutScreen({
                 </div>
 
                 <div style={repsSection}>
-                  <div style={sectionLabel}>Wiederholungen</div>
+                  <div style={{ ...sectionLabel, ...(compactMode ? compactSectionLabel : null) }}>
+                    Wiederholungen
+                  </div>
                   <div style={{ ...repsRowModern, ...(compactMode ? compactRepsRowModern : null) }}>
                     <button style={{ ...repsRoundButton, ...(compactMode ? compactRepsRoundButton : null), color: theme.accent, border: `1px solid ${accentBorder}`, boxShadow: `0 8px 20px ${accentSoft}` }} onClick={() => handleRepsChange(-0.5)}>−</button>
                     <button
@@ -5104,6 +5123,10 @@ const compactExerciseCard = {
   borderRadius: 20,
 };
 
+const compactExerciseInputStage = {
+  gap: 6,
+};
+
 const compactLastTrainingHint = {
   marginTop: 4,
   fontSize: 12,
@@ -5125,19 +5148,30 @@ const compactLiveDeltaHint = {
 };
 
 const compactWeightPanel = {
-  gridTemplateColumns: "72px minmax(0, 1fr) 72px",
-  minHeight: 122,
-  gap: 10,
+  gridTemplateColumns: "58px minmax(0, 1fr) 58px",
+  minHeight: 102,
+  gap: 8,
 };
 
 const compactWeightSideButton = {
-  minHeight: 40,
-  borderRadius: 12,
+  minHeight: 34,
+  borderRadius: 10,
+  fontSize: 14,
 };
 
 const compactWeightBox = {
-  fontSize: 42,
-  minHeight: 48,
+  fontSize: 34,
+  minHeight: 42,
+};
+
+const compactWeightCenterLabel = {
+  fontSize: 11,
+  letterSpacing: 0.8,
+};
+
+const compactSectionLabel = {
+  fontSize: 11,
+  letterSpacing: 0.8,
 };
 
 const compactWeightRow = {
@@ -5155,7 +5189,7 @@ const compactRepsGrid = {
 };
 
 const compactRepsRowModern = {
-  gridTemplateColumns: "42px minmax(0, 1fr) 42px",
+  gridTemplateColumns: "38px minmax(0, 1fr) 38px",
   gap: 4,
 };
 
@@ -5215,13 +5249,13 @@ const compactSaveBarButton = {
 };
 
 const compactRepsRoundButton = {
-  minHeight: 40,
-  fontSize: 20,
+  minHeight: 36,
+  fontSize: 18,
 };
 
 const compactRepsValueCard = {
-  minHeight: 60,
-  borderRadius: 18,
+  minHeight: 54,
+  borderRadius: 16,
 };
 
 const compactRepsValueMeta = {
@@ -5230,7 +5264,7 @@ const compactRepsValueMeta = {
 
 const compactRepsValueNumber = {
   marginTop: 3,
-  fontSize: 30,
+  fontSize: 24,
 };
 
 const compactStretchNextValue = {
