@@ -4,6 +4,7 @@ import "./globals.css";
 import { PlanVersionGuard } from "@/components/plan-version-guard";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 import { ThemeController } from "@/components/theme-controller";
+import { ViewportMetricsController } from "@/components/viewport-metrics-controller";
 import { appChromeBackground } from "@/lib/theme";
 
 export const metadata: Metadata = {
@@ -34,11 +35,13 @@ export default function RootLayout({
   return (
     <html lang="de">
       <body style={bodyStyle}>
-        <AppStorageBootstrap />
-        <ThemeController />
-        <ServiceWorkerRegistration />
-        <PlanVersionGuard />
-        <div style={appWrapper}>{children}</div>
+        <AppStorageBootstrap>
+          <ViewportMetricsController />
+          <ThemeController />
+          <ServiceWorkerRegistration />
+          <PlanVersionGuard />
+          <div style={appWrapper}>{children}</div>
+        </AppStorageBootstrap>
       </body>
     </html>
   );
@@ -47,7 +50,7 @@ export default function RootLayout({
 const bodyStyle: React.CSSProperties = {
   margin: 0,
   padding: 0,
-  minHeight: "100dvh",
+  minHeight: "var(--app-viewport-height, 100dvh)",
   background: appChromeBackground,
   color: "rgb(var(--app-text-strong-rgb))",
   WebkitTapHighlightColor: "transparent",
@@ -56,7 +59,7 @@ const bodyStyle: React.CSSProperties = {
 };
 
 const appWrapper: React.CSSProperties = {
-  minHeight: "100dvh",
+  minHeight: "var(--app-viewport-height, 100dvh)",
   width: "100%",
   display: "flex",
   flexDirection: "column",

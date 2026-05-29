@@ -55,6 +55,10 @@ import {
   stopRestOverlay,
 } from "@/lib/restPictureInPicture";
 import {
+  getRestBackgroundBehaviorLabel,
+  supportsRestOverlay,
+} from "@/lib/platform";
+import {
   buildExerciseBlock,
   getDefaultWeightConfig,
   syncDayBlocks,
@@ -258,6 +262,7 @@ export function WorkoutScreen({
   ];
   const activeStretchBlock = currentStretchBlocks[stretchIndex] ?? null;
   const isStretching = activeStretchBlock !== null && !isResting;
+  const restBackgroundBehaviorLabel = getRestBackgroundBehaviorLabel();
   const isWorkoutPaused = workoutPausedAt !== null;
   const canPersistPlanChange = Boolean(planId && dayId && isCustomTrainingPlan(planId));
 
@@ -1227,6 +1232,10 @@ export function WorkoutScreen({
   }, []);
 
   useEffect(() => {
+    if (!supportsRestOverlay()) {
+      return;
+    }
+
     void setRestOverlayState(
       isResting && !!restEndsAt,
       getExerciseLabel(currentExercise.name),
@@ -1235,6 +1244,10 @@ export function WorkoutScreen({
   }, [currentExercise.name, isResting, restEndsAt]);
 
   useEffect(() => {
+    if (!supportsRestOverlay()) {
+      return;
+    }
+
     if (!isResting || !restEndsAt) {
       return;
     }
@@ -2507,6 +2520,7 @@ export function WorkoutScreen({
                 activeSetRecommendationTone,
                 true
               )}
+              <div style={restPlatformHint}>{restBackgroundBehaviorLabel}</div>
               {renderExerciseInsightCards(true)}
               <div style={restWeightSection}>
                 <div style={restWeightLabel}>Nächster Satz</div>
@@ -3317,9 +3331,9 @@ const screen = {
   display: "flex",
   justifyContent: "center",
   alignItems: "stretch",
-  height: "100dvh",
+  height: "var(--app-viewport-height, 100dvh)",
   overflow: "hidden" as const,
-  padding: "calc(env(safe-area-inset-top) + 8px) 0 calc(env(safe-area-inset-bottom) + 10px)",
+  padding: "calc(env(safe-area-inset-top) + 8px) 0 calc(var(--app-bottom-inset) + 10px)",
   background: appChromeBackground,
   boxSizing: "border-box" as const,
 };
@@ -4544,6 +4558,18 @@ const restContextStatus = {
   lineHeight: 1.4,
   color: appPalette.textMuted,
   fontWeight: 700,
+};
+
+const restPlatformHint = {
+  padding: "10px 12px",
+  borderRadius: 16,
+  background: withAlpha(appPalette.surface, 0.72),
+  border: `1px solid ${withAlpha(appPalette.borderDefault, 0.76)}`,
+  color: appPalette.textMuted,
+  fontSize: 12,
+  lineHeight: 1.45,
+  fontWeight: 600,
+  textAlign: "center" as const,
 };
 
 const restCircle = {

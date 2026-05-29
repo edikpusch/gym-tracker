@@ -1,4 +1,5 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { registerPlugin } from "@capacitor/core";
+import { supportsRestOverlay } from "@/lib/platform";
 
 type RestPictureInPicturePlugin = {
   setEnabled(options: {
@@ -23,7 +24,7 @@ export async function setRestOverlayState(
   exercise = "Pause",
   endsAt = 0
 ) {
-  if (Capacitor.getPlatform() !== "android") {
+  if (!supportsRestOverlay()) {
     return;
   }
 
@@ -38,7 +39,7 @@ export async function enterRestPictureInPictureNow(
   exercise: string,
   endsAt: number
 ) {
-  if (Capacitor.getPlatform() !== "android") {
+  if (!supportsRestOverlay()) {
     return;
   }
 
@@ -50,7 +51,7 @@ export async function enterRestPictureInPictureNow(
 }
 
 export async function stopRestOverlay() {
-  if (Capacitor.getPlatform() !== "android") {
+  if (!supportsRestOverlay()) {
     return;
   }
 

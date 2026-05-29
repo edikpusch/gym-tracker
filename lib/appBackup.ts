@@ -10,6 +10,13 @@ import {
   readStorageEntries,
   writeStorageEntries,
 } from "@/lib/appStorage";
+import {
+  Directory,
+  Encoding,
+  Filesystem,
+} from "@capacitor/filesystem";
+import { isNativePlatform } from "@/lib/platform";
+import { Share } from "@capacitor/share";
 import { BODY_WEIGHT_KEY } from "@/lib/bodyWeight";
 import { CUSTOM_EXERCISE_LIBRARY_KEY } from "@/lib/exerciseLibrary";
 import { EXERCISE_FAVORITES_KEY } from "@/lib/exerciseFavorites";
@@ -244,6 +251,62 @@ function buildBackupFileName() {
   return `gym-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
 }
 
+function isNativeApp() {
+  return isNativePlatform();
+}
+
+function isShareCancellation(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as { name?: string; message?: string };
+  const message = candidate.message?.toLowerCase() ?? "";
+
+  return (
+    candidate.name === "AbortError" ||
+    message.includes("cancel") ||
+    message.includes("canceled") ||
+    message.includes("cancelled")
+  );
+}
+
+async function exportNativeBackupFile(fileName: string, text: string) {
+  const shareSupport = await Share.canShare();
+  if (!shareSupport.value) {
+    return { method: "none" as const };
+  }
+
+  const path = `exports/${fileName}`;
+  await Filesystem.writeFile({
+    path,
+    data: text,
+    directory: Directory.Cache,
+    encoding: Encoding.UTF8,
+    recursive: true,
+  });
+
+  const fileUri = await Filesystem.getUri({
+    path,
+    directory: Directory.Cache,
+  });
+
+  try {
+    await Share.share({
+      title: "Gym Tracker Backup",
+      text: "Backup fuer deinen Gym Tracker",
+      files: [fileUri.uri],
+    });
+    return { method: "native-share" as const };
+  } catch (error) {
+    if (isShareCancellation(error)) {
+      return { method: "cancelled" as const };
+    }
+
+    throw error;
+  }
+}
+
 export function createGymTrackerBackup(): GymTrackerBackup {
   const rawEntries = hasAppStorage()
     ? readStorageEntries(Object.values(STORAGE_KEY_MAP))
@@ -282,6 +345,11 @@ export async function exportGymTrackerBackup() {
 
   const fileName = buildBackupFileName();
   const text = serializeGymTrackerBackup();
+
+  if (isNativeApp()) {
+    return exportNativeBackupFile(fileName, text);
+  }
+
   const file = new File([text], fileName, { type: "application/json" });
 
   if (
@@ -300,8 +368,7 @@ export async function exportGymTrackerBackup() {
       });
       return { method: "share" as const };
     } catch (error) {
-      const shareError = error as { name?: string };
-      if (shareError?.name === "AbortError") {
+      if (isShareCancellation(error)) {
         return { method: "cancelled" as const };
       }
     }

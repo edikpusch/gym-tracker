@@ -33,6 +33,7 @@ const overlay = {
   display: "flex",
   alignItems: "flex-end",
   justifyContent: "center",
+  padding: "max(12px, env(safe-area-inset-top)) 0 0 0",
   zIndex: 80,
   animation: "codex-fade-in 180ms ease",
 };
@@ -40,11 +41,16 @@ const overlay = {
 const sheet = {
   width: "100%",
   maxWidth: 440,
+  maxHeight:
+    "calc(var(--app-viewport-height, 100dvh) - max(12px, env(safe-area-inset-top)))",
   borderRadius: `${uiTheme.radius.large}px ${uiTheme.radius.large}px 0 0`,
   background: withAlpha(appPalette.surface, 0.98),
   border: `1px solid ${withAlpha(appPalette.borderDefault, 0.7)}`,
   boxShadow: uiTheme.shadow.drawer,
-  padding: `14px ${uiTheme.spacing.base}px calc(${uiTheme.spacing.large}px + env(safe-area-inset-bottom))`,
+  padding: `14px ${uiTheme.spacing.base}px calc(${uiTheme.spacing.large}px + var(--app-bottom-inset))`,
+  overflowY: "auto" as const,
+  overscrollBehavior: "contain" as const,
+  WebkitOverflowScrolling: "touch" as const,
   animation: "codex-sheet-in 220ms cubic-bezier(0.22, 1, 0.36, 1)",
 };
 

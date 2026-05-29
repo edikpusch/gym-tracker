@@ -1,7 +1,7 @@
 "use client";
 
-import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
+import { isNativePlatform } from "@/lib/platform";
 
 export type AppStorageDriver = {
   name: string;
@@ -44,7 +44,15 @@ let nativeStorageInitialized = false;
 let nativeStorageInitPromise: Promise<boolean> | null = null;
 
 function canUseNativePreferences() {
-  return Capacitor.isNativePlatform();
+  return isNativePlatform();
+}
+
+function dispatchStorageReady() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent("gym-tracker:storage-ready"));
 }
 
 async function mirrorToNativeStorage(key: string, value: string | null) {
@@ -151,6 +159,7 @@ export async function initializeNativeAppStorage(keys: readonly string[]) {
   nativeStorageInitPromise = (async () => {
     const driver = resolveDriver();
     if (!driver.isAvailable() || !canUseNativePreferences()) {
+      dispatchStorageReady();
       nativeStorageInitialized = true;
       nativeStorageInitPromise = null;
       return false;
@@ -173,13 +182,15 @@ export async function initializeNativeAppStorage(keys: readonly string[]) {
         }
       }
 
-      window.dispatchEvent(new CustomEvent("gym-tracker:storage-ready"));
+      dispatchStorageReady();
       window.dispatchEvent(new Event("gym-tracker:preferences-changed"));
       nativeStorageInitialized = true;
       nativeStorageInitPromise = null;
       return true;
     } catch (error) {
       console.error("Native app storage initialization failed:", error);
+      dispatchStorageReady();
+      nativeStorageInitialized = true;
       nativeStorageInitPromise = null;
       return false;
     }

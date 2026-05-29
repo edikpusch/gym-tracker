@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 
 import { AppPageFrame } from "@/components/AppPageFrame";
 import { TextPromptDialog } from "@/components/ui/TextPromptDialog";
@@ -30,6 +30,7 @@ import {
   removeFavoriteExerciseId,
   setExerciseFavorite,
 } from "@/lib/exerciseFavorites";
+import { getRestBackgroundBehaviorLabel } from "@/lib/platform";
 import { appPalette, uiTheme, withAlpha } from "@/lib/theme";
 
 type PendingImportState = {
@@ -60,21 +61,86 @@ type EditExerciseState = {
   restSeconds: number;
 };
 
+type SettingsInitialState = {
+  settings: AppPreferences;
+  customExercises: CustomExerciseLibraryEntry[];
+  showArchivedExercises: boolean;
+  editExerciseState: EditExerciseState | null;
+};
+
+function buildEditExerciseState(
+  entry: CustomExerciseLibraryEntry
+): EditExerciseState {
+  const defaults = entry.defaults ?? {
+    sets: 3,
+    minReps: 8,
+    maxReps: 12,
+    restSeconds: 90,
+  };
+
+  return {
+    id: entry.id,
+    category: entry.category,
+    kind: entry.kind,
+    favorite: Boolean(entry.favorite),
+    sets: defaults.sets,
+    minReps: defaults.minReps,
+    maxReps: defaults.maxReps,
+    restSeconds: defaults.restSeconds,
+  };
+}
+
+function getInitialSettingsState(): SettingsInitialState {
+  const customExercises = getCustomExerciseLibraryEntries({
+    includeArchived: true,
+  });
+
+  if (typeof window === "undefined") {
+    return {
+      settings: getAppPreferences(),
+      customExercises,
+      showArchivedExercises: false,
+      editExerciseState: null,
+    };
+  }
+
+  const requestedExerciseId = new URLSearchParams(window.location.search).get(
+    "exercise"
+  );
+  const requestedEntry = requestedExerciseId
+    ? customExercises.find((entry) => entry.id === requestedExerciseId) ?? null
+    : null;
+
+  return {
+    settings: getAppPreferences(),
+    customExercises,
+    showArchivedExercises: Boolean(requestedEntry?.archived),
+    editExerciseState: requestedEntry
+      ? buildEditExerciseState(requestedEntry)
+      : null,
+  };
+}
+
 export default function SettingsPage() {
+  const [initialState] = useState(getInitialSettingsState);
+  const restBackgroundBehaviorLabel = getRestBackgroundBehaviorLabel();
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const [settings, setSettings] = useState<AppPreferences>(getAppPreferences());
+  const [settings, setSettings] = useState<AppPreferences>(initialState.settings);
   const [showClearWeightConfirm, setShowClearWeightConfirm] = useState(false);
   const [showWeightClearedNotice, setShowWeightClearedNotice] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImportState | null>(null);
   const [noticeState, setNoticeState] = useState<NoticeState | null>(null);
   const [customExercises, setCustomExercises] = useState<CustomExerciseLibraryEntry[]>(
-    () => getCustomExerciseLibraryEntries({ includeArchived: true })
+    initialState.customExercises
   );
-  const [showArchivedExercises, setShowArchivedExercises] = useState(false);
+  const [showArchivedExercises, setShowArchivedExercises] = useState(
+    initialState.showArchivedExercises
+  );
   const [renameExerciseState, setRenameExerciseState] = useState<RenameExerciseState | null>(null);
   const [archiveExerciseId, setArchiveExerciseId] = useState<string | null>(null);
-  const [editExerciseState, setEditExerciseState] = useState<EditExerciseState | null>(null);
-  const [pendingExerciseQuery, setPendingExerciseQuery] = useState<string | null>(null);
+  const [editExerciseState, setEditExerciseState] = useState<EditExerciseState | null>(
+    initialState.editExerciseState
+  );
 
   function refreshCustomExercises() {
     setCustomExercises(getCustomExerciseLibraryEntries({ includeArchived: true }));
@@ -92,13 +158,25 @@ export default function SettingsPage() {
   async function exportData() {
     try {
       const result = await exportGymTrackerBackup();
-      if (result.method === "cancelled" || result.method === "share") {
+      if (
+        result.method === "cancelled" ||
+        result.method === "share" ||
+        result.method === "native-share"
+      ) {
+        return;
+      }
+
+      if (result.method === "download") {
+        setNoticeState({
+          title: "Backup erstellt",
+          body: "Dein Backup wurde als Datei exportiert und enthaelt Trainingsverlauf, Plaene, eigene Uebungen, Favoriten sowie den aktuellen Fortsetzen-Stand.",
+        });
         return;
       }
 
       setNoticeState({
-        title: "Backup erstellt",
-        body: "Dein Backup wurde als Datei exportiert und enthaelt Trainingsverlauf, Plaene, eigene Uebungen, Favoriten sowie den aktuellen Fortsetzen-Stand.",
+        title: "Teilen nicht verfuegbar",
+        body: "Auf diesem Geraet konnte kein nativer Teilen- oder Download-Weg gefunden werden. Bitte versuche es erneut.",
       });
     } catch (error) {
       console.error("Backup export failed:", error);
@@ -232,57 +310,8 @@ export default function SettingsPage() {
   }
 
   function openExerciseEditor(entry: CustomExerciseLibraryEntry) {
-    const defaults = entry.defaults ?? {
-      sets: 3,
-      minReps: 8,
-      maxReps: 12,
-      restSeconds: 90,
-    };
-    setEditExerciseState({
-      id: entry.id,
-      category: entry.category,
-      kind: entry.kind,
-      favorite: Boolean(entry.favorite),
-      sets: defaults.sets,
-      minReps: defaults.minReps,
-      maxReps: defaults.maxReps,
-      restSeconds: defaults.restSeconds,
-    });
+    setEditExerciseState(buildEditExerciseState(entry));
   }
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const requestedExerciseId = new URLSearchParams(window.location.search).get(
-      "exercise"
-    );
-    if (requestedExerciseId) {
-      setPendingExerciseQuery(requestedExerciseId);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!pendingExerciseQuery) {
-      return;
-    }
-
-    const requestedEntry = customExercises.find(
-      (entry) => entry.id === pendingExerciseQuery
-    );
-    if (!requestedEntry) {
-      setPendingExerciseQuery(null);
-      return;
-    }
-
-    if (requestedEntry.archived) {
-      setShowArchivedExercises(true);
-    }
-
-    openExerciseEditor(requestedEntry);
-    setPendingExerciseQuery(null);
-  }, [customExercises, pendingExerciseQuery]);
 
   function handleSaveExerciseDetails() {
     if (!editExerciseState) {
@@ -393,6 +422,7 @@ export default function SettingsPage() {
           checked={settings.progressAnimations}
           onChange={(checked) => updateSettings({ progressAnimations: checked })}
         />
+        <div style={platformHintCard}>{restBackgroundBehaviorLabel}</div>
       </section>
 
       <section style={sectionCard}>
@@ -803,6 +833,17 @@ const settingHint = {
   fontSize: 12,
   lineHeight: 1.4,
   color: appPalette.textMuted,
+};
+
+const platformHintCard = {
+  padding: "12px 14px",
+  borderRadius: 18,
+  background: withAlpha(appPalette.surfaceMuted, 0.96),
+  border: `1px solid ${withAlpha(appPalette.borderDefault, 0.9)}`,
+  color: appPalette.textMuted,
+  fontSize: 12,
+  lineHeight: 1.5,
+  fontWeight: 600,
 };
 
 const segmentedControl = {

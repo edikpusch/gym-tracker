@@ -41,12 +41,13 @@ Useful commands:
 
 Notes:
 
-- `@capacitor/ios` and `@capacitor/preferences` are already part of the project dependencies
+- `@capacitor/ios`, `@capacitor/preferences`, `@capacitor/share` and `@capacitor/filesystem` are already part of the project dependencies
 - The iOS project will live in `ios/` after running `npx cap add ios` on a Mac
 - Building, signing, simulator testing and deployment for iPhone still require `macOS` with `Xcode`
 - Safe-area handling for notch and home-indicator is enabled in the app layout
 - Rest timer notifications now avoid Android-only channel settings when running on iOS
 - App data is prepared for native storage mirroring via Capacitor Preferences
+- Native backup export writes a temporary backup file and opens the platform share sheet instead of relying on browser-style downloads
 
 ### Mac handoff steps
 
@@ -63,6 +64,8 @@ When you have temporary access to a Mac:
 Detailed first-run checklist:
 
 - `docs/IOS_FIRST_RUN_CHECKLIST.md`
+- `docs/CROSS_PLATFORM_DEVICE_QA.md`
+- `docs/IOS_RELEASE_AND_TESTFLIGHT.md`
 
 ## Getting Started
 

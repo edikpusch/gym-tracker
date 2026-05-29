@@ -2524,13 +2524,13 @@ function getRecommendedAddOptions(
 // Styles
 
 const screen = {
-  height: "100dvh",
+  height: "var(--app-viewport-height, 100dvh)",
   display: "flex",
   justifyContent: "center",
   alignItems: "stretch",
   overflow: "hidden" as const,
   padding:
-    "calc(8px + env(safe-area-inset-top)) 8px calc(100px + env(safe-area-inset-bottom))",
+    "calc(8px + env(safe-area-inset-top)) 8px calc(100px + var(--app-bottom-inset))",
   background: appChromeBackground,
   fontFamily: "sans-serif",
   position: "relative" as const,
@@ -2761,15 +2761,16 @@ const overlay = {
   alignItems: "flex-end" as const,
   justifyContent: "center",
   zIndex: 50,
-  padding: "0 0 env(safe-area-inset-bottom) 0",
+  padding: "max(12px, env(safe-area-inset-top)) 0 var(--app-bottom-inset) 0",
 };
 
 const sheet = {
   width: "100%",
   maxWidth: 460,
-  maxHeight: "76dvh",
+  maxHeight:
+    "calc(var(--app-viewport-height, 100dvh) - max(12px, env(safe-area-inset-top)) - 8px)",
   overflowY: "auto" as const,
-  padding: "12px 12px calc(16px + env(safe-area-inset-bottom))",
+  padding: "12px 12px calc(16px + var(--app-bottom-inset))",
   borderRadius: "30px 30px 0 0" as const,
   background: `linear-gradient(180deg, ${appPalette.surface} 0%, ${appPalette.surfaceMuted} 100%)`,
   border: `1px solid ${appPalette.borderDefault}`,
@@ -2789,7 +2790,7 @@ const planDetailSheet = {
 const editorSheet = {
   ...sheet,
   maxWidth: 460,
-  paddingBottom: "calc(18px + env(safe-area-inset-bottom))",
+  paddingBottom: "calc(18px + var(--app-bottom-inset))",
   background: `linear-gradient(180deg, ${appPalette.surface} 0%, ${appPalette.surfaceMuted} 100%)`,
 };
 
@@ -3111,7 +3112,7 @@ const quickAddDock = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: 10,
-  padding: "12px 16px calc(20px + env(safe-area-inset-bottom))",
+  padding: "12px 16px calc(20px + var(--app-bottom-inset))",
   borderTop: `1px solid ${appPalette.borderSoft}`,
   flexShrink: 0,
 };

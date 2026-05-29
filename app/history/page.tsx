@@ -740,8 +740,8 @@ function capitalize(value: string) {
 }
 
 const screen = {
-  minHeight: "100dvh",
-  padding: "calc(8px + env(safe-area-inset-top)) 10px calc(20px + env(safe-area-inset-bottom))",
+  minHeight: "var(--app-viewport-height, 100dvh)",
+  padding: "calc(8px + env(safe-area-inset-top)) 10px calc(20px + var(--app-bottom-inset))",
   background: appChromeBackground,
   fontFamily: "sans-serif",
   boxSizing: "border-box" as const,

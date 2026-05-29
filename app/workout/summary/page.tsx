@@ -701,8 +701,8 @@ function getStatusBadgeStyle(kind: SetComparisonKind | undefined) {
 }
 
 const screen = {
-  height: "100dvh",
-  padding: "calc(8px + env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom))",
+  height: "var(--app-viewport-height, 100dvh)",
+  padding: "calc(8px + env(safe-area-inset-top)) 10px calc(12px + var(--app-bottom-inset))",
   overflow: "hidden" as const,
   background: appChromeBackground,
   fontFamily: "sans-serif",
@@ -868,7 +868,7 @@ const contentScroll = {
   overflowY: "auto" as const,
   minHeight: 0,
   paddingRight: 2,
-  paddingBottom: "calc(8px + env(safe-area-inset-bottom))",
+  paddingBottom: "calc(8px + var(--app-bottom-inset))",
 };
 
 const exerciseGrid = {
@@ -1018,7 +1018,7 @@ const actionStack = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: 8,
-  paddingBottom: "calc(4px + env(safe-area-inset-bottom))",
+  paddingBottom: "calc(4px + var(--app-bottom-inset))",
 };
 
 const primaryButton = {

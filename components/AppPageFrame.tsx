@@ -79,7 +79,7 @@ export function AppPageFrame({
 }
 
 const screen = {
-  minHeight: "100dvh",
+  minHeight: "var(--app-viewport-height, 100dvh)",
   background: appChromeBackground,
   boxSizing: "border-box" as const,
 };
@@ -87,9 +87,10 @@ const screen = {
 const shell = {
   width: "100%",
   maxWidth: 440,
-  minHeight: `calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))`,
+  minHeight:
+    "calc(var(--app-viewport-height, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
   margin: "0 auto",
-  padding: `calc(${uiTheme.spacing.small}px + env(safe-area-inset-top)) ${uiTheme.spacing.small + 4}px calc(98px + env(safe-area-inset-bottom))`,
+  padding: `calc(${uiTheme.spacing.small}px + env(safe-area-inset-top)) ${uiTheme.spacing.small + 4}px calc(98px + var(--app-bottom-inset))`,
   display: "flex",
   flexDirection: "column" as const,
   gap: uiTheme.spacing.small - 2,

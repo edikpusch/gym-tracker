@@ -49,7 +49,8 @@ Diese Checkliste ist fuer den ersten echten iPhone-/Xcode-Durchlauf gedacht.
 3. Rest-Timer-Benachrichtigungen pruefen.
 4. Theme-Wechsel pruefen.
 5. Backup-Export pruefen:
-   Erwartet ist das iOS-Share-Sheet oder ein sauberer Datei-Export.
+   Erwartet ist das native iOS-Share-Sheet mit einer geteilten JSON-Backup-Datei.
+6. Fuer den kompletten Android-/iPhone-Abgleich die Testmatrix in `docs/CROSS_PLATFORM_DEVICE_QA.md` nutzen.
 
 ## Vor TestFlight
 
@@ -57,6 +58,7 @@ Diese Checkliste ist fuer den ersten echten iPhone-/Xcode-Durchlauf gedacht.
 2. Berechtigungen und Texte fuer Notifications pruefen.
 3. Release-Build in Xcode erstellen.
 4. Upload in TestFlight vorbereiten.
+5. Fuer den kompletten Release-/Upload-Ablauf die Phase-7-Checkliste in `docs/IOS_RELEASE_AND_TESTFLIGHT.md` nutzen.
 
 ## Wenn etwas auffaellt
 

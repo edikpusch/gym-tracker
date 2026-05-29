@@ -1,9 +1,9 @@
 "use client";
 
-import { Capacitor } from "@capacitor/core";
 import { LocalNotifications } from "@capacitor/local-notifications";
 
 import { getAppPreferences } from "@/lib/appPreferences";
+import { isAndroidPlatform, isNativePlatform } from "@/lib/platform";
 
 const REST_NOTIFICATION_ID = 42001;
 const REST_CHANNEL_ID_SOUND = "rest-timer-sound-v2";
@@ -13,11 +13,11 @@ const REST_WARNING_LEAD_MS = 10_000;
 let channelReady = false;
 
 function isNativeApp() {
-  return Capacitor.isNativePlatform();
+  return isNativePlatform();
 }
 
 function isAndroid() {
-  return Capacitor.getPlatform() === "android";
+  return isAndroidPlatform();
 }
 
 async function ensurePermission() {

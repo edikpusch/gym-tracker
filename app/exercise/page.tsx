@@ -115,8 +115,21 @@ export default function ExerciseLibraryPage() {
     0
   );
 
+  const effectiveSelectedExerciseId = useMemo(() => {
+    if (
+      selectedExerciseId &&
+      groups.some((group) =>
+        group.items.some((item) => item.value === selectedExerciseId)
+      )
+    ) {
+      return selectedExerciseId;
+    }
+
+    return groups[0]?.items[0]?.value ?? null;
+  }, [groups, selectedExerciseId]);
+
   const selectedExercise = useMemo<LibraryItem | null>(() => {
-    if (!selectedExerciseId) {
+    if (!effectiveSelectedExerciseId) {
       return null;
     }
 
@@ -128,19 +141,10 @@ export default function ExerciseLibraryPage() {
             category: group.category,
           }))
         )
-        .find((item) => item.value === selectedExerciseId) ??
+        .find((item) => item.value === effectiveSelectedExerciseId) ??
       null
     );
-  }, [groups, selectedExerciseId]);
-
-  useEffect(() => {
-    if (selectedExerciseId && selectedExercise) {
-      return;
-    }
-
-    const fallback = groups[0]?.items[0]?.value ?? null;
-    setSelectedExerciseId(fallback);
-  }, [groups, selectedExercise, selectedExerciseId]);
+  }, [effectiveSelectedExerciseId, groups]);
 
   useEffect(() => {
     async function loadExerciseDetails() {
@@ -309,7 +313,9 @@ export default function ExerciseLibraryPage() {
                   key={item.value}
                   type="button"
                   style={
-                    selectedExerciseId === item.value ? exerciseRowActive : exerciseRow
+                    effectiveSelectedExerciseId === item.value
+                      ? exerciseRowActive
+                      : exerciseRow
                   }
                   onClick={() => setSelectedExerciseId(item.value)}
                 >
