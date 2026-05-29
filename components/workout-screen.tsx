@@ -29,6 +29,7 @@ import {
   updateStoredSet,
   deleteWorkoutSession,
   getLoggedSetExerciseReference,
+  isWorkSetEntry,
   type ExerciseSuggestionInsight,
   type ExerciseTrendInsight,
   type LoggedSetType,
@@ -147,6 +148,49 @@ type PauseDraftSheetState = {
   seconds: string;
 };
 
+type WorkoutViewportMode = {
+  compact: boolean;
+  smallMobile: boolean;
+  viewportWidth: number;
+  viewportHeight: number;
+};
+
+function getWorkoutViewportMode(): WorkoutViewportMode {
+  if (typeof window === "undefined") {
+    return {
+      compact: false,
+      smallMobile: false,
+      viewportWidth: 0,
+      viewportHeight: 0,
+    };
+  }
+
+  const viewportWidth = Math.round(
+    window.visualViewport?.width ?? window.innerWidth ?? document.documentElement.clientWidth ?? 0
+  );
+  const viewportHeight = Math.round(
+    window.visualViewport?.height ??
+      window.innerHeight ??
+      document.documentElement.clientHeight ??
+      0
+  );
+
+  const smallMobile =
+    viewportWidth <= 430 ||
+    (viewportWidth <= 480 && viewportHeight <= 980);
+  const compact =
+    smallMobile ||
+    viewportHeight <= 1480 ||
+    (viewportHeight <= 1600 && viewportWidth <= 460);
+
+  return {
+    compact,
+    smallMobile,
+    viewportWidth,
+    viewportHeight,
+  };
+}
+
 export function WorkoutScreen({
   workoutType,
   workoutLabel,
@@ -218,7 +262,9 @@ export function WorkoutScreen({
   const [startTime, setStartTime] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [setStartedAt, setSetStartedAt] = useState(0);
-  const [compactMode, setCompactMode] = useState(false);
+  const [viewportMode, setViewportMode] = useState<WorkoutViewportMode>(() =>
+    getWorkoutViewportMode()
+  );
   const [appPreferences, setAppPreferences] = useState<AppPreferences>(() =>
     getAppPreferences()
   );
@@ -227,6 +273,8 @@ export function WorkoutScreen({
   const lastInitializedSessionRef = useRef<number | null>(null);
   const pendingResumeSnapshotRef = useRef<ReturnType<typeof getActiveWorkoutSnapshot>>(null);
   const repsFeedbackTimeoutRef = useRef<number | null>(null);
+  const compactMode = viewportMode.compact;
+  const smallMobileMode = viewportMode.smallMobile;
   const workoutExercises = sessionExercises;
   const workoutDayBlocks = sessionDayBlocks;
 
@@ -411,16 +459,23 @@ export function WorkoutScreen({
   }, []);
 
   useEffect(() => {
-    function updateCompactMode() {
-      const nextCompactMode =
-        window.innerHeight <= 1480 || (window.innerHeight <= 1600 && window.innerWidth <= 460);
-      setCompactMode(nextCompactMode);
+    const visualViewport = window.visualViewport;
+
+    function updateViewportMode() {
+      const nextViewportMode = getWorkoutViewportMode();
+      setViewportMode(nextViewportMode);
     }
 
-    updateCompactMode();
-    window.addEventListener("resize", updateCompactMode);
+    updateViewportMode();
+    window.addEventListener("resize", updateViewportMode);
+    visualViewport?.addEventListener("resize", updateViewportMode);
+    visualViewport?.addEventListener("scroll", updateViewportMode);
 
-    return () => window.removeEventListener("resize", updateCompactMode);
+    return () => {
+      window.removeEventListener("resize", updateViewportMode);
+      visualViewport?.removeEventListener("resize", updateViewportMode);
+      visualViewport?.removeEventListener("scroll", updateViewportMode);
+    };
   }, []);
 
   useEffect(() => {
@@ -1577,6 +1632,7 @@ export function WorkoutScreen({
     currentWarmupSets,
     currentExercise.sets
   );
+  const compactSuggestionLabel = exerciseSuggestion?.label.replace(/^Vorschlag:\s*/i, "").trim() ?? null;
   const nextExercise = useMemo(
     () => (exerciseIndex < workoutExercises.length - 1 ? workoutExercises[exerciseIndex + 1] : null),
     [exerciseIndex, workoutExercises]
@@ -1850,6 +1906,69 @@ export function WorkoutScreen({
       : restSuggestionNeutral;
   const pauseButtonLabel = isWorkoutPaused ? "▶ Weiter" : "⏸ Pause";
   const progressExerciseName = getExerciseLabel(currentExercise.name).toUpperCase();
+  const renderSmallMobileExerciseInsights = () => (
+    <div style={smallMobileInsightSection}>
+      <div style={smallMobileInsightStack}>
+        <AppCard
+          variant="theme"
+          accentColor={theme.accent}
+          interactive={lastExerciseSessionSets.length > 0}
+          style={{ ...smallMobileInsightCard, border: `1px solid ${accentBorder}` }}
+          onClick={() => {
+            if (lastExerciseSessionSets.length > 0) {
+              setShowLastTrainingSheet(true);
+            }
+          }}
+        >
+          <div style={smallMobileInsightHeader}>
+            <span style={{ ...smallMobileInsightTitle, color: theme.accent }}>Letztes Training</span>
+            {(() => {
+              const workSetCount = lastExerciseSessionSets.filter(isWorkSetEntry).length;
+              const hasWorkSets = workSetCount > 0;
+              return (
+                <span
+                  style={{
+                    ...smallMobileInsightPill,
+                    color: hasWorkSets ? theme.accent : appPalette.textMuted,
+                    background: hasWorkSets ? toRgba(theme.accent, 0.1) : appPalette.surfaceMuted,
+                  }}
+                >
+                  {hasWorkSets ? `${workSetCount} ${workSetCount === 1 ? "Satz" : "Sätze"}` : "leer"}
+                </span>
+              );
+            })()}
+          </div>
+          <div style={smallMobileInsightValue}>
+            {lastExerciseSessionTopSet
+              ? `${formatWeight(lastExerciseSessionTopSet.weight)} kg × ${formatReps(lastExerciseSessionTopSet.reps)}`
+              : "—"}
+          </div>
+        </AppCard>
+
+        <AppCard
+          variant="theme"
+          accentColor={theme.accent}
+          style={{ ...smallMobileInsightCard, border: `1px solid ${accentBorder}` }}
+        >
+          <div style={smallMobileInsightHeader}>
+            <span style={{ ...smallMobileInsightTitle, color: theme.accent }}>Bestleistung</span>
+            <span
+              style={{
+                ...smallMobileInsightPill,
+                color: theme.accent,
+                background: toRgba(theme.accent, 0.1),
+              }}
+            >
+              {bestSetSummaryLabel ?? "im Aufbau"}
+            </span>
+          </div>
+          <div style={smallMobileInsightValue}>
+            {bestExerciseSet ? `${formatWeight(bestExerciseSet.weight)} kg × ${formatReps(bestExerciseSet.reps)}` : "—"}
+          </div>
+        </AppCard>
+      </div>
+    </div>
+  );
   const renderExerciseInsightCards = (dense = false) => {
     const compactInsights = compactMode || dense;
 
@@ -1960,7 +2079,7 @@ export function WorkoutScreen({
     badgeStyle?: CSSProperties | null,
     dense = false
   ) => {
-    const isCompactPanel = dense || compactMode;
+    const isCompactPanel = dense || compactMode || smallMobileMode;
 
     return (
       <div
@@ -2058,6 +2177,208 @@ export function WorkoutScreen({
       <div style={compactActiveSummaryCoach}>
         Coach: {progressionDecision.label}
         {exerciseSuggestion ? ` · ${exerciseSuggestion.label}` : ""}
+      </div>
+    </div>
+  );
+  const renderSmallMobileActiveSummaryPanel = () => (
+    <div
+      style={{
+        ...smallMobileActiveSummaryPanel,
+        border: `1px solid ${accentBorder}`,
+        background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.96)} 0%, ${toRgba(
+          theme.accent,
+          0.04
+        )} 100%)`,
+      }}
+    >
+      <div style={smallMobileActiveSummaryGrid}>
+        <div style={smallMobileActiveSummaryItem}>
+          <div style={smallMobileActiveSummaryLabel}>Jetzt</div>
+          <div style={smallMobileActiveSummaryValue}>{flowMeta.flowNowLabel}</div>
+        </div>
+        <div style={smallMobileActiveSummaryItem}>
+          <div style={smallMobileActiveSummaryLabel}>Danach</div>
+          <div style={smallMobileActiveSummaryValue}>{flowMeta.flowNextLabel}</div>
+        </div>
+      </div>
+      <div style={smallMobileActiveSummaryMeta}>
+        <span>{progressionDecision.label}</span>
+        {compactSuggestionLabel ? <span>{compactSuggestionLabel}</span> : null}
+      </div>
+    </div>
+  );
+  const renderActiveSummaryPanel = () => {
+    if (smallMobileMode) {
+      return renderSmallMobileActiveSummaryPanel();
+    }
+
+    if (compactMode) {
+      return renderCompactActiveSummaryPanel();
+    }
+
+    return renderFlowContextPanel(
+      referenceLabel
+        ? `${referenceLabel}: ${
+            referenceSet
+              ? `${formatWeight(referenceSet.weight)} kg × ${formatReps(referenceSet.reps)}`
+              : "—"
+          }`
+        : undefined,
+      referenceLabel
+        ? {
+            color: theme.accent,
+            background: toRgba(theme.accent, 0.1),
+          }
+        : null,
+      compactMode
+    );
+  };
+  const renderRestHistoryCard = () => (
+    <div
+      style={{
+        ...restHistoryCard,
+        background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.98)} 0%, ${toRgba(
+          theme.accent,
+          0.03
+        )} 100%)`,
+        border: `1px solid ${accentBorder}`,
+        boxShadow: `0 10px 26px ${accentSoft}`,
+      }}
+    >
+      <div style={restHistoryTop}>
+        <span style={restHistoryLabel}>Bisherige Sätze</span>
+        <button
+          type="button"
+          style={{
+            ...restHistoryToggle,
+            color: theme.accent,
+            border: `1px solid ${accentBorder}`,
+            background: progressSoft,
+          }}
+          onClick={() => setRestHistoryExpanded((current) => !current)}
+        >
+          {restHistoryExpanded ? "▾" : "▸"}
+        </button>
+      </div>
+      {restHistoryExpanded ? (
+        <div style={restHistoryList}>
+          {currentExerciseHistory.length > 0 ? (
+            currentExerciseHistory
+              .slice()
+              .reverse()
+              .map((set, index) => (
+                <div key={`${set.timestamp}-${index}`} style={restHistoryRow}>
+                  <div
+                    style={{
+                      ...restHistoryIndex,
+                      background: progressSoft,
+                      color: theme.accent,
+                      border: `1px solid ${accentBorder}`,
+                    }}
+                  >
+                    {currentExerciseHistory.length - index}
+                  </div>
+                  <div style={restHistoryValue}>
+                    <span style={restHistorySetLabel}>
+                      {getSetLabelForExercise(set.set, currentWarmupSets, currentExercise.sets)}
+                    </span>
+                    <span>
+                      {formatWeight(set.weight)} kg × {formatReps(set.reps)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    style={{
+                      ...restHistoryEditButton,
+                      color: theme.accent,
+                      background: progressSoft,
+                      border: `1px solid ${accentBorder}`,
+                    }}
+                    onClick={() => openSetEditor(set)}
+                  >
+                    ✏️
+                  </button>
+                </div>
+              ))
+          ) : (
+            <div style={restHistoryEmpty}>Noch kein Satz gespeichert</div>
+          )}
+        </div>
+      ) : (
+        <div style={restHistoryCollapsedHint}>
+          {currentExerciseHistory.length > 0
+            ? `${currentExerciseHistory.length} ${currentExerciseHistory.length === 1 ? "Satz" : "Sätze"} gespeichert`
+            : "Noch kein Satz gespeichert"}
+        </div>
+      )}
+      <div style={restHistoryActions}>
+        <button
+          style={{ ...restHistoryButton, color: theme.accent, border: `1px solid ${accentBorder}` }}
+          onClick={() => setShowPlanModal(true)}
+        >
+          Alle Sätze anzeigen
+        </button>
+      </div>
+    </div>
+  );
+  const renderSmallMobileRestSummaryPanel = () => (
+    <div
+      style={{
+        ...smallMobileRestSummaryPanel,
+        border: `1px solid ${accentBorder}`,
+        background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.96)} 0%, ${toRgba(
+          theme.accent,
+          0.04
+        )} 100%)`,
+      }}
+    >
+      <div style={smallMobileRestSummaryGrid}>
+        <div style={smallMobileRestSummaryItem}>
+          <div style={smallMobileRestSummaryLabel}>Jetzt</div>
+          <div style={smallMobileRestSummaryValue}>{flowMeta.flowNowLabel}</div>
+        </div>
+        <div style={smallMobileRestSummaryItem}>
+          <div style={smallMobileRestSummaryLabel}>Danach</div>
+          <div style={smallMobileRestSummaryValue}>{flowMeta.flowNextLabel}</div>
+        </div>
+      </div>
+      <div style={smallMobileRestSummaryMeta}>
+        <span>{restSuggestion.label}</span>
+        <span>Coach: {progressionDecision.label}</span>
+      </div>
+    </div>
+  );
+  const renderSmallMobileStretchSummaryPanel = () => (
+    <div
+      style={{
+        ...smallMobileStretchSummaryPanel,
+        border: `1px solid ${accentBorder}`,
+        background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.96)} 0%, ${toRgba(
+          theme.accent,
+          0.04
+        )} 100%)`,
+      }}
+    >
+      <div style={smallMobileStretchSummaryGrid}>
+        <div style={smallMobileStretchSummaryItem}>
+          <div style={smallMobileStretchSummaryLabel}>Jetzt</div>
+          <div style={smallMobileStretchSummaryValue}>
+            {activeStretchBlock
+              ? `${activeStretchBlock.label} ${Math.min(stretchIndex + 1, currentStretchBlocks.length)}/${Math.max(
+                  currentStretchBlocks.length,
+                  1
+                )}`
+              : "Dehnen"}
+          </div>
+        </div>
+        <div style={smallMobileStretchSummaryItem}>
+          <div style={smallMobileStretchSummaryLabel}>Danach</div>
+          <div style={smallMobileStretchSummaryValue}>{flowMeta.flowNextLabel}</div>
+        </div>
+      </div>
+      <div style={smallMobileStretchSummaryMeta}>
+        <span>{activeStretchBlock ? `${activeStretchBlock.holdSeconds} Sek. halten` : "Mobil bleiben"}</span>
+        <span>Coach: Gewicht halten</span>
       </div>
     </div>
   );
@@ -2180,14 +2501,14 @@ export function WorkoutScreen({
               </div>
             </div>
 
-            <div style={stretchFocusStage}>
+            <div style={{ ...stretchFocusStage, ...(smallMobileMode ? smallMobileStretchFocusStage : null) }}>
               <div style={restTimerWrap}>
                 <ProgressRing
                   totalSeconds={getStretchDurationSeconds(activeStretchBlock)}
                   remainingSeconds={stretchTime}
                   color={theme.accent}
-                  size={compactMode ? 188 : 236}
-                  strokeWidth={compactMode ? 10 : 13}
+                  size={smallMobileMode ? 172 : compactMode ? 188 : 236}
+                  strokeWidth={smallMobileMode ? 9 : compactMode ? 10 : 13}
                   label="Dehnen"
                   subLabel={formatRest(getStretchDurationSeconds(activeStretchBlock))}
                   valueText={
@@ -2218,23 +2539,31 @@ export function WorkoutScreen({
                 />
               </div>
 
-              {renderFlowContextPanel(
-                activeStretchBlock
-                  ? `Runde ${Math.min(stretchIndex + 1, currentStretchBlocks.length)} von ${currentStretchBlocks.length}`
-                  : "Mobil bleiben",
-                {
-                  color: theme.accent,
-                  background: toRgba(theme.accent, 0.1),
-                },
-                compactMode
-              )}
+              {smallMobileMode
+                ? renderSmallMobileStretchSummaryPanel()
+                : renderFlowContextPanel(
+                    activeStretchBlock
+                      ? `Runde ${Math.min(stretchIndex + 1, currentStretchBlocks.length)} von ${currentStretchBlocks.length}`
+                      : "Mobil bleiben",
+                    {
+                      color: theme.accent,
+                      background: toRgba(theme.accent, 0.1),
+                    },
+                    compactMode
+                  )}
             </div>
 
-            <div style={singleActionDock}>
+            <div
+              style={{
+                ...singleActionDock,
+                ...(smallMobileMode ? { ...smallMobileBottomActionDock, ...smallMobileRestActionDock } : null),
+              }}
+            >
               <button
                 style={{
                   ...continueButton,
                   ...(compactMode ? compactContinueButton : null),
+                  ...(smallMobileMode ? smallMobileContinueButton : null),
                   background: `linear-gradient(180deg, ${lightenColor(theme.accent, 0.08)} 0%, ${theme.accent} 100%)`,
                   boxShadow: `0 20px 34px ${accentShadow}`,
                 }}
@@ -2252,6 +2581,13 @@ export function WorkoutScreen({
                         padding: "10px 14px",
                       }
                     : null),
+                  ...(smallMobileMode
+                    ? {
+                        minHeight: 40,
+                        fontSize: 13,
+                        padding: "9px 12px",
+                      }
+                    : null),
                   border: `1px solid ${accentBorder}`,
                   color: theme.accent,
                 }}
@@ -2263,12 +2599,13 @@ export function WorkoutScreen({
           </div>
         ) : !isResting ? (
           <div style={{ ...activeStack, ...(compactMode ? compactActiveStack : null) }}>
-            {renderExerciseInsightCards()}
+            {!smallMobileMode ? renderExerciseInsightCards() : null}
 
             <div
               style={{
                 ...exerciseCard,
                 ...(compactMode ? compactExerciseCard : null),
+                ...(smallMobileMode ? smallMobileExerciseCard : null),
                 background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.98)} 0%, ${toRgba(
                   theme.accent,
                   0.03
@@ -2288,44 +2625,30 @@ export function WorkoutScreen({
                 </div>
               </div>
 
-              {compactMode
-                ? renderCompactActiveSummaryPanel()
-                : renderFlowContextPanel(
-                    referenceLabel
-                      ? `${referenceLabel}: ${
-                          referenceSet
-                            ? `${formatWeight(referenceSet.weight)} kg × ${formatReps(referenceSet.reps)}`
-                            : "—"
-                        }`
-                      : undefined,
-                    referenceLabel
-                      ? {
-                          color: theme.accent,
-                          background: toRgba(theme.accent, 0.1),
-                        }
-                      : null,
-                    compactMode
-                  )}
+              {renderActiveSummaryPanel()}
 
               <div
                 style={{
                   ...exerciseInputStage,
                   ...(compactMode ? compactExerciseInputStage : null),
+                  ...(smallMobileMode ? smallMobileExerciseInputStage : null),
                 }}
               >
                 <div
                   style={{
                     ...weightPanel,
                     ...(compactMode ? compactWeightPanel : null),
+                    ...(smallMobileMode ? smallMobileWeightPanel : null),
                   }}
                 >
                   <div style={weightSideColumn}>
-                    {activeWeightSteps.map((step) => (
+                    {(smallMobileMode ? activeWeightSteps.slice(0, 1) : activeWeightSteps).map((step) => (
                       <button
                         key={`active-minus-${step}`}
                         style={{
                           ...weightSideButton,
                           ...(compactMode ? compactWeightSideButton : null),
+                          ...(smallMobileMode ? smallMobileWeightSideButton : null),
                           color: theme.accent,
                           border: `1px solid ${accentBorder}`,
                           boxShadow: `0 10px 24px ${accentSoft}`,
@@ -2344,6 +2667,7 @@ export function WorkoutScreen({
                       style={{
                         ...weightCenterLabel,
                         ...(compactMode ? compactWeightCenterLabel : null),
+                        ...(smallMobileMode ? smallMobileWeightCenterLabel : null),
                       }}
                     >
                       Gewicht
@@ -2353,6 +2677,7 @@ export function WorkoutScreen({
                       style={{
                         ...weightBox,
                         ...(compactMode ? compactWeightBox : null),
+                        ...(smallMobileMode ? smallMobileWeightBox : null),
                         appearance: "none",
                         background: "transparent",
                         border: "none",
@@ -2362,19 +2687,27 @@ export function WorkoutScreen({
                       onClick={() => openManualEntry("weight")}
                     >
                       {displayedWeight}
-                      <span style={{ ...weightUnit, ...(compactMode ? compactWeightUnit : null) }}>kg</span>
+                      <span
+                        style={{
+                          ...weightUnit,
+                          ...(compactMode ? compactWeightUnit : null),
+                          ...(smallMobileMode ? smallMobileWeightUnit : null),
+                        }}
+                      >
+                        kg
+                      </span>
                     </button>
                   </div>
                   <div style={weightSideColumn}>
-                    {activeWeightSteps
-                      .slice()
-                      .reverse()
-                      .map((step) => (
+                    {(smallMobileMode
+                      ? activeWeightSteps.slice().reverse().slice(0, 1)
+                      : activeWeightSteps.slice().reverse()).map((step) => (
                         <button
                           key={`active-plus-${step}`}
                           style={{
                             ...weightSideButton,
                             ...(compactMode ? compactWeightSideButton : null),
+                            ...(smallMobileMode ? smallMobileWeightSideButton : null),
                             color: theme.accent,
                             border: `1px solid ${accentBorder}`,
                             boxShadow: `0 10px 24px ${accentSoft}`,
@@ -2391,17 +2724,42 @@ export function WorkoutScreen({
                 </div>
 
                 <div style={repsSection}>
-                  <div style={{ ...sectionLabel, ...(compactMode ? compactSectionLabel : null) }}>
+                  <div
+                    style={{
+                      ...sectionLabel,
+                      ...(compactMode ? compactSectionLabel : null),
+                      ...(smallMobileMode ? smallMobileSectionLabel : null),
+                    }}
+                  >
                     Wiederholungen
                   </div>
-                  <div style={{ ...repsRowModern, ...(compactMode ? compactRepsRowModern : null) }}>
-                    <button style={{ ...repsRoundButton, ...(compactMode ? compactRepsRoundButton : null), color: theme.accent, border: `1px solid ${accentBorder}`, boxShadow: `0 8px 20px ${accentSoft}` }} onClick={() => handleRepsChange(-0.5)}>−</button>
+                  <div
+                    style={{
+                      ...repsRowModern,
+                      ...(compactMode ? compactRepsRowModern : null),
+                      ...(smallMobileMode ? smallMobileRepsRowModern : null),
+                    }}
+                  >
+                    <button
+                      style={{
+                        ...repsRoundButton,
+                        ...(compactMode ? compactRepsRoundButton : null),
+                        ...(smallMobileMode ? smallMobileRepsRoundButton : null),
+                        color: theme.accent,
+                        border: `1px solid ${accentBorder}`,
+                        boxShadow: `0 8px 20px ${accentSoft}`,
+                      }}
+                      onClick={() => handleRepsChange(-0.5)}
+                    >
+                      −
+                    </button>
                     <button
                       type="button"
                       key={repsFeedbackTick}
                       style={{
                         ...repsValueCard,
                         ...(compactMode ? compactRepsValueCard : null),
+                        ...(smallMobileMode ? smallMobileRepsValueCard : null),
                         appearance: "none",
                         background: appPalette.surface,
                         cursor: "pointer",
@@ -2418,23 +2776,48 @@ export function WorkoutScreen({
                       }}
                       onClick={() => openManualEntry("reps")}
                     >
-                      <div style={{ ...repsValueMeta, ...(compactMode ? compactRepsValueMeta : null) }}>
+                      <div
+                        style={{
+                          ...repsValueMeta,
+                          ...(compactMode ? compactRepsValueMeta : null),
+                          ...(smallMobileMode ? smallMobileRepsValueMeta : null),
+                        }}
+                      >
                         Aktueller Satz
                       </div>
-                      <div style={{ ...repsValueNumber, ...(compactMode ? compactRepsValueNumber : null) }}>
+                      <div
+                        style={{
+                          ...repsValueNumber,
+                          ...(compactMode ? compactRepsValueNumber : null),
+                          ...(smallMobileMode ? smallMobileRepsValueNumber : null),
+                        }}
+                      >
                         {formatReps(reps)}
                       </div>
                     </button>
-                    <button style={{ ...repsRoundButton, ...(compactMode ? compactRepsRoundButton : null), color: theme.accent, border: `1px solid ${accentBorder}`, boxShadow: `0 8px 20px ${accentSoft}` }} onClick={() => handleRepsChange(0.5)}>+</button>
+                    <button
+                      style={{
+                        ...repsRoundButton,
+                        ...(compactMode ? compactRepsRoundButton : null),
+                        ...(smallMobileMode ? smallMobileRepsRoundButton : null),
+                        color: theme.accent,
+                        border: `1px solid ${accentBorder}`,
+                        boxShadow: `0 8px 20px ${accentSoft}`,
+                      }}
+                      onClick={() => handleRepsChange(0.5)}
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
-              <div style={bottomActionDock}>
+              <div style={{ ...bottomActionDock, ...(smallMobileMode ? smallMobileBottomActionDock : null) }}>
                <button
                 style={{
                   ...saveBarButton,
                   ...(compactMode ? compactSaveBarButton : null),
+                  ...(smallMobileMode ? smallMobileSaveBarButton : null),
                   background: saveFeedbackVisible
                     ? `linear-gradient(180deg, ${lightenColor(appPalette.success, 0.08)} 0%, ${appPalette.success} 100%)`
                     : `linear-gradient(180deg, ${lightenColor(theme.accent, 0.08)} 0%, ${theme.accent} 100%)`,
@@ -2451,111 +2834,33 @@ export function WorkoutScreen({
                </button>
                <button
                  style={{ ...adjustButton, color: theme.accent, border: `1px solid ${accentBorder}` }}
-                 onClick={() => setShowAdjustSheet(true)}
-               >
+                onClick={() => setShowAdjustSheet(true)}
+              >
                  + Anpassen
                </button>
             </div>
+            {smallMobileMode ? <div style={smallMobileFollowupStack}>{renderSmallMobileExerciseInsights()}</div> : null}
           </div>
         ) : (
-          <div style={{ ...restCard, ...(compactMode ? compactRestCard : null), background: theme.badgeBackground, border: `1px solid ${theme.border}` }}>
-            <div
-              style={{
-                ...restHistoryCard,
-                background: `linear-gradient(180deg, ${withAlpha(appPalette.surface, 0.98)} 0%, ${toRgba(
-                  theme.accent,
-                  0.03
-                )} 100%)`,
-                border: `1px solid ${accentBorder}`,
-                boxShadow: `0 10px 26px ${accentSoft}`,
-              }}
-            >
-              <div style={restHistoryTop}>
-                <span style={restHistoryLabel}>Bisherige Sätze</span>
-                <button
-                  type="button"
-                  style={{
-                    ...restHistoryToggle,
-                    color: theme.accent,
-                    border: `1px solid ${accentBorder}`,
-                    background: progressSoft,
-                  }}
-                  onClick={() => setRestHistoryExpanded((current) => !current)}
-                >
-                  {restHistoryExpanded ? "▾" : "▸"}
-                </button>
-              </div>
-              {restHistoryExpanded ? (
-                <div style={restHistoryList}>
-                  {currentExerciseHistory.length > 0 ? (
-                    currentExerciseHistory
-                      .slice()
-                      .reverse()
-                      .map((set, index) => (
-                        <div key={`${set.timestamp}-${index}`} style={restHistoryRow}>
-                          <div
-                            style={{
-                              ...restHistoryIndex,
-                              background: progressSoft,
-                              color: theme.accent,
-                              border: `1px solid ${accentBorder}`,
-                            }}
-                          >
-                            {currentExerciseHistory.length - index}
-                          </div>
-                          <div style={restHistoryValue}>
-                            <span style={restHistorySetLabel}>
-                              {getSetLabelForExercise(
-                                set.set,
-                                currentWarmupSets,
-                                currentExercise.sets
-                              )}
-                            </span>
-                            <span>{formatWeight(set.weight)} kg × {formatReps(set.reps)}</span>
-                          </div>
-                          <button
-                            type="button"
-                            style={{
-                              ...restHistoryEditButton,
-                              color: theme.accent,
-                              background: progressSoft,
-                              border: `1px solid ${accentBorder}`,
-                            }}
-                            onClick={() => openSetEditor(set)}
-                          >
-                            ✏️
-                          </button>
-                        </div>
-                      ))
-                  ) : (
-                    <div style={restHistoryEmpty}>Noch kein Satz gespeichert</div>
-                  )}
-                </div>
-              ) : (
-                <div style={restHistoryCollapsedHint}>
-                  {currentExerciseHistory.length > 0
-                    ? `${currentExerciseHistory.length} Sätze gespeichert`
-                    : "Noch kein Satz gespeichert"}
-                </div>
-              )}
-              <div style={restHistoryActions}>
-                <button
-                  style={{ ...restHistoryButton, color: theme.accent, border: `1px solid ${accentBorder}` }}
-                  onClick={() => setShowPlanModal(true)}
-                >
-                  Alle Sätze anzeigen
-                </button>
-              </div>
-            </div>
+          <div
+            style={{
+              ...restCard,
+              ...(compactMode ? compactRestCard : null),
+              ...(smallMobileMode ? smallMobileRestCard : null),
+              background: theme.badgeBackground,
+              border: `1px solid ${theme.border}`,
+            }}
+          >
+            {!smallMobileMode ? renderRestHistoryCard() : null}
 
-            <div style={restFocusStage}>
+            <div style={{ ...restFocusStage, ...(smallMobileMode ? smallMobileRestFocusStage : null) }}>
               <div style={restTimerWrap}>
                 <ProgressRing
                   totalSeconds={activeRestDurationSec}
                   remainingSeconds={restTime}
                   color={theme.accent}
-                  size={compactMode ? 188 : 236}
-                  strokeWidth={compactMode ? 10 : 13}
+                  size={smallMobileMode ? 172 : compactMode ? 188 : 236}
+                  strokeWidth={smallMobileMode ? 9 : compactMode ? 10 : 13}
                   label="Pause"
                   subLabel={formatRest(activeRestDurationSec)}
                   valueText={
@@ -2576,13 +2881,11 @@ export function WorkoutScreen({
                   }}
                 />
               </div>
-              {renderFlowContextPanel(
-                restSuggestion.label,
-                activeSetRecommendationTone,
-                true
-              )}
+              {smallMobileMode
+                ? renderSmallMobileRestSummaryPanel()
+                : renderFlowContextPanel(restSuggestion.label, activeSetRecommendationTone, true)}
               <div style={restPlatformHint}>{restBackgroundBehaviorLabel}</div>
-              {renderExerciseInsightCards(true)}
+              {!smallMobileMode ? renderExerciseInsightCards(true) : null}
               <div style={restWeightSection}>
                 <div style={restWeightLabel}>Nächster Satz</div>
                 <div style={{ ...restWeightValueLarge, ...(compactMode ? compactRestWeightValueLarge : null) }}>
@@ -2649,11 +2952,12 @@ export function WorkoutScreen({
                 </div>
               </div>
             </div>
-            <div style={singleActionDock}>
+            <div style={{ ...singleActionDock, ...(smallMobileMode ? smallMobileBottomActionDock : null) }}>
               <button
                 style={{
                   ...continueButton,
                   ...(compactMode ? compactContinueButton : null),
+                  ...(smallMobileMode ? smallMobileContinueButton : null),
                   background: `linear-gradient(180deg, ${lightenColor(theme.accent, 0.08)} 0%, ${theme.accent} 100%)`,
                   boxShadow: `0 20px 34px ${accentShadow}`,
                 }}
@@ -2672,6 +2976,12 @@ export function WorkoutScreen({
                 + Anpassen
               </button>
             </div>
+            {smallMobileMode ? (
+              <div style={{ ...smallMobileFollowupStack, ...smallMobileRestFollowupStack }}>
+                {renderRestHistoryCard()}
+                {renderSmallMobileExerciseInsights()}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -5160,6 +5470,12 @@ const compactExerciseCard = {
   borderRadius: 20,
 };
 
+const smallMobileExerciseCard = {
+  gap: 8,
+  padding: "10px 10px 8px",
+  borderRadius: 18,
+};
+
 const compactActiveSummaryPanel = {
   display: "grid",
   gap: 8,
@@ -5201,7 +5517,55 @@ const compactActiveSummaryCoach = {
   fontWeight: 700,
 };
 
+const smallMobileActiveSummaryPanel = {
+  display: "grid",
+  gap: 6,
+  padding: "8px 10px",
+  borderRadius: 18,
+  boxShadow: `0 10px 24px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
+};
+
+const smallMobileActiveSummaryGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
+};
+
+const smallMobileActiveSummaryItem = {
+  minWidth: 0,
+};
+
+const smallMobileActiveSummaryLabel = {
+  fontSize: 9,
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.9,
+  color: appPalette.textSoft,
+  fontWeight: 800,
+};
+
+const smallMobileActiveSummaryValue = {
+  marginTop: 2,
+  fontSize: 13,
+  lineHeight: 1.2,
+  color: appPalette.textDefault,
+  fontWeight: 700,
+};
+
+const smallMobileActiveSummaryMeta = {
+  display: "flex",
+  flexWrap: "wrap" as const,
+  gap: 6,
+  fontSize: 10,
+  lineHeight: 1.2,
+  color: appPalette.textMuted,
+  fontWeight: 700,
+};
+
 const compactExerciseInputStage = {
+  gap: 6,
+};
+
+const smallMobileExerciseInputStage = {
   gap: 6,
 };
 
@@ -5231,10 +5595,22 @@ const compactWeightPanel = {
   gap: 6,
 };
 
+const smallMobileWeightPanel = {
+  gridTemplateColumns: "50px minmax(0, 1fr) 50px",
+  minHeight: 84,
+  gap: 6,
+};
+
 const compactWeightSideButton = {
   minHeight: 30,
   borderRadius: 10,
   fontSize: 13,
+};
+
+const smallMobileWeightSideButton = {
+  minHeight: 34,
+  borderRadius: 12,
+  fontSize: 17,
 };
 
 const compactWeightBox = {
@@ -5242,7 +5618,17 @@ const compactWeightBox = {
   minHeight: 34,
 };
 
+const smallMobileWeightBox = {
+  fontSize: 26,
+  minHeight: 30,
+};
+
 const compactWeightCenterLabel = {
+  fontSize: 10,
+  letterSpacing: 0.6,
+};
+
+const smallMobileWeightCenterLabel = {
   fontSize: 10,
   letterSpacing: 0.6,
 };
@@ -5252,7 +5638,17 @@ const compactWeightUnit = {
   fontSize: 16,
 };
 
+const smallMobileWeightUnit = {
+  marginLeft: 4,
+  fontSize: 15,
+};
+
 const compactSectionLabel = {
+  fontSize: 10,
+  letterSpacing: 0.6,
+};
+
+const smallMobileSectionLabel = {
   fontSize: 10,
   letterSpacing: 0.6,
 };
@@ -5276,6 +5672,11 @@ const compactRepsRowModern = {
   gap: 4,
 };
 
+const smallMobileRepsRowModern = {
+  gridTemplateColumns: "36px minmax(0, 1fr) 36px",
+  gap: 6,
+};
+
 const compactSideButton = {
   minHeight: 50,
   fontSize: 13,
@@ -5297,6 +5698,108 @@ const compactSaveButtonLabel = {
 const compactRestCard = {
   gap: 4,
   padding: "6px 6px 8px",
+};
+
+const smallMobileRestCard = {
+  gap: 6,
+  padding: "8px 8px 10px",
+  gridTemplateRows: "1fr auto",
+};
+
+const smallMobileRestFocusStage = {
+  gridTemplateRows: "auto auto auto auto",
+  gap: 8,
+};
+
+const smallMobileStretchFocusStage = {
+  gridTemplateRows: "auto auto auto",
+  gap: 8,
+};
+
+const smallMobileRestSummaryPanel = {
+  display: "grid",
+  gap: 8,
+  padding: "10px 12px",
+  borderRadius: 18,
+  boxShadow: `0 10px 24px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
+};
+
+const smallMobileRestSummaryGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
+};
+
+const smallMobileRestSummaryItem = {
+  minWidth: 0,
+};
+
+const smallMobileRestSummaryLabel = {
+  fontSize: 9,
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.9,
+  color: appPalette.textSoft,
+  fontWeight: 800,
+};
+
+const smallMobileRestSummaryValue = {
+  marginTop: 3,
+  fontSize: 14,
+  lineHeight: 1.25,
+  color: appPalette.textDefault,
+  fontWeight: 700,
+};
+
+const smallMobileRestSummaryMeta = {
+  display: "grid",
+  gap: 2,
+  fontSize: 11,
+  lineHeight: 1.3,
+  color: appPalette.textMuted,
+  fontWeight: 700,
+};
+
+const smallMobileStretchSummaryPanel = {
+  display: "grid",
+  gap: 8,
+  padding: "10px 12px",
+  borderRadius: 18,
+  boxShadow: `0 10px 24px ${withAlpha(appPalette.surfaceDark, 0.05)}`,
+};
+
+const smallMobileStretchSummaryGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
+};
+
+const smallMobileStretchSummaryItem = {
+  minWidth: 0,
+};
+
+const smallMobileStretchSummaryLabel = {
+  fontSize: 9,
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.9,
+  color: appPalette.textSoft,
+  fontWeight: 800,
+};
+
+const smallMobileStretchSummaryValue = {
+  marginTop: 3,
+  fontSize: 14,
+  lineHeight: 1.25,
+  color: appPalette.textDefault,
+  fontWeight: 700,
+};
+
+const smallMobileStretchSummaryMeta = {
+  display: "grid",
+  gap: 2,
+  fontSize: 11,
+  lineHeight: 1.3,
+  color: appPalette.textMuted,
+  fontWeight: 700,
 };
 
 const compactRestTimer = {
@@ -5326,9 +5829,20 @@ const compactContinueButton = {
   fontSize: 14,
 };
 
+const smallMobileContinueButton = {
+  minHeight: 52,
+  padding: "10px 16px",
+  fontSize: 15,
+};
+
 const compactSaveBarButton = {
   minHeight: 42,
   fontSize: 13,
+};
+
+const smallMobileSaveBarButton = {
+  minHeight: 48,
+  fontSize: 15,
 };
 
 const compactRepsRoundButton = {
@@ -5336,18 +5850,111 @@ const compactRepsRoundButton = {
   fontSize: 16,
 };
 
+const smallMobileRepsRoundButton = {
+  minHeight: 38,
+  fontSize: 18,
+};
+
 const compactRepsValueCard = {
   minHeight: 48,
   borderRadius: 14,
+};
+
+const smallMobileRepsValueCard = {
+  minHeight: 56,
+  borderRadius: 18,
 };
 
 const compactRepsValueMeta = {
   fontSize: 8,
 };
 
+const smallMobileRepsValueMeta = {
+  fontSize: 9,
+};
+
 const compactRepsValueNumber = {
   marginTop: 2,
   fontSize: 20,
+};
+
+const smallMobileRepsValueNumber = {
+  marginTop: 2,
+  fontSize: 24,
+};
+
+const smallMobileBottomActionDock = {
+  gap: 10,
+  paddingTop: 6,
+  paddingBottom: 8,
+};
+
+const smallMobileRestActionDock = {
+  paddingBottom: 14,
+};
+
+const smallMobileInsightSection = {
+  display: "grid",
+  gap: 8,
+  flexShrink: 0,
+};
+
+const smallMobileInsightStack = {
+  display: "grid",
+  gap: 8,
+};
+
+const smallMobileInsightCard = {
+  minHeight: 0,
+  padding: "8px 10px",
+  borderRadius: 18,
+  background: withAlpha(appPalette.surface, 0.96),
+  boxShadow: `0 10px 20px ${withAlpha(appPalette.surfaceDark, 0.03)}`,
+  display: "grid",
+  gap: 4,
+};
+
+const smallMobileInsightHeader = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+};
+
+const smallMobileInsightTitle = {
+  fontSize: 10,
+  lineHeight: 1.2,
+  fontWeight: 800,
+  letterSpacing: 0.3,
+};
+
+const smallMobileInsightPill = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 22,
+  padding: "0 8px",
+  borderRadius: 999,
+  fontSize: 9,
+  fontWeight: 800,
+  whiteSpace: "nowrap" as const,
+};
+
+const smallMobileInsightValue = {
+  fontSize: 14,
+  lineHeight: 1.2,
+  fontWeight: 800,
+  color: appPalette.textStrong,
+};
+
+const smallMobileFollowupStack = {
+  display: "grid",
+  gap: 10,
+  paddingTop: 4,
+};
+
+const smallMobileRestFollowupStack = {
+  gap: 12,
+  paddingTop: 12,
 };
 
 const compactStretchNextValue = {

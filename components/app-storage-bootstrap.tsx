@@ -5,22 +5,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { appChromeBackground, appPalette, withAlpha } from "@/lib/theme";
 import { initializeNativeAppStorage } from "@/lib/appStorage";
 import { APP_STORAGE_KEYS } from "@/lib/appStorageKeys";
+import { isNativeRuntime } from "@/lib/platform";
 
 type AppStorageBootstrapProps = {
   children: ReactNode;
 };
-
-function isNativeRuntime() {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  return Boolean(
-    (window as typeof window & {
-      Capacitor?: { isNativePlatform?: () => boolean };
-    }).Capacitor?.isNativePlatform?.()
-  );
-}
 
 export function AppStorageBootstrap({
   children,

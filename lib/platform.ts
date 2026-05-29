@@ -8,6 +8,16 @@ export function isNativePlatform() {
   return Capacitor.isNativePlatform();
 }
 
+export function isNativeRuntime(): boolean {
+  // Return false during SSR: the Capacitor bridge is never available server-side,
+  // so we treat SSR the same as a plain web browser. This keeps the server-rendered
+  // HTML consistent with the web-client's initial render and avoids a hydration mismatch.
+  // On iOS/Android Capacitor builds this runs only in the WKWebView / WebView where
+  // window is always defined and isNativePlatform() returns true.
+  if (typeof window === "undefined") return false;
+  return Capacitor.isNativePlatform();
+}
+
 export function getNativePlatform(): NativePlatform {
   return Capacitor.getPlatform() as NativePlatform;
 }
