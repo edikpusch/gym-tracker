@@ -1,0 +1,25 @@
+kind = "mobile"
+previewPath = "/gym-tracker-mobile/"
+title = "Gym Tracker Mobile"
+version = "1.0.0"
+id = "XegfDyZt7HqfW2Bb8Ghoy2"
+router = "path"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+name = "expo"
+paths = [ "/gym-tracker-mobile/" ]
+localPort = 5000
+
+[services.development]
+run = "pnpm --filter @workspace/gym-tracker-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gym-tracker-mobile", "run", "build" ]
+run = "pnpm --filter @workspace/gym-tracker-mobile run serve"
+
+[services.env]
+PORT = "5000"
