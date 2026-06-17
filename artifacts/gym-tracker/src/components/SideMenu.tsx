@@ -94,22 +94,21 @@ export function SideMenu({
         </button>
       </div>
 
-      <div
+      {open && (
+        <div
+          style={drawerBackdrop}
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
         style={{
-          ...drawerOverlay,
-          ...(open ? drawerOverlayOpen : null),
+          ...drawer,
+          ...(side === "right" ? drawerRight : null),
+          ...(open ? drawerOpen : null),
         }}
-        onClick={onClose}
-        aria-hidden={!open}
       >
-        <aside
-          style={{
-            ...drawer,
-            ...(side === "right" ? drawerRight : null),
-            ...(open ? drawerOpen : null),
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
           <div style={drawerHandle} />
 
           <div style={drawerHeader}>
@@ -179,7 +178,6 @@ export function SideMenu({
             ))}
           </nav>
         </aside>
-      </div>
     </>
   );
 }
@@ -254,22 +252,15 @@ const toggleLabel = {
   letterSpacing: 0.2,
 };
 
-const drawerOverlay = {
+const drawerBackdrop = {
   position: "fixed" as const,
   inset: 0,
-  background: "rgba(0,0,0,0)",
-  pointerEvents: "none" as const,
-  transition: `background ${uiTheme.motion.smooth}`,
+  background: "rgba(0,0,0,0.5)",
   zIndex: 98,
 };
 
-const drawerOverlayOpen = {
-  pointerEvents: "auto" as const,
-  background: "rgba(0,0,0,0.5)",
-};
-
 const drawer = {
-  position: "absolute" as const,
+  position: "fixed" as const,
   zIndex: 99,
   left: 0,
   top: 0,

@@ -4755,8 +4755,6 @@ const restFocusStage = {
   gridTemplateRows: "minmax(0, 1fr) auto",
   gap: 8,
   alignContent: "stretch" as const,
-  overflowY: "auto" as const,
-  WebkitOverflowScrolling: "touch" as const,
   paddingRight: 2,
 };
 
@@ -5024,8 +5022,8 @@ const restTimerWrap = {
   justifyContent: "center",
   padding: "0",
   alignItems: "center",
-  flex: 1,
-  minHeight: "clamp(184px, 27vh, 228px)",
+  minHeight: 200,
+  overflow: "visible" as const,
 };
 
 const restBarTrack = {
