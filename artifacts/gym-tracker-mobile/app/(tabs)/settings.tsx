@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React from "react";
 import {
   Platform,
   Pressable,
@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
-import { AppPreferences, getPreferences, savePreferences } from "@/lib/trainingData";
+import { useTheme } from "@/contexts/ThemeContext";
 
 type SettingRowProps = {
   icon: string;
@@ -48,18 +48,10 @@ function SettingRow({ icon, title, subtitle, right, onPress, colors }: SettingRo
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const [prefs, setPrefs] = useState<AppPreferences>({ themeMode: "light" });
-
-  const load = useCallback(async () => {
-    setPrefs(await getPreferences());
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
+  const { themeMode, setThemeMode } = useTheme();
 
   const toggleDark = async (value: boolean) => {
-    const next = { ...prefs, themeMode: value ? ("dark" as const) : ("light" as const) };
-    setPrefs(next);
-    await savePreferences(next);
+    await setThemeMode(value ? "dark" : "light");
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -88,7 +80,7 @@ export default function SettingsScreen() {
           colors={colors}
           right={
             <Switch
-              value={prefs.themeMode === "dark"}
+              value={themeMode === "dark"}
               onValueChange={toggleDark}
               trackColor={{ false: colors.border, true: colors.primary }}
               thumbColor="#fff"
