@@ -258,21 +258,19 @@ const drawerOverlay = {
   position: "fixed" as const,
   inset: 0,
   background: "rgba(0,0,0,0)",
-  opacity: 0,
   pointerEvents: "none" as const,
-  transition: `opacity ${uiTheme.motion.smooth}, background ${uiTheme.motion.smooth}`,
-  zIndex: 100,
+  transition: `background ${uiTheme.motion.smooth}`,
+  zIndex: 98,
 };
 
 const drawerOverlayOpen = {
-  opacity: 1,
   pointerEvents: "auto" as const,
-  background: "rgba(0,0,0,0.45)",
+  background: "rgba(0,0,0,0.5)",
 };
 
 const drawer = {
   position: "absolute" as const,
-  zIndex: 101,
+  zIndex: 99,
   left: 0,
   top: 0,
   bottom: 0,

@@ -2870,8 +2870,6 @@ export function WorkoutScreen({
               border: `1px solid ${theme.border}`,
             }}
           >
-            {!smallMobileMode ? renderRestHistoryCard() : null}
-
             <div style={{ ...restFocusStage, ...(smallMobileMode ? smallMobileRestFocusStage : null) }}>
               <div style={restTimerWrap}>
                 <ProgressRing
@@ -2900,9 +2898,8 @@ export function WorkoutScreen({
                   }}
                 />
               </div>
-              {smallMobileMode ? renderSmallMobileRestSummaryPanel() : null}
-              {renderExerciseInsightCards(true)}
-              {lastSavedSet && isResting && (
+            </div>
+            {lastSavedSet && isResting && (
                 <div style={{
                   display: "flex",
                   alignItems: "center",
@@ -3015,6 +3012,29 @@ export function WorkoutScreen({
                   </div>
                 </div>
               )}
+            <div style={{ ...singleActionDock, ...(smallMobileMode ? smallMobileBottomActionDock : null) }}>
+              <button
+                style={{
+                  ...continueButton,
+                  ...(compactMode ? compactContinueButton : null),
+                  ...(smallMobileMode ? smallMobileContinueButton : null),
+                  background: `linear-gradient(180deg, ${lightenColor(theme.accent, 0.08)} 0%, ${theme.accent} 100%)`,
+                  boxShadow: `0 20px 34px ${accentShadow}`,
+                }}
+                onClick={handleNext}
+              >
+                ⏭ Pause überspringen
+              </button>
+              <button
+                style={{
+                  ...adjustButton,
+                  border: `1px solid ${accentBorder}`,
+                  color: theme.accent,
+                }}
+                onClick={() => setShowAdjustSheet(true)}
+              >
+                + Anpassen
+              </button>
             </div>
             <div style={restWeightSection}>
                 <div style={restWeightLabel}>Nächster Satz</div>
@@ -3123,36 +3143,7 @@ export function WorkoutScreen({
                   </button>
                 </div>
               </div>
-            <div style={{ ...singleActionDock, ...(smallMobileMode ? smallMobileBottomActionDock : null) }}>
-              <button
-                style={{
-                  ...continueButton,
-                  ...(compactMode ? compactContinueButton : null),
-                  ...(smallMobileMode ? smallMobileContinueButton : null),
-                  background: `linear-gradient(180deg, ${lightenColor(theme.accent, 0.08)} 0%, ${theme.accent} 100%)`,
-                  boxShadow: `0 20px 34px ${accentShadow}`,
-                }}
-                onClick={handleNext}
-              >
-                ⏭ Pause überspringen
-              </button>
-              <button
-                style={{
-                  ...adjustButton,
-                  border: `1px solid ${accentBorder}`,
-                  color: theme.accent,
-                }}
-                onClick={() => setShowAdjustSheet(true)}
-              >
-                + Anpassen
-              </button>
-            </div>
-            {smallMobileMode ? (
-              <div style={{ ...smallMobileFollowupStack, ...smallMobileRestFollowupStack }}>
-                {renderRestHistoryCard()}
-                {renderSmallMobileExerciseInsights()}
-              </div>
-            ) : null}
+            {renderRestHistoryCard()}
           </div>
         )}
 
@@ -3985,7 +3976,7 @@ const modalOverlay = {
   position: "fixed" as const,
   inset: 0,
   background: "rgba(0,0,0,0.45)",
-  zIndex: 100,
+  zIndex: 98,
   display: "flex",
   alignItems: "flex-end",
   justifyContent: "center",
@@ -4748,7 +4739,8 @@ const saveButtonLabel = {
 
 const restCard = {
   display: "grid",
-  gridTemplateRows: "auto minmax(0, 1fr) auto auto auto",
+  gridTemplateRows: "minmax(0, 1fr) auto auto auto auto auto",
+  overflowY: "auto" as const,
   gap: 8,
   padding: "10px 10px 12px",
   borderRadius: 24,
@@ -4760,7 +4752,7 @@ const restCard = {
 const restFocusStage = {
   minHeight: 0,
   display: "grid",
-  gridTemplateRows: "minmax(0, 1fr) auto auto auto auto",
+  gridTemplateRows: "minmax(0, 1fr) auto",
   gap: 8,
   alignContent: "stretch" as const,
   overflowY: "auto" as const,

@@ -2762,7 +2762,7 @@ const overlay = {
   display: "flex",
   alignItems: "flex-end" as const,
   justifyContent: "center",
-  zIndex: 100,
+  zIndex: 98,
   padding: "max(12px, env(safe-area-inset-top)) 0 var(--app-bottom-inset) 0",
 };
 
