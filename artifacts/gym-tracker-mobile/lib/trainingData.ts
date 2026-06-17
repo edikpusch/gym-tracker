@@ -198,3 +198,170 @@ export async function savePreferences(prefs: AppPreferences): Promise<void> {
   const current = existing ? JSON.parse(existing) : {};
   await setItem(APP_PREFERENCES_KEY, JSON.stringify({ ...current, ...prefs }));
 }
+
+export async function getSessionSets(sessionId: number): Promise<LoggedSet[]> {
+  const log = await getWorkoutLog();
+  return log.filter((s) => s.sessionId === sessionId);
+}
+
+export type ExerciseProgressItem = {
+  exerciseId: string;
+  exercise: string;
+  latestSet: LoggedSet;
+  previousSet: LoggedSet | null;
+  bestSet: LoggedSet | null;
+  deltaWeight: number;
+  deltaReps: number;
+  kind: "better" | "worse" | "same" | "new";
+};
+
+export async function getExerciseProgress(): Promise<ExerciseProgressItem[]> {
+  const log = await getWorkoutLog();
+  const byExercise: Record<string, LoggedSet[]> = {};
+  for (const set of log) {
+    const key = set.exerciseId ?? set.exercise;
+    if (!byExercise[key]) byExercise[key] = [];
+    byExercise[key].push(set);
+  }
+
+  return Object.entries(byExercise).map(([, sets]) => {
+    const sorted = [...sets].sort((a, b) => a.timestamp - b.timestamp);
+    const sessionIds = [...new Set(sorted.map((s) => s.sessionId))];
+    const latestSessionId = sessionIds[sessionIds.length - 1];
+    const prevSessionId = sessionIds.length >= 2 ? sessionIds[sessionIds.length - 2] : null;
+    const latestSets = sorted.filter((s) => s.sessionId === latestSessionId);
+    const prevSets = prevSessionId ? sorted.filter((s) => s.sessionId === prevSessionId) : [];
+
+    const topSet = (arr: LoggedSet[]) =>
+      arr.reduce<LoggedSet | null>((best, s) => {
+        if (!best) return s;
+        const score = s.weight * s.reps;
+        return score > best.weight * best.reps ? s : best;
+      }, null);
+
+    const latestTop = topSet(latestSets)!;
+    const prevTop = topSet(prevSets);
+    const bestTop = topSet(sorted);
+
+    const deltaWeight = prevTop ? latestTop.weight - prevTop.weight : 0;
+    const deltaReps = prevTop ? latestTop.reps - prevTop.reps : 0;
+    const kind: ExerciseProgressItem["kind"] = !prevTop
+      ? "new"
+      : deltaWeight > 0 || deltaReps > 0
+      ? "better"
+      : deltaWeight < 0 || deltaReps < 0
+      ? "worse"
+      : "same";
+
+    return {
+      exerciseId: sorted[0].exerciseId ?? sorted[0].exercise,
+      exercise: sorted[0].exercise,
+      latestSet: latestTop,
+      previousSet: prevTop,
+      bestSet: bestTop,
+      deltaWeight,
+      deltaReps,
+      kind,
+    };
+  });
+}
+
+export type WorkoutStats = {
+  totalSessions: number;
+  totalSets: number;
+  totalVolumeKg: number;
+  thisWeekSessions: number;
+  lastWeekSessions: number;
+  avgSetsPerSession: number;
+  mostTrainedExercise: string | null;
+};
+
+export async function getWorkoutStats(): Promise<WorkoutStats> {
+  const log = await getWorkoutLog();
+  if (log.length === 0) {
+    return {
+      totalSessions: 0,
+      totalSets: 0,
+      totalVolumeKg: 0,
+      thisWeekSessions: 0,
+      lastWeekSessions: 0,
+      avgSetsPerSession: 0,
+      mostTrainedExercise: null,
+    };
+  }
+
+  const now = Date.now();
+  const week = 7 * 86400000;
+  const sessionIds = [...new Set(log.map((s) => s.sessionId))];
+  const sessionTimestamps = Object.fromEntries(
+    sessionIds.map((id) => {
+      const ts = log.find((s) => s.sessionId === id)?.timestamp ?? 0;
+      return [id, ts];
+    })
+  );
+
+  const thisWeekSessions = sessionIds.filter(
+    (id) => now - sessionTimestamps[id] <= week
+  ).length;
+  const lastWeekSessions = sessionIds.filter((id) => {
+    const diff = now - sessionTimestamps[id];
+    return diff > week && diff <= 2 * week;
+  }).length;
+
+  const totalVolumeKg = log.reduce((sum, s) => sum + s.weight * s.reps, 0);
+
+  const exerciseCounts: Record<string, number> = {};
+  for (const s of log) {
+    exerciseCounts[s.exercise] = (exerciseCounts[s.exercise] ?? 0) + 1;
+  }
+  const mostTrainedExercise =
+    Object.entries(exerciseCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  return {
+    totalSessions: sessionIds.length,
+    totalSets: log.length,
+    totalVolumeKg: Math.round(totalVolumeKg),
+    thisWeekSessions,
+    lastWeekSessions,
+    avgSetsPerSession:
+      sessionIds.length > 0
+        ? Math.round((log.length / sessionIds.length) * 10) / 10
+        : 0,
+    mostTrainedExercise,
+  };
+}
+
+export type ExerciseLibraryItem = {
+  id: string;
+  name: string;
+  category: string;
+  categoryColor: string;
+};
+
+export function getExerciseLibrary(): ExerciseLibraryItem[] {
+  const categoryMeta: Record<WorkoutType, { label: string; color: string }> = {
+    push: { label: "Push", color: "#E52B2E" },
+    pull: { label: "Pull", color: "#2563EB" },
+    legs: { label: "Beine", color: "#16A34A" },
+    mixed: { label: "Mixed", color: "#16A34A" },
+  };
+
+  const seen = new Set<string>();
+  const items: ExerciseLibraryItem[] = [];
+
+  for (const [type, day] of Object.entries(DEFAULT_PLAN) as [WorkoutType, typeof DEFAULT_PLAN[WorkoutType]][]) {
+    for (const ex of day.exercises) {
+      if (!seen.has(ex.id)) {
+        seen.add(ex.id);
+        items.push({
+          id: ex.id,
+          name: ex.name,
+          category: categoryMeta[type].label,
+          categoryColor: categoryMeta[type].color,
+        });
+      }
+    }
+  }
+
+  return items.sort((a, b) => a.name.localeCompare(b.name));
+}

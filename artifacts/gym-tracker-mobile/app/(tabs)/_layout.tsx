@@ -5,9 +5,10 @@ import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
+import { useTheme } from "@/contexts/ThemeContext";
 
 function NativeTabLayout() {
   return (
@@ -19,6 +20,14 @@ function NativeTabLayout() {
       <NativeTabs.Trigger name="history">
         <Icon sf={{ default: "clock", selected: "clock.fill" }} />
         <Label>Verlauf</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="progress">
+        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+        <Label>Fortschritt</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="statistics">
+        <Icon sf={{ default: "chart.pie", selected: "chart.pie.fill" }} />
+        <Label>Statistiken</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="weight">
         <Icon sf={{ default: "chart.line.uptrend.xyaxis", selected: "chart.line.uptrend.xyaxis.circle.fill" }} />
@@ -34,8 +43,8 @@ function NativeTabLayout() {
 
 function ClassicTabLayout() {
   const colors = useColors();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { themeMode } = useTheme();
+  const isDark = themeMode === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
@@ -86,6 +95,30 @@ function ClassicTabLayout() {
               <SymbolView name="clock" tintColor={color} size={24} />
             ) : (
               <Ionicons name="time-outline" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="progress"
+        options={{
+          title: "Fortschritt",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="chart.bar" tintColor={color} size={24} />
+            ) : (
+              <Feather name="bar-chart-2" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="statistics"
+        options={{
+          title: "Statistiken",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="chart.pie" tintColor={color} size={24} />
+            ) : (
+              <Feather name="pie-chart" size={22} color={color} />
             ),
         }}
       />

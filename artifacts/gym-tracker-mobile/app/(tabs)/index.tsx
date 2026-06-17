@@ -78,6 +78,24 @@ export default function HomeScreen() {
           );
         })}
       </View>
+
+      <Pressable
+        onPress={() => router.push("/exercise" as never)}
+        style={({ pressed }) => [styles.libraryBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
+      >
+        <View style={[styles.libraryIcon, { backgroundColor: colors.primary + "15" }]}>
+          <Feather name="book-open" size={18} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.libraryTitle, { color: colors.foreground, fontFamily: "Inter_500Medium" }]}>
+            Übungsbibliothek
+          </Text>
+          <Text style={[styles.librarySub, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
+            Alle verfügbaren Übungen ansehen
+          </Text>
+        </View>
+        <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+      </Pressable>
     </ScrollView>
   );
 }
@@ -143,4 +161,8 @@ const styles = StyleSheet.create({
   chip: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.18)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   chipText: { fontSize: 12, color: "rgba(255,255,255,0.8)" },
   count: { fontSize: 12, color: "rgba(255,255,255,0.7)" },
+  libraryBtn: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginTop: 16 },
+  libraryIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  libraryTitle: { fontSize: 15, marginBottom: 2 },
+  librarySub: { fontSize: 12 },
 });

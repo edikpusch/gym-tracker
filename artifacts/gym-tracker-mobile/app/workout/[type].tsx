@@ -171,10 +171,15 @@ export default function WorkoutScreen() {
           {loggedSets.length} Sets · {totalExercises} Übungen
         </Text>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() =>
+            router.replace({
+              pathname: "/workout/summary",
+              params: { sessionId: String(sessionId), workoutType, dayName: day.name },
+            })
+          }
           style={[styles.donBtn, { backgroundColor: accentColor }]}
         >
-          <Text style={[styles.donBtnText, { fontFamily: "Inter_600SemiBold" }]}>Zurück zur Übersicht</Text>
+          <Text style={[styles.donBtnText, { fontFamily: "Inter_600SemiBold" }]}>Zusammenfassung ansehen</Text>
         </Pressable>
       </View>
     );

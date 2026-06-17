@@ -28,6 +28,14 @@ function RootLayoutNav() {
         name="workout/[type]"
         options={{ headerShown: false, animation: "slide_from_bottom", gestureEnabled: false }}
       />
+      <Stack.Screen
+        name="workout/summary"
+        options={{ headerShown: false, animation: "slide_from_bottom" }}
+      />
+      <Stack.Screen
+        name="exercise"
+        options={{ headerShown: false, animation: "slide_from_right" }}
+      />
     </Stack>
   );
 }
