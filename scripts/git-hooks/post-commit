@@ -1,0 +1,23 @@
+#!/bin/bash
+# Automatically push every commit to GitHub (origin).
+# Installed to .git/hooks/post-commit by scripts/post-merge.sh.
+
+if [ -z "$GITHUB_PERSONAL_ACCESS_TOKEN" ]; then
+  echo "GitHub sync: GITHUB_PERSONAL_ACCESS_TOKEN not set — skipping."
+  exit 0
+fi
+
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+echo "GitHub sync: pushing '${CURRENT_BRANCH}' to origin..."
+
+git \
+  -c "credential.helper=!f() { echo username=x-token; echo password=\${GITHUB_PERSONAL_ACCESS_TOKEN}; }; f" \
+  push origin "HEAD:${CURRENT_BRANCH}" 2>&1
+
+EXIT_CODE=$?
+if [ $EXIT_CODE -ne 0 ]; then
+  echo "GitHub sync: FAILED (exit ${EXIT_CODE}) — check GITHUB_PERSONAL_ACCESS_TOKEN and whether the remote has diverged."
+  exit $EXIT_CODE
+fi
+
+echo "GitHub sync: success."
