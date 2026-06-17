@@ -257,21 +257,22 @@ const toggleLabel = {
 const drawerOverlay = {
   position: "fixed" as const,
   inset: 0,
-  background: withAlpha(appPalette.surfaceDark, 0),
+  background: "rgba(0,0,0,0)",
   opacity: 0,
   pointerEvents: "none" as const,
   transition: `opacity ${uiTheme.motion.smooth}, background ${uiTheme.motion.smooth}`,
-  zIndex: 55,
+  zIndex: 100,
 };
 
 const drawerOverlayOpen = {
   opacity: 1,
   pointerEvents: "auto" as const,
-  background: withAlpha(appPalette.surfaceDark, 0.32),
+  background: "rgba(0,0,0,0.45)",
 };
 
 const drawer = {
   position: "absolute" as const,
+  zIndex: 101,
   left: 0,
   top: 0,
   bottom: 0,

@@ -29,18 +29,19 @@ export function BottomSheet({ open, onClose, children, style }: BottomSheetProps
 const overlay = {
   position: "fixed" as const,
   inset: 0,
-  background: withAlpha(appPalette.surfaceDark, 0.38),
+  background: "rgba(0,0,0,0.45)",
   display: "flex",
   alignItems: "flex-end",
   justifyContent: "center",
   padding: "max(12px, env(safe-area-inset-top)) 0 0 0",
-  zIndex: 80,
+  zIndex: 100,
   animation: "codex-fade-in 180ms ease",
 };
 
 const sheet = {
   width: "100%",
   maxWidth: 440,
+  zIndex: 101,
   maxHeight:
     "calc(var(--app-viewport-height, 100dvh) - max(12px, env(safe-area-inset-top)))",
   borderRadius: `${uiTheme.radius.large}px ${uiTheme.radius.large}px 0 0`,

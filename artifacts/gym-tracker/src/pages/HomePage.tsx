@@ -2758,11 +2758,11 @@ const dayCopy = {
 const overlay = {
   position: "fixed" as const,
   inset: 0,
-  background: `linear-gradient(180deg, ${withAlpha(appPalette.surfaceDark, 0.18)} 0%, ${withAlpha(appPalette.surfaceDark, 0.42)} 100%)`,
+  background: "rgba(0,0,0,0.45)",
   display: "flex",
   alignItems: "flex-end" as const,
   justifyContent: "center",
-  zIndex: 50,
+  zIndex: 100,
   padding: "max(12px, env(safe-area-inset-top)) 0 var(--app-bottom-inset) 0",
 };
 

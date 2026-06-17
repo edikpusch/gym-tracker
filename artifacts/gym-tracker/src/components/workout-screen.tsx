@@ -2339,7 +2339,7 @@ export function WorkoutScreen({
       <div style={restHistoryActions}>
         <button
           style={{ ...restHistoryButton, color: theme.accent, border: `1px solid ${accentBorder}` }}
-          onClick={() => setShowPlanModal(true)}
+          onClick={() => { setShowPlanModal(true); setExpandedPlanExerciseIndex(exerciseIndex); }}
         >
           Alle Sätze anzeigen
         </button>
@@ -2620,7 +2620,7 @@ export function WorkoutScreen({
           </div>
         ) : !isResting ? (
           <div style={{ ...activeStack, ...(compactMode ? compactActiveStack : null) }}>
-            {!smallMobileMode ? renderExerciseInsightCards() : null}
+            {renderExerciseInsightCards()}
 
             <div
               style={{
@@ -2645,8 +2645,6 @@ export function WorkoutScreen({
                   </div>
                 </div>
               </div>
-
-              {renderActiveSummaryPanel()}
 
               <div
                 style={{
@@ -2850,7 +2848,7 @@ export function WorkoutScreen({
               >
                 {saveFeedbackVisible ? "✓ Gespeichert" : "⊙ Satz speichern"}
                </button>
-               <button style={{ ...allSetsButton, color: theme.accent, border: `1px solid ${accentBorder}` }} onClick={() => setShowPlanModal(true)}>
+               <button style={{ ...allSetsButton, color: theme.accent, border: `1px solid ${accentBorder}` }} onClick={() => { setShowPlanModal(true); setExpandedPlanExerciseIndex(exerciseIndex); }}>
                  ☰ Alle Sätze anzeigen
                </button>
                <button
@@ -2902,10 +2900,8 @@ export function WorkoutScreen({
                   }}
                 />
               </div>
-              {smallMobileMode
-                ? renderSmallMobileRestSummaryPanel()
-                : renderFlowContextPanel(restSuggestion.label, activeSetRecommendationTone, true)}
-              {!smallMobileMode ? renderExerciseInsightCards(true) : null}
+              {smallMobileMode ? renderSmallMobileRestSummaryPanel() : null}
+              {renderExerciseInsightCards(true)}
               {lastSavedSet && isResting && (
                 <div style={{
                   display: "flex",
@@ -4764,7 +4760,7 @@ const restCard = {
 const restFocusStage = {
   minHeight: 0,
   display: "grid",
-  gridTemplateRows: "minmax(0, 1fr) auto auto auto auto",
+  gridTemplateRows: "minmax(0, 1fr) auto auto auto auto auto auto",
   gap: 8,
   alignContent: "stretch" as const,
   overflowY: "auto" as const,
