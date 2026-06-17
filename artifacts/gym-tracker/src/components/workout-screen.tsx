@@ -224,6 +224,10 @@ export function WorkoutScreen({
   const [setDataVersion, setSetDataVersion] = useState(0);
   const [repsFeedbackDirection, setRepsFeedbackDirection] = useState<"up" | "down" | null>(null);
   const [repsFeedbackTick, setRepsFeedbackTick] = useState(0);
+  const [showLastSetEditor, setShowLastSetEditor] = useState(false);
+  const [lastSetEditWeight, setLastSetEditWeight] = useState("");
+  const [lastSetEditReps, setLastSetEditReps] = useState("");
+  const [adjustSheetExpanded, setAdjustSheetExpanded] = useState(false);
 
   const [weight, setWeight] = useState(40);
   const [manualWeightInput, setManualWeightInput] = useState("40");
@@ -773,6 +777,31 @@ export function WorkoutScreen({
     );
     setSetDataVersion((current) => current + 1);
     setEditableSet(null);
+  }
+
+  function openLastSetQuickEdit() {
+    if (!lastSavedSet) return;
+    setLastSetEditWeight(String(lastSavedSet.weight));
+    setLastSetEditReps(String(lastSavedSet.reps));
+    setShowLastSetEditor(true);
+  }
+
+  async function saveLastSetQuickEdit() {
+    if (!lastSavedSet) return;
+    const nextWeight = parseFloat(lastSetEditWeight.replace(",", "."));
+    const nextReps = parseFloat(lastSetEditReps.replace(",", "."));
+    if (isNaN(nextWeight) || isNaN(nextReps) || nextReps < 1) return;
+
+    const updated = await updateStoredSet(lastSavedSet.timestamp, {
+      weight: nextWeight,
+      reps: Math.round(nextReps),
+    });
+
+    if (updated) {
+      setLoggedSets(prev => prev.map(s => s.timestamp === updated.timestamp ? updated : s));
+      setSessionSets(prev => prev.map(s => s && s.timestamp === updated.timestamp ? updated : s));
+    }
+    setShowLastSetEditor(false);
   }
 
   async function deleteEditedSet() {
@@ -2877,6 +2906,119 @@ export function WorkoutScreen({
                 ? renderSmallMobileRestSummaryPanel()
                 : renderFlowContextPanel(restSuggestion.label, activeSetRecommendationTone, true)}
               {!smallMobileMode ? renderExerciseInsightCards(true) : null}
+              {lastSavedSet && isResting && (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "10px 16px",
+                  margin: "8px 0",
+                  background: appPalette.surface,
+                  borderRadius: 14,
+                  border: `1px solid ${theme.border}`,
+                }}>
+                  <span style={{ fontSize: 13, color: appPalette.textMuted, fontWeight: 500 }}>
+                    ✓ Gespeichert
+                  </span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: appPalette.textStrong }}>
+                    {lastSavedSet.weight} kg × {lastSavedSet.reps}
+                  </span>
+                  <button
+                    style={{
+                      fontSize: 18,
+                      background: "none",
+                      border: "none",
+                      padding: "4px 8px",
+                      color: theme.accent,
+                      cursor: "pointer",
+                    }}
+                    onClick={openLastSetQuickEdit}
+                  >
+                    ✏️
+                  </button>
+                </div>
+              )}
+              {showLastSetEditor && lastSavedSet && (
+                <div
+                  style={{
+                    position: "fixed", inset: 0, zIndex: 999,
+                    background: "rgba(0,0,0,0.45)",
+                    display: "flex", alignItems: "flex-end",
+                  }}
+                  onClick={() => setShowLastSetEditor(false)}
+                >
+                  <div
+                    style={{
+                      width: "100%", background: appPalette.surface,
+                      borderRadius: "24px 24px 0 0", padding: "24px 20px 40px",
+                    }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: appPalette.textStrong }}>
+                      Satz korrigieren
+                    </div>
+                    <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: appPalette.textMuted, marginBottom: 6 }}>
+                          GEWICHT (KG)
+                        </div>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          value={lastSetEditWeight}
+                          onChange={e => setLastSetEditWeight(e.target.value)}
+                          style={{
+                            width: "100%", padding: "14px 16px",
+                            fontSize: 22, fontWeight: 700, textAlign: "center",
+                            border: `2px solid ${theme.accent}`, borderRadius: 14,
+                            background: appPalette.surfaceSoft, color: appPalette.textStrong,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: appPalette.textMuted, marginBottom: 6 }}>
+                          WIEDERHOLUNGEN
+                        </div>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={lastSetEditReps}
+                          onChange={e => setLastSetEditReps(e.target.value)}
+                          style={{
+                            width: "100%", padding: "14px 16px",
+                            fontSize: 22, fontWeight: 700, textAlign: "center",
+                            border: `2px solid ${theme.accent}`, borderRadius: 14,
+                            background: appPalette.surfaceSoft, color: appPalette.textStrong,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={saveLastSetQuickEdit}
+                      style={{
+                        width: "100%", padding: "16px",
+                        background: theme.accent, color: "#fff",
+                        fontSize: 17, fontWeight: 700, borderRadius: 16,
+                        border: "none", marginBottom: 10, cursor: "pointer",
+                      }}
+                    >
+                      Speichern
+                    </button>
+                    <button
+                      onClick={() => setShowLastSetEditor(false)}
+                      style={{
+                        width: "100%", padding: "14px",
+                        background: "none", color: appPalette.textMuted,
+                        fontSize: 16, borderRadius: 16, border: "none", cursor: "pointer",
+                      }}
+                    >
+                      Abbrechen
+                    </button>
+                  </div>
+                </div>
+              )}
               <div style={restWeightSection}>
                 <div style={restWeightLabel}>Nächster Satz</div>
                 <div style={{ ...restWeightValueLarge, ...(compactMode ? compactRestWeightValueLarge : null) }}>
@@ -2942,6 +3084,48 @@ export function WorkoutScreen({
                     </button>
                 </div>
               </div>
+              <div style={{ marginTop: 12, textAlign: "center" }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, letterSpacing: 1,
+                  color: appPalette.textMuted, marginBottom: 8,
+                }}>
+                  WIEDERHOLUNGEN
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                  <button
+                    style={{
+                      width: 52, height: 52, borderRadius: 14,
+                      fontSize: 22, fontWeight: 700,
+                      color: theme.accent,
+                      border: `1px solid ${theme.border}`,
+                      background: appPalette.surface,
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setReps(r => Math.max(1, r - 1))}
+                  >
+                    −
+                  </button>
+                  <div style={{
+                    minWidth: 64, textAlign: "center",
+                    fontSize: 26, fontWeight: 800, color: appPalette.textStrong,
+                  }}>
+                    {reps}
+                  </div>
+                  <button
+                    style={{
+                      width: 52, height: 52, borderRadius: 14,
+                      fontSize: 22, fontWeight: 700,
+                      color: theme.accent,
+                      border: `1px solid ${theme.border}`,
+                      background: appPalette.surface,
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setReps(r => r + 1)}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
             </div>
             <div style={{ ...singleActionDock, ...(smallMobileMode ? smallMobileBottomActionDock : null) }}>
               <button
@@ -2977,57 +3161,22 @@ export function WorkoutScreen({
         )}
 
         {showAdjustSheet ? (
-          <BottomSheet open={showAdjustSheet} onClose={() => setShowAdjustSheet(false)} style={workoutSheet}>
+          <BottomSheet open={showAdjustSheet} onClose={() => { setShowAdjustSheet(false); setAdjustSheetExpanded(false); }} style={workoutSheet}>
               <div style={workoutSheetHeader}>
                 <div>
                   <div style={workoutSheetEyebrow}>Workout</div>
                   <div style={workoutSheetTitle}>Schnell anpassen</div>
                 </div>
-                <button style={workoutSheetClose} onClick={() => setShowAdjustSheet(false)}>
+                <button style={workoutSheetClose} onClick={() => { setShowAdjustSheet(false); setAdjustSheetExpanded(false); }}>
                   ×
                 </button>
               </div>
               <div style={adjustList}>
-                <button style={adjustListButton} onClick={() => handleAdjustAction("addExercise")}>
-                  <span style={adjustListIcon}>🏋️</span>
-                  <span>
-                    <div style={adjustListLabel}>Übung hinzufügen</div>
-                    <div style={adjustListHint}>Neue Übung direkt danach einfügen</div>
-                  </span>
-                </button>
-                <button style={adjustListButton} onClick={() => handleAdjustAction("addStretch")}>
-                  <span style={adjustListIcon}>🧘</span>
-                  <span>
-                    <div style={adjustListLabel}>Dehnen hinzufügen</div>
-                    <div style={adjustListHint}>Zusätzlichen Dehnblock einbauen</div>
-                  </span>
-                </button>
                 <button style={adjustListButton} onClick={() => handleAdjustAction("addPause")}>
                   <span style={adjustListIcon}>⏱️</span>
                   <span>
                     <div style={adjustListLabel}>Pause hinzufügen</div>
                     <div style={adjustListHint}>Sofort zusätzliche Pause starten</div>
-                  </span>
-                </button>
-                <button style={adjustListButton} onClick={() => handleAdjustAction("skipExercise")}>
-                  <span style={adjustListIcon}>⏭</span>
-                  <span>
-                    <div style={adjustListLabel}>Aktuelle Übung überspringen</div>
-                    <div style={adjustListHint}>Nur diese Session weiterziehen</div>
-                  </span>
-                </button>
-                <button style={adjustListButton} onClick={() => handleAdjustAction("skipSet")}>
-                  <span style={adjustListIcon}>↷</span>
-                  <span>
-                    <div style={adjustListLabel}>Anstehenden Satz überspringen</div>
-                    <div style={adjustListHint}>Satz für heute oder dauerhaft reduzieren</div>
-                  </span>
-                </button>
-                <button style={adjustListButton} onClick={() => handleAdjustAction("replaceExercise")}>
-                  <span style={adjustListIcon}>🔄</span>
-                  <span>
-                    <div style={adjustListLabel}>Übung ersetzen</div>
-                    <div style={adjustListHint}>Aktuelle Übung gegen eine andere tauschen</div>
                   </span>
                 </button>
                 <button style={adjustListButton} onClick={() => handleAdjustAction("extraSet")}>
@@ -3037,6 +3186,57 @@ export function WorkoutScreen({
                     <div style={adjustListHint}>Einen weiteren Arbeitssatz anhängen</div>
                   </span>
                 </button>
+                <button style={adjustListButton} onClick={() => handleAdjustAction("skipExercise")}>
+                  <span style={adjustListIcon}>⏭</span>
+                  <span>
+                    <div style={adjustListLabel}>Aktuelle Übung überspringen</div>
+                    <div style={adjustListHint}>Nur diese Session weiterziehen</div>
+                  </span>
+                </button>
+                {!adjustSheetExpanded ? (
+                  <button
+                    style={{
+                      ...adjustListButton,
+                      justifyContent: "center",
+                      color: appPalette.textMuted,
+                      fontSize: 14,
+                    }}
+                    onClick={() => setAdjustSheetExpanded(true)}
+                  >
+                    ··· Mehr anzeigen
+                  </button>
+                ) : (
+                  <>
+                    <button style={adjustListButton} onClick={() => handleAdjustAction("addExercise")}>
+                      <span style={adjustListIcon}>🏋️</span>
+                      <span>
+                        <div style={adjustListLabel}>Übung hinzufügen</div>
+                        <div style={adjustListHint}>Neue Übung direkt danach einfügen</div>
+                      </span>
+                    </button>
+                    <button style={adjustListButton} onClick={() => handleAdjustAction("addStretch")}>
+                      <span style={adjustListIcon}>🧘</span>
+                      <span>
+                        <div style={adjustListLabel}>Dehnen hinzufügen</div>
+                        <div style={adjustListHint}>Zusätzlichen Dehnblock einbauen</div>
+                      </span>
+                    </button>
+                    <button style={adjustListButton} onClick={() => handleAdjustAction("skipSet")}>
+                      <span style={adjustListIcon}>↷</span>
+                      <span>
+                        <div style={adjustListLabel}>Anstehenden Satz überspringen</div>
+                        <div style={adjustListHint}>Satz für heute oder dauerhaft reduzieren</div>
+                      </span>
+                    </button>
+                    <button style={adjustListButton} onClick={() => handleAdjustAction("replaceExercise")}>
+                      <span style={adjustListIcon}>🔄</span>
+                      <span>
+                        <div style={adjustListLabel}>Übung ersetzen</div>
+                        <div style={adjustListHint}>Aktuelle Übung gegen eine andere tauschen</div>
+                      </span>
+                    </button>
+                  </>
+                )}
               </div>
           </BottomSheet>
         ) : null}
@@ -3626,22 +3826,9 @@ export function WorkoutScreen({
                       <span style={modalItemMeta}>{entry.completed} / {entry.total} Sätze</span>
                     </div>
                     <div style={modalItemRight}>
-                      <div style={modalDots}>
-                        {Array.from({ length: entry.total }).map((_, di) => (
-                          <span
-                            key={`md-${di}`}
-                            style={{
-                              ...modalDot,
-                              ...(di < entry.completed
-                                ? { ...modalDotDone, background: theme.accent }
-                                : null),
-                              ...(index === exerciseIndex
-                                ? { borderColor: theme.border }
-                                : null),
-                            }}
-                          />
-                        ))}
-                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: theme.accent, marginRight: 8 }}>
+                        {entry.completed}/{entry.total}
+                      </span>
                       <span style={modalChevron}>
                         {expandedPlanExerciseIndex === index ? "▾" : "▸"}
                       </span>

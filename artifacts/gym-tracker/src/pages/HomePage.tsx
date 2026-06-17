@@ -2665,6 +2665,8 @@ const primaryActionButton = {
   padding: "0 16px",
   fontSize: 11,
   letterSpacing: 0.2,
+  background: "#16A34A",
+  animation: "pulse 2s infinite",
 };
 
 const dayGrid = {

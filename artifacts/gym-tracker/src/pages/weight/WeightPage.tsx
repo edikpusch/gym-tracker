@@ -277,6 +277,62 @@ export default function WeightPage() {
         </AppButton>
       </AppCard>
 
+      {entries.length >= 2 && (() => {
+        const chartEntries = entries.slice(0, 10).reverse();
+        const weights = chartEntries.map(e => e.weight);
+        const minW = Math.min(...weights);
+        const maxW = Math.max(...weights);
+        const range = maxW - minW || 1;
+        const padX = 16;
+        const padY = 12;
+        const W = 340;
+        const H = 96;
+        const toX = (i: number) => padX + (i / (chartEntries.length - 1)) * (W - padX * 2);
+        const toY = (w: number) => padY + (1 - (w - minW) / range) * (H - padY * 2);
+        const points = chartEntries.map((e, i) => `${toX(i)},${toY(e.weight)}`).join(" ");
+        return (
+          <AppCard style={{ ...sectionCard, overflow: "hidden" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: appPalette.textMuted, marginBottom: 4 }}>
+              Verlauf (letzte {chartEntries.length} Einträge)
+            </div>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 96, display: "block" }}>
+              <polyline
+                fill="none"
+                stroke="#16A34A"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                points={points}
+              />
+              {chartEntries.map((e, i) => {
+                const isLast = i === chartEntries.length - 1;
+                return (
+                  <circle
+                    key={e.id}
+                    cx={toX(i)}
+                    cy={toY(e.weight)}
+                    r={isLast ? 5 : 3}
+                    fill={isLast ? "#16A34A" : appPalette.surface}
+                    stroke="#16A34A"
+                    strokeWidth={isLast ? 0 : 2}
+                  />
+                );
+              })}
+              <text
+                x={toX(chartEntries.length - 1)}
+                y={toY(chartEntries[chartEntries.length - 1].weight) - 8}
+                textAnchor="middle"
+                fontSize="11"
+                fontWeight="700"
+                fill="#16A34A"
+              >
+                {chartEntries[chartEntries.length - 1].weight} kg
+              </text>
+            </svg>
+          </AppCard>
+        );
+      })()}
+
       <AppCard style={sectionCard}>
         <div style={sectionHead}>
           <div style={sectionTitle}>Verlauf</div>

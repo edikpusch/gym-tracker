@@ -189,7 +189,6 @@ export function ensureCurrentPlanStorage() {
       return;
     }
 
-    removeStorageItem(WORKOUT_LOG_KEY);
     setStorageItem(PLAN_VERSION_KEY, PLAN_VERSION);
   } catch (error) {
     console.error("Local plan storage could not be updated:", error);
@@ -975,7 +974,7 @@ export async function saveSet({
     set,
     sessionId,
     timestamp: Date.now(),
-    type: type ?? detectWorkoutType(exercise),
+    type: type ?? "workout",
     planId,
     planName,
     dayId,
@@ -1029,39 +1028,4 @@ export async function deleteStoredSet(timestamp: number): Promise<boolean> {
 
   writeStoredSets(nextEntries);
   return true;
-}
-
-function detectWorkoutType(exercise: string) {
-  if (
-    [
-      "benchpress",
-      "pullups_wide",
-      "shoulderpress",
-      "dips",
-      "bulgarian",
-      "hanging_leg_raises",
-    ].includes(exercise)
-  ) {
-    return "push";
-  }
-
-  if (
-    [
-      "rows",
-      "pushups",
-      "romanian_deadlift",
-      "face_pulls",
-      "walking_lunges",
-    ].includes(exercise)
-  ) {
-    return "pull";
-  }
-
-  if (
-    ["squat", "pullups", "shoulderpress_pushups", "core"].includes(exercise)
-  ) {
-    return "mixed";
-  }
-
-  return "workout";
 }
