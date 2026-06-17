@@ -2620,7 +2620,7 @@ export function WorkoutScreen({
           </div>
         ) : !isResting ? (
           <div style={{ ...activeStack, ...(compactMode ? compactActiveStack : null) }}>
-            {renderExerciseInsightCards()}
+            {!smallMobileMode ? renderExerciseInsightCards() : null}
 
             <div
               style={{
@@ -3015,7 +3015,8 @@ export function WorkoutScreen({
                   </div>
                 </div>
               )}
-              <div style={restWeightSection}>
+            </div>
+            <div style={restWeightSection}>
                 <div style={restWeightLabel}>Nächster Satz</div>
                 <div style={{ ...restWeightValueLarge, ...(compactMode ? compactRestWeightValueLarge : null) }}>
                   {displayedWeight}
@@ -3122,7 +3123,6 @@ export function WorkoutScreen({
                   </button>
                 </div>
               </div>
-            </div>
             <div style={{ ...singleActionDock, ...(smallMobileMode ? smallMobileBottomActionDock : null) }}>
               <button
                 style={{
@@ -3984,7 +3984,7 @@ const planButton = {
 const modalOverlay = {
   position: "fixed" as const,
   inset: 0,
-  background: withAlpha(appPalette.surfaceDark, 0.45),
+  background: "rgba(0,0,0,0.45)",
   zIndex: 100,
   display: "flex",
   alignItems: "flex-end",
@@ -4748,7 +4748,7 @@ const saveButtonLabel = {
 
 const restCard = {
   display: "grid",
-  gridTemplateRows: "auto minmax(0, 1fr) auto",
+  gridTemplateRows: "auto minmax(0, 1fr) auto auto auto",
   gap: 8,
   padding: "10px 10px 12px",
   borderRadius: 24,
@@ -4760,7 +4760,7 @@ const restCard = {
 const restFocusStage = {
   minHeight: 0,
   display: "grid",
-  gridTemplateRows: "minmax(0, 1fr) auto auto auto auto auto auto",
+  gridTemplateRows: "minmax(0, 1fr) auto auto auto auto",
   gap: 8,
   alignContent: "stretch" as const,
   overflowY: "auto" as const,
