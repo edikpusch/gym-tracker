@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getTrainingPlan, getActivePlanId, getDayBlocks, type TrainingDay, type TrainingExercise } from "@/lib/trainingPlans";
 import { type TrainingPlanBlock } from "@/lib/trainingModel";
-import { saveSet, saveSession, updateSession, getLastSessionSets, getBestSet, saveActiveWorkout, getActiveWorkout, clearActiveWorkout, type SetEntry } from "@/lib/db";
+import { saveSet, saveSession, updateSession, getLastSessionSets, getBestSet, saveActiveWorkout, getActiveWorkout, clearActiveWorkout, setSetting, type SetEntry } from "@/lib/db";
 import { scheduleRestNotification, clearRestNotification } from "@/lib/restNotifications";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { RestOverlay } from "@/components/workout/RestOverlay";
@@ -84,6 +84,9 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
       sets: [],
     }));
     setExerciseStates(states);
+
+    // Remember last used day for smart navigation
+    void setSetting("lastWorkoutDayId", foundDay.id);
 
     // Save session record
     saveSession({
