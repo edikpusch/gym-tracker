@@ -1,1069 +1,134 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import { BottomNav } from "@/components/ui/BottomNav";
+import { getRecentSessions, getSetsForSession, type WorkoutSession, type SetEntry } from "@/lib/db";
 
-import { AppBadge } from "@/components/ui/AppBadge";
-import { AppButton } from "@/components/ui/AppButton";
-import { AppCard } from "@/components/ui/AppCard";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { NoticeDialog } from "@/components/ui/NoticeDialog";
-import { clearActiveWorkoutState, getActiveWorkoutState } from "@/lib/activeWorkout";
-import { appChromeBackground, appPalette, withAlpha } from "@/lib/theme";
-import {
-  getCoachDecision,
-  deleteWorkoutSession,
-  getAllSets,
-  getLoggedSetExerciseReference,
-  getTopSet,
-  isLoggedSetEntry,
-  type SetType,
-  type WorkoutLogEntry,
-} from "@/lib/workoutEngine";
-import { getActivePlanId, getTrainingPlan } from "@/lib/trainingPlans";
-import { getExerciseLabel } from "@/lib/workoutUi";
-
-type SessionExerciseSummary = {
-  exercise: string;
-  exerciseId: string;
-  topSet: SetType | null;
-  previousTopSet: SetType | null;
-  coach: ReturnType<typeof getCoachDecision>;
+type SessionDetail = WorkoutSession & {
+  volume: number;
+  setCount: number;
+  durationMin: number;
+  sets: SetEntry[];
 };
 
-type SessionCard = {
-  sessionId: string;
-  timestamp: number;
-  type: string;
-  typeLabel: string;
-  planId: string;
-  planName: string;
-  date: string;
-  weekday: string;
-  duration: number;
-  sets: WorkoutLogEntry[];
-  summaries: SessionExerciseSummary[];
-};
+function formatDate(ts: number) {
+  return new Date(ts).toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
 
-export default function HistoryPage() {
-  const [sessions, setSessions] = useState<SessionCard[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
-  const [expandedSetListSessionId, setExpandedSetListSessionId] = useState<string | null>(null);
-  const [expandedExerciseKey, setExpandedExerciseKey] = useState<string | null>(null);
-  const [activePlanId, setActivePlanIdState] = useState("my-plan");
-  const [showAllPlans, setShowAllPlans] = useState(false);
-  const [compactMode, setCompactMode] = useState(false);
-  const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
-  const [deleteFailureNotice, setDeleteFailureNotice] = useState(false);
+function formatTime(ts: number) {
+  return new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
 
-  useEffect(() => {
-    setActivePlanIdState(getActivePlanId());
-  }, []);
-
-  useEffect(() => {
-    void loadSessions();
-  }, []);
-
-  useEffect(() => {
-    function updateCompactMode() {
-      const nextCompactMode =
-        window.innerHeight <= 820 ||
-        (window.innerHeight <= 900 && window.innerWidth <= 400);
-      setCompactMode(nextCompactMode);
-    }
-
-    updateCompactMode();
-    window.addEventListener("resize", updateCompactMode);
-
-    return () => window.removeEventListener("resize", updateCompactMode);
-  }, []);
-
-  const activePlan = useMemo(() => getTrainingPlan(activePlanId), [activePlanId]);
-
-  const visibleSessions = useMemo(() => {
-    if (showAllPlans) {
-      return sessions;
-    }
-
-    return sessions.filter((session) => session.planId === activePlanId);
-  }, [sessions, showAllPlans, activePlanId]);
-
-  async function loadSessions() {
-    try {
-      setLoading(true);
-
-      const sets = await getAllSets();
-      const grouped = sets.reduce<Record<string, WorkoutLogEntry[]>>((acc, current) => {
-        const key = String(current.sessionId);
-        acc[key] ??= [];
-        acc[key].push(current);
-        return acc;
-      }, {});
-
-      const sortedSessionEntries = Object.entries(grouped)
-        .map(([sessionId, sessionSets]) => {
-          const orderedSets = [...sessionSets].sort((a, b) => a.timestamp - b.timestamp);
-          const first = orderedSets[0];
-          const last = orderedSets[orderedSets.length - 1];
-          const date = new Date(first.timestamp);
-          const fallbackPlan = getTrainingPlan(
-            first.planId ||
-              (first.type?.includes(":") ? first.type.split(":")[0] : "my-plan")
-          );
-
-          return {
-            sessionId,
-            timestamp: first.timestamp,
-            type: first.type || detectWorkoutType(orderedSets.filter(isLoggedSetEntry)),
-            typeLabel:
-              first.dayName ||
-              first.type ||
-              detectWorkoutType(orderedSets.filter(isLoggedSetEntry)),
-            planId: first.planId || fallbackPlan.id,
-            planName: first.planName || fallbackPlan.name,
-            date: date.toLocaleDateString("de-DE", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-            }),
-            weekday: capitalize(
-              date.toLocaleDateString("de-DE", {
-                weekday: "long",
-              })
-            ),
-            duration: Math.max(1, Math.round((last.timestamp - first.timestamp) / 60000)),
-            sets: orderedSets,
-          };
-        })
-        .sort((a, b) => b.timestamp - a.timestamp);
-
-      const exerciseHistory = new Map<string, SetType>();
-      const cards: SessionCard[] = [];
-
-      for (let index = sortedSessionEntries.length - 1; index >= 0; index -= 1) {
-        const session = sortedSessionEntries[index];
-        const sessionSetEntries = session.sets.filter(isLoggedSetEntry);
-        const summaries = buildExerciseSummaries(
-          sessionSetEntries,
-          session.type,
-          exerciseHistory
-        );
-
-        summaries.forEach((summary) => {
-          if (summary.topSet) {
-            exerciseHistory.set(
-              getHistoryKey(session.type, summary.exercise, summary.exerciseId),
-              summary.topSet
-            );
-          }
-        });
-
-        cards.unshift({
-          ...session,
-          summaries,
-        });
-      }
-
-      setSessions(cards);
-    } catch (error) {
-      console.error("History load failed:", error);
-    } finally {
-      setLoading(false);
-    }
+function groupSetsByExercise(sets: SetEntry[]) {
+  const map = new Map<string, SetEntry[]>();
+  for (const s of sets) {
+    const key = s.exercise;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(s);
   }
+  return Array.from(map.entries());
+}
 
-  async function handleDeleteSession(sessionId: string) {
-    const deleted = await deleteWorkoutSession(Number(sessionId));
-
-    if (!deleted) {
-      setDeleteSessionId(null);
-      setDeleteFailureNotice(true);
-      return;
-    }
-
-    setDeleteSessionId(null);
-
-    const activeWorkout = getActiveWorkoutState();
-    if (activeWorkout?.sessionId === Number(sessionId)) {
-      clearActiveWorkoutState();
-    }
-
-    if (expandedSessionId === sessionId) {
-      setExpandedSessionId(null);
-    }
-
-    if (expandedSetListSessionId === sessionId) {
-      setExpandedSetListSessionId(null);
-    }
-
-    if (expandedExerciseKey?.startsWith(`${sessionId}:`)) {
-      setExpandedExerciseKey(null);
-    }
-
-    await loadSessions();
-  }
+function SessionCard({ session }: { session: SessionDetail }) {
+  const [open, setOpen] = useState(false);
+  const exerciseGroups = groupSetsByExercise(session.sets.filter((s) => s.setType === "workset"));
 
   return (
-    <main style={screen}>
-      <div style={{ ...shell, ...(compactMode ? compactShell : null) }}>
-        <div style={headerRow}>
-          <div style={brandPill}>Gym Tracker</div>
-          <div style={headerRight}>
-            <Link href="/" style={backButton}>← Zurück</Link>
-          </div>
+    <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 16, overflow: "hidden", marginBottom: 10 }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{ width: "100%", padding: "16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
+      >
+        <div>
+          <p style={{ fontSize: 15, fontWeight: 700, color: "var(--c-text)", marginBottom: 3 }}>
+            {session.dayName ?? "Workout"}
+          </p>
+          <p style={{ fontSize: 12, color: "var(--c-text-3)" }}>
+            {formatDate(session.startedAt)} · {formatTime(session.startedAt)}
+            {session.durationMin > 0 ? ` · ${session.durationMin} Min` : ""}
+          </p>
         </div>
-
-        <div style={titleRow}>
-          <div>
-            <div style={eyebrow}>Verlauf</div>
-            <h1 style={{ ...title, ...(compactMode ? compactTitle : null) }}>
-              Alle Trainings
-            </h1>
-            <div style={{ ...headerCopy, ...(compactMode ? compactHeaderCopy : null) }}>
-              {showAllPlans ? "Alle Pläne" : `Plan: ${activePlan.name}`}
-            </div>
-          </div>
+        <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: "var(--c-text)", marginBottom: 2 }}>
+            {(session.volume / 1000).toFixed(1)} t
+          </p>
+          <p style={{ fontSize: 11, color: "var(--c-text-3)" }}>{session.setCount} Sätze</p>
         </div>
+        <svg
+          width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="var(--c-text-3)" strokeWidth={2} strokeLinecap="round"
+          style={{ marginLeft: 8, marginTop: 2, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
 
-        <div style={{ ...filterRow, ...(compactMode ? compactFilterRow : null) }}>
-          <button
-            style={!showAllPlans ? activeFilterButton : filterButton}
-            onClick={() => setShowAllPlans(false)}
-          >
-            Dieser Plan
-          </button>
-          <button
-            style={showAllPlans ? activeFilterButton : filterButton}
-            onClick={() => setShowAllPlans(true)}
-          >
-            Alle Pläne
-          </button>
-        </div>
-
-        {loading ? <AppCard style={emptyState}>Lade Verlauf...</AppCard> : null}
-
-        {!loading && visibleSessions.length === 0 ? (
-          <div style={emptyState}>
-            <div style={emptyTitle}>Noch keine Trainings gefunden</div>
-            <div style={emptyCopy}>
-              Sobald du ein Workout speicherst, siehst du hier deine letzten Einheiten.
-            </div>
-          </div>
-        ) : null}
-
-        {visibleSessions.map((session) => (
-          <AppCard
-            key={session.sessionId}
-            interactive
-            style={{ ...card, ...(compactMode ? compactCard : null) }}
-          >
-            <div style={cardTop}>
-              <div>
-                <div style={cardDate}>
-                  {session.weekday} · {session.date}
-                </div>
-                <div
-                  style={{
-                    ...cardMetaLine,
-                    ...(compactMode ? compactCardMetaLine : null),
-                  }}
-                >
-                  {session.planName} · {session.typeLabel} · {session.duration} min ·{" "}
-                  {session.sets.filter(isLoggedSetEntry).length} Sätze
-                </div>
-                <div style={sessionCompareRow}>
-                  {getSessionStats(session.summaries).map((item) => (
-                    <AppBadge
-                      key={`${session.sessionId}-${item.label}`}
-                      variant={item.variant}
-                      style={item.style}
-                    >
-                      {item.text}
-                    </AppBadge>
-                  ))}
-                </div>
-                <div style={sessionInsightLine}>
-                  {getSessionInsightText(session.summaries)}
-                </div>
-              </div>
-
-              <div style={cardButtonStack}>
-                <AppButton
-                  variant="secondary"
-                  size="compact"
-                  style={toggleButton}
-                  onClick={() => {
-                    setExpandedSessionId((current) => {
-                      const next = current === session.sessionId ? null : session.sessionId;
-                      if (!next) {
-                        setExpandedSetListSessionId((setListCurrent) =>
-                          setListCurrent === session.sessionId ? null : setListCurrent
-                        );
-                      }
-                      return next;
-                    });
-                  }}
-                >
-                  {expandedSessionId === session.sessionId ? "Übersicht" : "Details"}
-                </AppButton>
-                <AppButton
-                  variant="ghost"
-                  size="compact"
-                  style={deleteButton}
-                  onClick={() => setDeleteSessionId(session.sessionId)}
-                >
-                  Löschen
-                </AppButton>
-              </div>
-            </div>
-
-            <div
-              style={{
-                ...summaryGrid,
-                ...(compactMode ? compactSummaryGrid : null),
-              }}
-            >
-              {(expandedSessionId === session.sessionId
-                ? session.summaries
-                : session.summaries.slice(0, 2)
-              ).map((summary) => {
-                const summaryKey = `${session.sessionId}:${summary.exerciseId}`;
-                return (
-                  <AppCard
-                    key={summaryKey}
-                    interactive
-                    style={{
-                      ...summaryCard,
-                      ...(compactMode ? compactSummaryCard : null),
-                      ...(expandedExerciseKey === summaryKey ? expandedSummaryCard : null),
-                    }}
-                    onClick={() =>
-                      setExpandedExerciseKey((current) =>
-                        current === summaryKey ? null : summaryKey
-                      )
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setExpandedExerciseKey((current) =>
-                          current === summaryKey ? null : summaryKey
-                        );
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <div style={summaryCardHeader}>
-                      <div
-                        style={{
-                          ...summaryExercise,
-                          ...(compactMode ? compactSummaryExercise : null),
-                        }}
-                      >
-                        {getExerciseLabel(summary.exercise)}
-                      </div>
-                      <span style={summaryCardChevron}>
-                        {expandedExerciseKey === summaryKey ? "v" : ">"}
-                      </span>
-                    </div>
-                    {summary.topSet ? (
-                      <div
-                        style={{
-                          ...summaryTopSet,
-                          ...(compactMode ? compactSummaryTopSet : null),
-                        }}
-                      >
-                        {summary.topSet.weight} kg × {summary.topSet.reps}
-                      </div>
-                    ) : null}
-                    <div style={summaryTrendLine}>{getSummaryTrendText(summary)}</div>
-                    <div style={summaryCoachLine}>
-                      Coach: {summary.coach.label} · {summary.coach.detail}
-                    </div>
-                    <div style={summaryBadgeRow}>
-                      <AppBadge
-                        variant={getComparisonBadgeVariant(summary)}
-                        style={getComparisonBadgeStyle(summary)}
-                      >
-                        {getComparisonArrow(summary)} {getComparisonLabel(summary)}
-                      </AppBadge>
-                    </div>
-                    {expandedExerciseKey === summaryKey ? (
-                      <div style={summarySetList}>
-                        {session.sets
-                          .filter(
-                            (set) =>
-                              isLoggedSetEntry(set) &&
-                              getLoggedSetExerciseReference(set) === summary.exerciseId
-                          )
-                          .sort((a, b) => a.set - b.set)
-                          .map((set, index) => (
-                            <div
-                              key={`${summaryKey}-${set.timestamp}-${index}`}
-                              style={summarySetRow}
-                            >
-                              <span style={summarySetLabel}>{labelSet(set.set)}</span>
-                              <span style={summarySetValue}>
-                                {set.weight} kg × {set.reps}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    ) : null}
-                  </AppCard>
-                );
-              })}
-              {expandedSessionId !== session.sessionId && session.summaries.length > 2 ? (
-                <AppButton
-                  block
-                  variant="secondary"
-                  style={moreSummariesCard}
-                  onClick={() => setExpandedSessionId(session.sessionId)}
-                >
-                  +{session.summaries.length - 2} weitere Übungen
-                </AppButton>
-              ) : null}
-            </div>
-
-            {expandedSessionId === session.sessionId ? (
-              <div style={sessionDetailActions}>
-                <AppButton
-                  variant="secondary"
-                  size="compact"
-                  style={sessionDetailButton}
-                  onClick={() =>
-                    setExpandedSetListSessionId((current) =>
-                      current === session.sessionId ? null : session.sessionId
-                    )
-                  }
-                >
-                  {expandedSetListSessionId === session.sessionId
-                    ? "Satzliste ausblenden"
-                    : "Alle Sätze anzeigen"}
-                </AppButton>
-              </div>
-            ) : null}
-
-            {expandedSessionId === session.sessionId &&
-            expandedSetListSessionId === session.sessionId ? (
-              <div style={setListSection}>
-                {session.sets.map((set, index) => (
-                  <div key={`${session.sessionId}-${set.timestamp}-${index}`} style={setRow}>
-                    <div style={setName}>
-                      {isLoggedSetEntry(set) ? getExerciseLabel(set.exercise) : set.label}
-                    </div>
-                    <div style={setMeta}>
-                      {isLoggedSetEntry(set)
-                        ? `${labelSet(set.set)} · ${set.weight} kg × ${set.reps}`
-                        : `${set.durationSeconds} Sek`}
-                    </div>
+      {open && (
+        <div style={{ borderTop: "1px solid var(--c-border)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {exerciseGroups.length === 0 ? (
+            <p style={{ fontSize: 13, color: "var(--c-text-3)" }}>Keine Arbeitssätze aufgezeichnet.</p>
+          ) : exerciseGroups.map(([exercise, sets]) => (
+            <div key={exercise}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--c-text-2)", marginBottom: 6 }}>{exercise}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {sets.map((s, i) => (
+                  <div key={i} style={{ background: "var(--c-surface-2)", borderRadius: 8, padding: "5px 10px", fontSize: 12, color: "var(--c-text)", fontWeight: 500 }}>
+                    {s.weight} kg × {s.reps}
                   </div>
                 ))}
               </div>
-            ) : null}
-          </AppCard>
-        ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function HistoryPage() {
+  const [sessions, setSessions] = useState<SessionDetail[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const raw = await getRecentSessions(50);
+      const enriched = await Promise.all(
+        raw.map(async (s) => {
+          const sets = await getSetsForSession(s.sessionId);
+          const work = sets.filter((x) => x.setType === "workset");
+          const volume = work.reduce((sum, x) => sum + x.weight * x.reps, 0);
+          const durationMin = s.endedAt ? Math.round((s.endedAt - s.startedAt) / 60000) : 0;
+          return { ...s, volume, setCount: work.length, durationMin, sets };
+        })
+      );
+      setSessions(enriched);
+      setLoading(false);
+    }
+    void load();
+  }, []);
+
+  return (
+    <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 16px)" }}>
+
+      <div style={{ paddingTop: "calc(20px + var(--safe-area-top))", paddingLeft: 20, paddingRight: 20, paddingBottom: 16 }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--c-text)" }}>Verlauf</h1>
       </div>
 
-      <ConfirmDialog
-        open={Boolean(deleteSessionId)}
-        title="Training löschen?"
-        body="Dieses Training wird dauerhaft entfernt. Diese Aktion kann nicht rückgängig gemacht werden."
-        confirmLabel="Löschen"
-        cancelLabel="Abbrechen"
-        confirmVariant="danger"
-        onCancel={() => setDeleteSessionId(null)}
-        onConfirm={() => deleteSessionId && void handleDeleteSession(deleteSessionId)}
-      />
+      <div style={{ paddingLeft: 16, paddingRight: 16 }}>
+        {loading ? (
+          <p style={{ color: "var(--c-text-3)", textAlign: "center", paddingTop: 40 }}>Lädt…</p>
+        ) : sessions.length === 0 ? (
+          <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 16, padding: "40px 20px", textAlign: "center" }}>
+            <p style={{ fontSize: 32, marginBottom: 12 }}>📋</p>
+            <p style={{ fontSize: 16, fontWeight: 600, color: "var(--c-text)", marginBottom: 6 }}>Noch leer</p>
+            <p style={{ fontSize: 13, color: "var(--c-text-3)" }}>Abgeschlossene Workouts erscheinen hier.</p>
+          </div>
+        ) : (
+          sessions.map((s) => <SessionCard key={s.sessionId} session={s} />)
+        )}
+      </div>
 
-      <NoticeDialog
-        open={deleteFailureNotice}
-        title="Löschen fehlgeschlagen"
-        body="Das Training konnte nicht gelöscht werden."
-        onClose={() => setDeleteFailureNotice(false)}
-      />
-    </main>
+      <BottomNav />
+    </div>
   );
 }
-
-function buildExerciseSummaries(
-  sets: SetType[],
-  workoutType: string,
-  exerciseHistory: Map<string, SetType>
-) {
-  const byExercise = new Map<string, SetType[]>();
-
-  sets.forEach((set) => {
-    const key = getLoggedSetExerciseReference(set);
-    const current = byExercise.get(key) ?? [];
-    current.push(set);
-    byExercise.set(key, current);
-  });
-
-  return Array.from(byExercise.entries()).map(([key, exerciseSets]) => {
-    const firstSet = exerciseSets[0];
-    const topSet = getTopSet(exerciseSets);
-    const previousTopSet = exerciseHistory.get(
-      getHistoryKey(workoutType, firstSet.exercise, key)
-    ) ?? null;
-
-    return {
-      exercise: firstSet.exercise,
-      exerciseId: key,
-      topSet,
-      previousTopSet,
-      coach: getCoachDecision(firstSet.exercise, exerciseSets),
-    };
-  });
-}
-
-function getHistoryKey(type: string, exercise: string, exerciseId: string) {
-  return `${type}:${exerciseId || exercise}`;
-}
-
-function getSessionStats(summaries: SessionExerciseSummary[]) {
-  const better = summaries.filter(
-    (summary) =>
-      summary.topSet &&
-      summary.previousTopSet &&
-      (summary.topSet.weight > summary.previousTopSet.weight ||
-        (summary.topSet.weight === summary.previousTopSet.weight &&
-          summary.topSet.reps > summary.previousTopSet.reps))
-  ).length;
-
-  const same = summaries.filter(
-    (summary) =>
-      summary.topSet &&
-      summary.previousTopSet &&
-      summary.topSet.weight === summary.previousTopSet.weight &&
-      summary.topSet.reps === summary.previousTopSet.reps
-  ).length;
-
-  const fresh = summaries.filter((summary) => !summary.previousTopSet).length;
-
-  return [
-    better > 0
-      ? {
-          label: "better",
-          text: `${better} besser`,
-          variant: "active" as const,
-          style: undefined,
-        }
-      : null,
-    same > 0
-      ? {
-          label: "same",
-          text: `${same} gleich`,
-          variant: "template" as const,
-          style: undefined,
-        }
-      : null,
-    fresh > 0
-      ? {
-          label: "fresh",
-          text: `${fresh} neu`,
-          variant: "new" as const,
-          style: undefined,
-        }
-      : null,
-  ].filter((item): item is NonNullable<(typeof item)> => item !== null);
-}
-
-function getComparisonBadgeVariant(summary: SessionExerciseSummary) {
-  if (!summary.previousTopSet) return "new" as const;
-  if (!summary.topSet) return "template" as const;
-
-  if (
-    summary.topSet.weight > summary.previousTopSet.weight ||
-    (summary.topSet.weight === summary.previousTopSet.weight &&
-      summary.topSet.reps > summary.previousTopSet.reps)
-  ) {
-    return "active" as const;
-  }
-
-  if (
-    summary.topSet.weight === summary.previousTopSet.weight &&
-    summary.topSet.reps === summary.previousTopSet.reps
-  ) {
-    return "template" as const;
-  }
-
-  return "custom" as const;
-}
-
-function getComparisonBadgeStyle(summary: SessionExerciseSummary) {
-  if (!summary.previousTopSet) return undefined;
-  if (!summary.topSet) return undefined;
-
-  const improved =
-    summary.topSet.weight > summary.previousTopSet.weight ||
-    (summary.topSet.weight === summary.previousTopSet.weight &&
-      summary.topSet.reps > summary.previousTopSet.reps);
-
-  if (improved) return undefined;
-
-  if (
-    summary.topSet.weight === summary.previousTopSet.weight &&
-    summary.topSet.reps === summary.previousTopSet.reps
-  ) {
-    return undefined;
-  }
-
-  return {
-    background: withAlpha(appPalette.warning, 0.12),
-    color: appPalette.warning,
-  };
-}
-
-function getComparisonArrow(summary: SessionExerciseSummary) {
-  if (!summary.previousTopSet) return "+";
-  if (!summary.topSet) return "=";
-
-  if (
-    summary.topSet.weight > summary.previousTopSet.weight ||
-    (summary.topSet.weight === summary.previousTopSet.weight &&
-      summary.topSet.reps > summary.previousTopSet.reps)
-  ) {
-    return "↑";
-  }
-
-  if (
-    summary.topSet.weight === summary.previousTopSet.weight &&
-    summary.topSet.reps === summary.previousTopSet.reps
-  ) {
-    return "=";
-  }
-
-  return "↓";
-}
-
-function getComparisonLabel(summary: SessionExerciseSummary) {
-  if (!summary.previousTopSet) return "Neu";
-  if (!summary.topSet) return "Kein Top-Set";
-
-  if (
-    summary.topSet.weight > summary.previousTopSet.weight ||
-    (summary.topSet.weight === summary.previousTopSet.weight &&
-      summary.topSet.reps > summary.previousTopSet.reps)
-  ) {
-    return "Besser";
-  }
-
-  if (
-    summary.topSet.weight === summary.previousTopSet.weight &&
-    summary.topSet.reps === summary.previousTopSet.reps
-  ) {
-    return "Gleich";
-  }
-
-  return "Darunter";
-}
-
-function getSummaryTrendText(summary: SessionExerciseSummary) {
-  if (!summary.topSet || !summary.previousTopSet) {
-    return "Noch kein vorheriger Vergleich";
-  }
-
-  const weightDelta = summary.topSet.weight - summary.previousTopSet.weight;
-  const repsDelta = summary.topSet.reps - summary.previousTopSet.reps;
-
-  if (weightDelta === 0 && repsDelta === 0) {
-    return "Gleich zur letzten passenden Einheit";
-  }
-
-  const parts: string[] = [];
-  if (weightDelta !== 0) {
-    parts.push(`${weightDelta > 0 ? "+" : ""}${weightDelta} kg`);
-  }
-  if (repsDelta !== 0) {
-    parts.push(`${repsDelta > 0 ? "+" : ""}${repsDelta} Wdh.`);
-  }
-
-  return `${parts.join(" · ")} zur letzten passenden Einheit`;
-}
-
-function labelSet(setNumber: number) {
-  if (setNumber === 0) return "Warm-up";
-  return `Satz ${setNumber}`;
-}
-
-function getSessionInsightText(summaries: SessionExerciseSummary[]) {
-  if (summaries.length === 0) {
-    return "Noch keine passende Einordnung fuer diese Session.";
-  }
-
-  const improved = summaries.filter(
-    (summary) =>
-      summary.topSet &&
-      summary.previousTopSet &&
-      (summary.topSet.weight > summary.previousTopSet.weight ||
-        (summary.topSet.weight === summary.previousTopSet.weight &&
-          summary.topSet.reps > summary.previousTopSet.reps))
-  ).length;
-  const declined = summaries.filter(
-    (summary) =>
-      summary.topSet &&
-      summary.previousTopSet &&
-      (summary.topSet.weight < summary.previousTopSet.weight ||
-        (summary.topSet.weight === summary.previousTopSet.weight &&
-          summary.topSet.reps < summary.previousTopSet.reps))
-  ).length;
-  const coachFocus = summaries.find(
-    (summary) => summary.coach.action === "decrease"
-  );
-  const coachGain = summaries.find(
-    (summary) => summary.coach.action === "increase"
-  );
-
-  if (coachFocus) {
-    return `Fokus: ${getExerciseLabel(coachFocus.exercise)} eher stabilisieren. ${coachFocus.coach.detail}`;
-  }
-
-  if (improved > declined && coachGain) {
-    return `Tendenz vorwaerts: ${getExerciseLabel(coachGain.exercise)} ist bereit fuer den naechsten kleinen Schritt.`;
-  }
-
-  if (declined > improved) {
-    return "Mehrere Uebungen liegen unter dem letzten Vergleich. Heute eher als Steuerungs- als als Druecktag lesen.";
-  }
-
-  return "Solider Verlauf: Die Session wirkt insgesamt stabil und gut vergleichbar.";
-}
-
-function detectWorkoutType(sets: SetType[]) {
-  return sets[0]?.type || "workout";
-}
-
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-const screen = {
-  minHeight: "var(--app-viewport-height, 100dvh)",
-  padding: "calc(8px + env(safe-area-inset-top)) 10px calc(20px + var(--app-bottom-inset))",
-  background: appChromeBackground,
-  fontFamily: "sans-serif",
-  boxSizing: "border-box" as const,
-};
-
-const shell = {
-  maxWidth: 460,
-  margin: "0 auto",
-  display: "grid",
-  gap: 12,
-};
-
-const compactShell = {
-  gap: 10,
-};
-
-const headerRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12,
-};
-
-const brandPill = {
-  display: "inline-flex",
-  alignItems: "center",
-  minHeight: 34,
-  padding: "7px 12px",
-  borderRadius: 999,
-  background: appPalette.surfaceDark,
-  color: appPalette.surface,
-  fontSize: 13,
-  fontWeight: "bold",
-};
-
-const headerRight = {
-  display: "flex",
-  gap: 10,
-};
-
-const backButton = {
-  display: "inline-flex",
-  alignItems: "center",
-  minHeight: 34,
-  padding: "6px 12px",
-  borderRadius: 999,
-  border: `1px solid ${appPalette.borderDefault}`,
-  background: appPalette.surfaceMuted,
-  color: appPalette.textDefault,
-  fontSize: 12,
-  fontWeight: "bold",
-  textDecoration: "none",
-};
-
-const titleRow = {
-  display: "grid",
-  gap: 4,
-};
-
-const eyebrow = {
-  fontSize: 11,
-  textTransform: "uppercase" as const,
-  letterSpacing: 1.1,
-  color: appPalette.textMuted,
-  fontWeight: "bold",
-};
-
-const title = {
-  margin: 0,
-  fontSize: 30,
-  lineHeight: 1.02,
-  color: appPalette.textStrong,
-  fontWeight: 800,
-};
-
-const compactTitle = {
-  fontSize: 26,
-};
-
-const headerCopy = {
-  color: appPalette.textDefault,
-  fontSize: 14,
-};
-
-const compactHeaderCopy = {
-  fontSize: 13,
-};
-
-const filterRow = {
-  display: "flex",
-  gap: 8,
-};
-
-const compactFilterRow = {
-  gap: 6,
-};
-
-const filterButton = {
-  minHeight: 40,
-  padding: "8px 14px",
-  borderRadius: 999,
-  background: appPalette.surface,
-  border: `1px solid ${appPalette.borderDefault}`,
-  color: appPalette.textDefault,
-  fontSize: 13,
-  fontWeight: 800,
-};
-
-const activeFilterButton = {
-  ...filterButton,
-  background: appPalette.surfaceDark,
-  color: appPalette.surface,
-  border: `1px solid ${appPalette.surfaceDark}`,
-};
-
-const emptyState = {
-  padding: "18px 16px",
-  textAlign: "center" as const,
-  color: appPalette.textDefault,
-};
-
-const emptyTitle = {
-  fontSize: 18,
-  fontWeight: 800,
-  color: appPalette.textStrong,
-};
-
-const emptyCopy = {
-  marginTop: 6,
-  fontSize: 14,
-  lineHeight: 1.45,
-};
-
-const card = {
-  padding: "16px 14px",
-  display: "grid",
-  gap: 12,
-};
-
-const compactCard = {
-  gap: 10,
-};
-
-const cardTop = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-};
-
-const cardDate = {
-  fontSize: 16,
-  fontWeight: 800,
-  color: appPalette.textStrong,
-};
-
-const cardMetaLine = {
-  marginTop: 4,
-  fontSize: 13,
-  color: appPalette.textDefault,
-};
-
-const compactCardMetaLine = {
-  fontSize: 12,
-};
-
-const sessionCompareRow = {
-  display: "flex",
-  gap: 6,
-  flexWrap: "wrap" as const,
-  marginTop: 8,
-};
-
-const sessionInsightLine = {
-  marginTop: 8,
-  fontSize: 12,
-  lineHeight: 1.4,
-  color: appPalette.textMuted,
-  fontWeight: 700,
-};
-
-const cardButtonStack = {
-  display: "grid",
-  gap: 8,
-  alignContent: "start",
-};
-
-const toggleButton = {
-  minWidth: 90,
-};
-
-const deleteButton = {
-  minWidth: 90,
-  color: appPalette.danger,
-};
-
-const summaryGrid = {
-  display: "grid",
-  gap: 10,
-};
-
-const compactSummaryGrid = {
-  gap: 8,
-};
-
-const summaryCard = {
-  padding: "12px 12px 14px",
-  display: "grid",
-  gap: 6,
-};
-
-const compactSummaryCard = {
-  gap: 5,
-};
-
-const expandedSummaryCard = {
-  border: `1px solid ${appPalette.borderDefault}`,
-};
-
-const summaryCardHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 8,
-  alignItems: "center",
-};
-
-const summaryExercise = {
-  fontSize: 15,
-  fontWeight: 800,
-  color: appPalette.textStrong,
-};
-
-const compactSummaryExercise = {
-  fontSize: 14,
-};
-
-const summaryCardChevron = {
-  color: appPalette.textMuted,
-  fontWeight: 800,
-};
-
-const summaryTopSet = {
-  fontSize: 20,
-  fontWeight: 800,
-  color: appPalette.textStrong,
-};
-
-const summaryTrendLine = {
-  fontSize: 12,
-  lineHeight: 1.35,
-  color: appPalette.textMuted,
-  fontWeight: 700,
-};
-
-const summaryCoachLine = {
-  fontSize: 12,
-  lineHeight: 1.35,
-  color: appPalette.textSoft,
-  fontWeight: 700,
-};
-
-const compactSummaryTopSet = {
-  fontSize: 18,
-};
-
-const summaryBadgeRow = {
-  display: "flex",
-  gap: 8,
-};
-
-const summarySetList = {
-  display: "grid",
-  gap: 6,
-  marginTop: 4,
-};
-
-const summarySetRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-  fontSize: 13,
-  color: appPalette.textDefault,
-};
-
-const summarySetLabel = {
-  fontWeight: 700,
-};
-
-const summarySetValue = {
-  fontWeight: 800,
-};
-
-const moreSummariesCard = {
-  width: "100%",
-};
-
-const sessionDetailActions = {
-  display: "flex",
-};
-
-const sessionDetailButton = {
-  width: "100%",
-};
-
-const setListSection = {
-  display: "grid",
-  gap: 8,
-};
-
-const setRow = {
-  display: "grid",
-  gap: 2,
-  paddingTop: 8,
-  borderTop: `1px solid ${appPalette.borderSoft}`,
-};
-
-const setName = {
-  fontSize: 14,
-  fontWeight: 800,
-  color: appPalette.textStrong,
-};
-
-const setMeta = {
-  fontSize: 13,
-  color: appPalette.textDefault,
-};

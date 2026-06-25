@@ -155,22 +155,22 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
   {
     id: "my-plan",
     name: "Mein Plan",
-    description: "Push / Pull / Mixed",
+    description: "Mo Push · Mi Pull · Fr Mixed",
     accent: "#111827",
     origin: "template",
     days: [
       createTemplateDay({
         id: "push-focus",
-        name: "Push",
+        name: "Montag – Push",
         slot: "push",
         color: "#dc2626",
         exercises: [
-          { id: "benchpress", name: "benchpress", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "pullups_wide", name: "pullups_wide", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "shoulderpress", name: "shoulderpress", sets: 3, minReps: 6, maxReps: 9, restSeconds: 150 },
-          { id: "dips", name: "dips", sets: 3, minReps: 6, maxReps: 10, restSeconds: 120 },
-          { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 6, maxReps: 9, restSeconds: 120 },
-          { id: "hanging_leg_raises", name: "hanging_leg_raises", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
+          { id: "benchpress", name: "Bankdrücken", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+          { id: "pullups_wide", name: "Klimmzüge breit", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+          { id: "shoulderpress", name: "Schulterdrücken", sets: 3, minReps: 6, maxReps: 9, restSeconds: 150 },
+          { id: "dips", name: "Dips", sets: 3, minReps: 6, maxReps: 10, restSeconds: 120 },
+          { id: "bulgarian", name: "Bulgarische Split Squats", sets: 3, minReps: 6, maxReps: 9, restSeconds: 120 },
+          { id: "hanging_leg_raises", name: "Hanging Leg Raises", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
         ],
         extras: [
           {
@@ -199,16 +199,16 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
       }),
       createTemplateDay({
         id: "pull-focus",
-        name: "Pull",
+        name: "Mittwoch – Pull",
         slot: "pull",
         color: "#2563eb",
         exercises: [
-          { id: "chest_supported_row", name: "chest_supported_row", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
-          { id: "pushups", name: "pushups", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
-          { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
-          { id: "face_pulls", name: "face_pulls", sets: 3, minReps: 12, maxReps: 15, restSeconds: 105 },
-          { id: "walking_lunges", name: "walking_lunges", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
-          { id: "hanging_leg_raises", name: "hanging_leg_raises", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
+          { id: "chest_supported_row", name: "Rudern", sets: 3, minReps: 6, maxReps: 9, restSeconds: 180 },
+          { id: "pushups", name: "Push-ups", sets: 3, minReps: 8, maxReps: 12, restSeconds: 120 },
+          { id: "romanian_deadlift", name: "Rumänisches Kreuzheben", sets: 3, minReps: 6, maxReps: 8, restSeconds: 180 },
+          { id: "face_pulls", name: "Face Pulls", sets: 3, minReps: 12, maxReps: 15, restSeconds: 105 },
+          { id: "walking_lunges", name: "Walking Lunges", sets: 3, minReps: 8, maxReps: 10, restSeconds: 120 },
+          { id: "hanging_leg_raises", name: "Hanging Leg Raises", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
         ],
         extras: [
           {
@@ -237,16 +237,16 @@ const defaultTrainingPlansSource: TrainingPlan[] = [
       }),
       createTemplateDay({
         id: "mixed-day",
-        name: "Mixed",
+        name: "Freitag – Mixed",
         slot: "mixed",
         color: "#16a34a",
         exercises: [
-          { id: "squat", name: "squat", sets: 3, minReps: 6, maxReps: 9, restSeconds: 180 },
-          { id: "pullups", name: "pullups", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
-          { id: "romanian_deadlift", name: "romanian_deadlift", sets: 3, minReps: 6, maxReps: 9, restSeconds: 180 },
-          { id: "shoulderpress_pushups", name: "shoulderpress_pushups", sets: 3, minReps: 8, maxReps: 12, restSeconds: 150 },
-          { id: "bulgarian", name: "bulgarian", sets: 3, minReps: 7, maxReps: 10, restSeconds: 120 },
-          { id: "core", name: "core", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
+          { id: "squat", name: "Kniebeugen", sets: 3, minReps: 6, maxReps: 9, restSeconds: 180 },
+          { id: "pullups", name: "Klimmzüge", sets: 3, minReps: 5, maxReps: 8, restSeconds: 180 },
+          { id: "romanian_deadlift", name: "Rumänisches Kreuzheben", sets: 3, minReps: 6, maxReps: 9, restSeconds: 180 },
+          { id: "shoulderpress_pushups", name: "Schulterdrücken + Push-ups", sets: 3, minReps: 8, maxReps: 12, restSeconds: 150 },
+          { id: "bulgarian", name: "Bulgarische Split Squats", sets: 3, minReps: 7, maxReps: 10, restSeconds: 120 },
+          { id: "core", name: "Core", sets: 3, minReps: 8, maxReps: 12, restSeconds: 105 },
         ],
         extras: [
           {

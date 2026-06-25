@@ -1,8 +1,6 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-right: env(safe-area-inset-right, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
@@ -10,43 +8,25 @@
   --app-viewport-height: 100dvh;
   --app-keyboard-inset: 0px;
   --app-bottom-inset: calc(var(--safe-area-bottom) + var(--app-keyboard-inset));
-  --app-background-top-rgb: 17, 24, 39;
-  --app-background-mid-rgb: 221, 230, 245;
-  --app-background-base-rgb: 251, 251, 253;
-  --app-text-strong-rgb: 15, 23, 42;
-  --app-text-default-rgb: 51, 65, 85;
-  --app-text-muted-rgb: 100, 116, 139;
-  --app-text-soft-rgb: 148, 163, 184;
-  --app-border-soft-rgb: 220, 229, 241;
-  --app-border-default-rgb: 215, 225, 239;
-  --app-surface-rgb: 255, 255, 255;
-  --app-surface-soft-rgb: 248, 251, 255;
-  --app-surface-muted-rgb: 248, 250, 252;
-  --app-surface-dark-rgb: 17, 24, 39;
-  --app-danger-rgb: 220, 38, 38;
-  --app-success-rgb: 22, 163, 74;
-  --app-warning-rgb: 234, 88, 12;
-}
 
-[data-theme="dark"] {
-  --background: #0b1120;
-  --foreground: #e2e8f0;
-  --app-background-top-rgb: 7, 11, 22;
-  --app-background-mid-rgb: 20, 29, 47;
-  --app-background-base-rgb: 10, 15, 27;
-  --app-text-strong-rgb: 241, 245, 249;
-  --app-text-default-rgb: 203, 213, 225;
-  --app-text-muted-rgb: 148, 163, 184;
-  --app-text-soft-rgb: 100, 116, 139;
-  --app-border-soft-rgb: 42, 56, 77;
-  --app-border-default-rgb: 51, 65, 85;
-  --app-surface-rgb: 15, 23, 42;
-  --app-surface-soft-rgb: 19, 30, 49;
-  --app-surface-muted-rgb: 23, 36, 58;
-  --app-surface-dark-rgb: 2, 6, 23;
-  --app-danger-rgb: 248, 113, 113;
-  --app-success-rgb: 74, 222, 128;
-  --app-warning-rgb: 251, 146, 60;
+  --c-bg: #0b1120;
+  --c-surface: #141e2e;
+  --c-surface-2: #1a2640;
+  --c-surface-3: #1f2d4a;
+  --c-border: rgba(255,255,255,0.07);
+  --c-border-strong: rgba(255,255,255,0.13);
+  --c-text: #f1f5f9;
+  --c-text-2: #94a3b8;
+  --c-text-3: #64748b;
+  --c-accent: #6366f1;
+  --c-accent-dim: rgba(99,102,241,0.15);
+  --c-accent-border: rgba(99,102,241,0.35);
+  --c-success: #10b981;
+  --c-success-dim: rgba(16,185,129,0.15);
+  --c-danger: #ef4444;
+  --c-danger-dim: rgba(239,68,68,0.12);
+  --c-warning: #f59e0b;
+  --c-tab-height: 64px;
 }
 
 * {
@@ -55,13 +35,12 @@
   padding: 0;
 }
 
-html,
-body {
+html, body {
   width: 100%;
   min-height: var(--app-viewport-height, 100dvh);
   overflow-x: hidden;
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--c-bg);
+  color: var(--c-text);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
@@ -69,75 +48,52 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   touch-action: manipulation;
+  overscroll-behavior: none;
 }
 
-input,
-textarea,
-select,
-button {
-  font: inherit;
-}
+input, textarea, select, button { font: inherit; }
 
 button {
   cursor: pointer;
   border: none;
   outline: none;
   touch-action: manipulation;
+  background: none;
 }
 
-a,
-button,
-div {
-  -webkit-tap-highlight-color: transparent;
-}
-
-body {
-  overscroll-behavior: none;
-  transition:
-    background 220ms ease,
-    color 220ms ease;
-}
+a, button, div { -webkit-tap-highlight-color: transparent; }
 
 :focus-visible {
-  outline: 3px solid rgba(var(--app-warning-rgb), 0.55);
+  outline: 2px solid var(--c-accent);
   outline-offset: 2px;
 }
 
-button:active {
-  transform: scale(0.98);
+button:active { transform: scale(0.97); }
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes codex-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes codex-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateY(22px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes rest-timer {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 283; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
   }
-
-  button:active {
-    transform: none;
-  }
+  button:active { transform: none; }
 }
