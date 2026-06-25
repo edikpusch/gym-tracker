@@ -214,15 +214,6 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
     setRestEndsAt(null);
   }, []);
 
-  const handleNextExercise = useCallback(() => {
-    if (exerciseIndex < exerciseStates.length - 1) {
-      setExerciseIndex((i) => i + 1);
-      setPhase("active");
-    } else {
-      handleFinish();
-    }
-  }, [exerciseIndex, exerciseStates.length, handleFinish]);
-
   const handleFinish = useCallback(async () => {
     setPhase("done");
     void clearRestNotification();
@@ -230,6 +221,15 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
     await updateSession(sessionId, { endedAt: Date.now() });
     router.push("/workout/summary");
   }, [sessionId, router]);
+
+  const handleNextExercise = useCallback(() => {
+    if (exerciseIndex < exerciseStates.length - 1) {
+      setExerciseIndex((i) => i + 1);
+      setPhase("active");
+    } else {
+      void handleFinish();
+    }
+  }, [exerciseIndex, exerciseStates.length, handleFinish]);
 
   const restSecondsLeft = restEndsAt ? Math.max(0, (restEndsAt - now) / 1000) : 0;
   const restProgress = restDuration > 0 ? 1 - restSecondsLeft / restDuration : 0;
