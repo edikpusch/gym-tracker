@@ -37,32 +37,32 @@ function getWarmupRounds(blocks: TrainingPlanBlock[], exerciseId: string): numbe
   return warmup?.type === "warmup" ? warmup.rounds : 0;
 }
 
-function SetChip({ label, logged, isCurrent, isWarmupSlot }: {
-  label: string;
+function SetDot({ logged, isCurrent, isWarmupSlot, index }: {
   logged: (SetEntry & { saved: boolean }) | null;
   isCurrent: boolean;
   isWarmupSlot: boolean;
+  index: number;
 }) {
+  const color = isWarmupSlot ? "var(--c-warning)" : "var(--c-accent)";
+  const size = isCurrent ? 14 : 12;
+
   return (
-    <div style={{
-      padding: logged ? "5px 8px" : "5px 10px",
-      borderRadius: 8,
-      fontSize: 12,
-      fontWeight: 600,
-      border: `1px solid ${logged ? "transparent" : isCurrent ? "var(--c-accent)" : "var(--c-border)"}`,
-      background: logged
-        ? (isWarmupSlot ? "var(--c-surface-2)" : "var(--c-accent)")
-        : isCurrent
-        ? "var(--c-accent-dim)"
-        : "transparent",
-      color: logged
-        ? (isWarmupSlot ? "var(--c-text-3)" : "#fff")
-        : isCurrent
-        ? "var(--c-accent)"
-        : "var(--c-text-3)",
-      whiteSpace: "nowrap" as const,
-    }}>
-      {label}{logged ? ` ${logged.weight}×${logged.reps}` : ""}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+      <div style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: logged ? color : "transparent",
+        border: `2px solid ${logged ? color : isCurrent ? color : "var(--c-border-strong)"}`,
+        boxShadow: isCurrent ? `0 0 0 3px ${isWarmupSlot ? "rgba(245,158,11,0.2)" : "rgba(99,102,241,0.2)"}` : "none",
+        transition: "all 0.2s",
+        flexShrink: 0,
+      }} />
+      {logged && (
+        <span style={{ fontSize: 9, color: "var(--c-text-3)", fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
+          {logged.weight}kg
+        </span>
+      )}
     </div>
   );
 }
@@ -141,7 +141,7 @@ export function ExerciseFocus({
         {/* Logged sets */}
         <div style={{ marginBottom: 24 }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: "var(--c-text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>
-            Geloggte Sätze
+            Arbeitssätze
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {workSets.map((s, i) => (
@@ -149,15 +149,17 @@ export function ExerciseFocus({
                 background: "var(--c-surface)",
                 border: "1px solid var(--c-border)",
                 borderRadius: 10,
-                padding: "10px 14px",
+                padding: "11px 14px",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
+                gap: 12,
               }}>
-                <span style={{ fontSize: 12, color: "var(--c-text-3)", fontWeight: 600 }}>S{i + 1}</span>
-                <span style={{ fontSize: 15, fontWeight: 700, color: "var(--c-text)" }}>{s.weight} kg</span>
-                <span style={{ fontSize: 13, color: "var(--c-text-3)" }}>× {s.reps} Wdh</span>
-                <span style={{ fontSize: 12, color: "var(--c-text-3)" }}>{s.weight * s.reps} kg Vol.</span>
+                <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--c-accent)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#fff" }}>{i + 1}</span>
+                </div>
+                <span style={{ fontSize: 16, fontWeight: 700, color: "var(--c-text)", flex: 1 }}>{s.weight} kg</span>
+                <span style={{ fontSize: 13, color: "var(--c-text-2)" }}>× {s.reps} Wdh</span>
+                <span style={{ fontSize: 12, color: "var(--c-text-3)" }}>{s.weight * s.reps} kg</span>
               </div>
             ))}
           </div>
@@ -196,26 +198,40 @@ export function ExerciseFocus({
         </p>
       </div>
 
-      {/* Set chips */}
+      {/* Set dots */}
       {totalSets > 0 && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
-          {Array.from({ length: totalSets }).map((_, i) => {
-            const isWarmupSlot = i < warmupRounds;
-            const logged = sets[i] ?? null;
-            const isCurrent = i === sets.length && !isResting;
-            const label = isWarmupSlot
-              ? `AW${i + 1}`
-              : `S${i - warmupRounds + 1}`;
-            return (
-              <SetChip
-                key={i}
-                label={label}
-                logged={logged}
-                isCurrent={isCurrent}
-                isWarmupSlot={isWarmupSlot}
-              />
-            );
-          })}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 20 }}>
+          {/* Warmup group */}
+          {warmupRounds > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: "var(--c-warning)", textTransform: "uppercase", letterSpacing: 0.8 }}>AW</span>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                {Array.from({ length: warmupRounds }).map((_, i) => {
+                  const logged = sets[i] ?? null;
+                  const isCurrent = i === sets.length && !isResting;
+                  return <SetDot key={i} logged={logged} isCurrent={isCurrent} isWarmupSlot={true} index={i} />;
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Divider */}
+          {warmupRounds > 0 && (
+            <div style={{ width: 1, height: 28, background: "var(--c-border-strong)", marginTop: 14, flexShrink: 0 }} />
+          )}
+
+          {/* Work sets group */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--c-accent)", textTransform: "uppercase", letterSpacing: 0.8 }}>Sätze</span>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              {Array.from({ length: exercise.sets }).map((_, i) => {
+                const globalIndex = warmupRounds + i;
+                const logged = sets[globalIndex] ?? null;
+                const isCurrent = globalIndex === sets.length && !isResting;
+                return <SetDot key={i} logged={logged} isCurrent={isCurrent} isWarmupSlot={false} index={i} />;
+              })}
+            </div>
+          </div>
         </div>
       )}
 
