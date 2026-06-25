@@ -89,7 +89,7 @@ export default function Home() {
               <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--c-text-3)", letterSpacing: 0.8, textTransform: "uppercase" }}>
                 {plan.name}
               </h2>
-              <Link href="/settings/plans" style={{ fontSize: 12, color: "var(--c-accent)", textDecoration: "none", fontWeight: 500 }}>
+              <Link href="/settings" style={{ fontSize: 12, color: "var(--c-accent)", textDecoration: "none", fontWeight: 500 }}>
                 Pläne
               </Link>
             </div>
@@ -148,30 +148,32 @@ export default function Home() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {recentSessions.map((session) => (
-                <div key={session.sessionId} style={{
-                  background: "var(--c-surface)",
-                  border: "1px solid var(--c-border)",
-                  borderRadius: 12,
-                  padding: "13px 16px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}>
-                  <div>
-                    <p style={{ fontSize: 14, fontWeight: 600, color: "var(--c-text)", marginBottom: 2 }}>
-                      {session.dayName ?? "Workout"}
-                    </p>
-                    <p style={{ fontSize: 12, color: "var(--c-text-3)" }}>
-                      {formatRelativeDate(session.startedAt)} · {formatDuration(session.startedAt, session.endedAt)}
-                    </p>
+                <Link key={session.sessionId} href="/history" style={{ textDecoration: "none" }}>
+                  <div style={{
+                    background: "var(--c-surface)",
+                    border: "1px solid var(--c-border)",
+                    borderRadius: 12,
+                    padding: "13px 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}>
+                    <div>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: "var(--c-text)", marginBottom: 2 }}>
+                        {session.dayName ?? "Workout"}
+                      </p>
+                      <p style={{ fontSize: 12, color: "var(--c-text-3)" }}>
+                        {formatRelativeDate(session.startedAt)} · {formatDuration(session.startedAt, session.endedAt)}
+                      </p>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: "var(--c-text)" }}>
+                        {(session.volume / 1000).toFixed(1)} t
+                      </p>
+                      <p style={{ fontSize: 12, color: "var(--c-text-3)" }}>{session.setCount} Sätze</p>
+                    </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: "var(--c-text)" }}>
-                      {(session.volume / 1000).toFixed(1)} t
-                    </p>
-                    <p style={{ fontSize: 12, color: "var(--c-text-3)" }}>{session.setCount} Sätze</p>
-                  </div>
-                </div>
+                </Link>
               ))}
             </div>
           </section>
