@@ -37,6 +37,36 @@ function getWarmupRounds(blocks: TrainingPlanBlock[], exerciseId: string): numbe
   return warmup?.type === "warmup" ? warmup.rounds : 0;
 }
 
+function SetChip({ label, logged, isCurrent, isWarmupSlot }: {
+  label: string;
+  logged: (SetEntry & { saved: boolean }) | null;
+  isCurrent: boolean;
+  isWarmupSlot: boolean;
+}) {
+  return (
+    <div style={{
+      padding: logged ? "5px 8px" : "5px 10px",
+      borderRadius: 8,
+      fontSize: 12,
+      fontWeight: 600,
+      border: `1px solid ${logged ? "transparent" : isCurrent ? "var(--c-accent)" : "var(--c-border)"}`,
+      background: logged
+        ? (isWarmupSlot ? "var(--c-surface-2)" : "var(--c-accent)")
+        : isCurrent
+        ? "var(--c-accent-dim)"
+        : "transparent",
+      color: logged
+        ? (isWarmupSlot ? "var(--c-text-3)" : "#fff")
+        : isCurrent
+        ? "var(--c-accent)"
+        : "var(--c-text-3)",
+      whiteSpace: "nowrap" as const,
+    }}>
+      {label}{logged ? ` ${logged.weight}×${logged.reps}` : ""}
+    </div>
+  );
+}
+
 export function ExerciseFocus({
   exerciseState,
   blocks,
@@ -61,7 +91,6 @@ export function ExerciseFocus({
   const totalSets = warmupRounds + exercise.sets;
   const allDone = completedWorkSets >= exercise.sets;
   const isWarmup = pendingSetType === "warmup";
-
   const weightStep = pendingWeight >= 20 ? 2.5 : 1;
 
   function handleWeightInput(raw: string) {
@@ -72,6 +101,86 @@ export function ExerciseFocus({
   function handleRepsInput(raw: string) {
     const v = parseInt(raw, 10);
     if (!isNaN(v) && v >= 1) onRepsChange(v);
+  }
+
+  // Completion screen — exercise fully done
+  if (allDone) {
+    const workSets = sets.filter((s) => s.setType === "workset");
+    const volume = workSets.reduce((sum, s) => sum + s.weight * s.reps, 0);
+    const maxWeight = workSets.length ? Math.max(...workSets.map((s) => s.weight)) : 0;
+
+    return (
+      <div style={{ padding: "0 16px" }}>
+        {/* Exercise done header */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--c-success)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12l5 5L20 7" />
+              </svg>
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--c-text)" }}>{exercise.name}</h2>
+          </div>
+          <p style={{ fontSize: 13, color: "var(--c-text-3)", marginLeft: 42 }}>Übung abgeschlossen</p>
+        </div>
+
+        {/* Stats row */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
+          {[
+            { label: "Sätze", value: String(workSets.length) },
+            { label: "Max", value: `${maxWeight} kg` },
+            { label: "Volumen", value: `${volume} kg` },
+          ].map(({ label, value }) => (
+            <div key={label} style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "12px 8px", textAlign: "center" }}>
+              <p style={{ fontSize: 17, fontWeight: 700, color: "var(--c-text)", marginBottom: 2 }}>{value}</p>
+              <p style={{ fontSize: 10, color: "var(--c-text-3)", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Logged sets */}
+        <div style={{ marginBottom: 24 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: "var(--c-text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>
+            Geloggte Sätze
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {workSets.map((s, i) => (
+              <div key={i} style={{
+                background: "var(--c-surface)",
+                border: "1px solid var(--c-border)",
+                borderRadius: 10,
+                padding: "10px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}>
+                <span style={{ fontSize: 12, color: "var(--c-text-3)", fontWeight: 600 }}>S{i + 1}</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "var(--c-text)" }}>{s.weight} kg</span>
+                <span style={{ fontSize: 13, color: "var(--c-text-3)" }}>× {s.reps} Wdh</span>
+                <span style={{ fontSize: 12, color: "var(--c-text-3)" }}>{s.weight * s.reps} kg Vol.</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* CTA */}
+        <button
+          onClick={onNextExercise}
+          style={{
+            width: "100%",
+            padding: "16px 0",
+            borderRadius: 14,
+            background: isLastExercise ? "var(--c-success)" : "var(--c-accent)",
+            border: "none",
+            color: "#fff",
+            fontSize: 16,
+            fontWeight: 700,
+          }}
+        >
+          {isLastExercise ? "Workout beenden 🏁" : "Nächste Übung →"}
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -87,44 +196,31 @@ export function ExerciseFocus({
         </p>
       </div>
 
-      {/* Set progress chips */}
+      {/* Set chips */}
       {totalSets > 0 && (
         <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
           {Array.from({ length: totalSets }).map((_, i) => {
             const isWarmupSlot = i < warmupRounds;
-            const logged = sets[i];
-            const isCurrent = i === sets.length;
+            const logged = sets[i] ?? null;
+            const isCurrent = i === sets.length && !isResting;
+            const label = isWarmupSlot
+              ? `AW${i + 1}`
+              : `S${i - warmupRounds + 1}`;
             return (
-              <div
+              <SetChip
                 key={i}
-                style={{
-                  padding: "5px 10px",
-                  borderRadius: 8,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  border: `1px solid ${logged ? "transparent" : isCurrent ? "var(--c-accent)" : "var(--c-border)"}`,
-                  background: logged
-                    ? (isWarmupSlot ? "var(--c-surface-2)" : "var(--c-accent)")
-                    : isCurrent
-                    ? "var(--c-accent-dim)"
-                    : "transparent",
-                  color: logged
-                    ? (isWarmupSlot ? "var(--c-text-3)" : "#fff")
-                    : isCurrent
-                    ? "var(--c-accent)"
-                    : "var(--c-text-3)",
-                }}
-              >
-                {isWarmupSlot ? "W" : `S${i - warmupRounds + 1}`}
-                {logged ? ` ${logged.weight}×${logged.reps}` : ""}
-              </div>
+                label={label}
+                logged={logged}
+                isCurrent={isCurrent}
+                isWarmupSlot={isWarmupSlot}
+              />
             );
           })}
         </div>
       )}
 
       {/* Suggestion */}
-      {suggestion && !allDone && (
+      {suggestion && !isResting && (
         <div style={{
           background: "var(--c-surface)",
           border: "1px solid var(--c-border)",
@@ -141,14 +237,23 @@ export function ExerciseFocus({
       )}
 
       {/* Current set label */}
-      {!allDone && (
-        <p style={{ fontSize: 12, color: isWarmup ? "var(--c-warning)" : "var(--c-accent)", fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.8 }}>
-          {isWarmup ? `Aufwärmsatz ${sets.length + 1} / ${warmupRounds}` : `Arbeitssatz ${completedWorkSets + 1} / ${exercise.sets}`}
+      {!isResting && (
+        <p style={{
+          fontSize: 12,
+          color: isWarmup ? "var(--c-warning)" : "var(--c-accent)",
+          fontWeight: 600,
+          marginBottom: 10,
+          textTransform: "uppercase",
+          letterSpacing: 0.8,
+        }}>
+          {isWarmup
+            ? `Aufwärmsatz ${sets.length + 1} / ${warmupRounds}`
+            : `Arbeitssatz ${completedWorkSets + 1} / ${exercise.sets}`}
         </p>
       )}
 
-      {/* Weight & Reps input */}
-      {!allDone && !isResting && (
+      {/* Inputs — always visible (during rest: pre-setting next set) */}
+      {!isResting && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
           {/* Weight */}
           <div>
@@ -222,52 +327,22 @@ export function ExerciseFocus({
 
       {/* CTA */}
       {!isResting && (
-        allDone ? (
-          <button
-            onClick={onNextExercise}
-            style={{
-              width: "100%",
-              padding: "16px 0",
-              borderRadius: 14,
-              background: "var(--c-success)",
-              border: "none",
-              color: "#fff",
-              fontSize: 16,
-              fontWeight: 700,
-            }}
-          >
-            {isLastExercise ? "Workout beenden 🏁" : "Nächste Übung →"}
-          </button>
-        ) : (
-          <button
-            onClick={() => onSetDone(pendingWeight, pendingReps)}
-            style={{
-              width: "100%",
-              padding: "16px 0",
-              borderRadius: 14,
-              background: "var(--c-accent)",
-              border: "none",
-              color: "#fff",
-              fontSize: 16,
-              fontWeight: 700,
-            }}
-          >
-            {isWarmup ? "Aufwärmsatz ✓" : "Satz abschließen ✓"}
-          </button>
-        )
+        <button
+          onClick={() => onSetDone(pendingWeight, pendingReps)}
+          style={{
+            width: "100%",
+            padding: "16px 0",
+            borderRadius: 14,
+            background: "var(--c-accent)",
+            border: "none",
+            color: "#fff",
+            fontSize: 16,
+            fontWeight: 700,
+          }}
+        >
+          {isWarmup ? "Aufwärmsatz ✓" : "Satz abschließen ✓"}
+        </button>
       )}
-
-      {isResting && !allDone && (
-        <div style={{
-          padding: "14px 0",
-          textAlign: "center",
-          color: "var(--c-text-3)",
-          fontSize: 14,
-        }}>
-          Nächster Satz startet nach der Pause…
-        </div>
-      )}
-
     </div>
   );
 }

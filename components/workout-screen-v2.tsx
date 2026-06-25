@@ -55,14 +55,12 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
   const [now, setNow] = useState(Date.now());
   const [exerciseStates, setExerciseStates] = useState<ExerciseState[]>([]);
   const [startedAt] = useState(Date.now());
-  const [sessionSaved, setSessionSaved] = useState(false);
   const [pendingWeight, setPendingWeight] = useState(40);
   const [pendingReps, setPendingReps] = useState(10);
   const [pendingSetType, setPendingSetType] = useState<"warmup" | "workset">("workset");
   const [suggestion, setSuggestion] = useState<{ weight: number; label: string } | null>(null);
-  const [isLogging, setIsLogging] = useState(false);
+  const [lastLoggedSet, setLastLoggedSet] = useState<{ exerciseName: string; setLabel: string; weight: number; reps: number } | null>(null);
 
-  const sessionSavedRef = useRef(false);
   const timerRef = useRef<number | null>(null);
 
   const currentExercise = exerciseStates[exerciseIndex]?.exercise ?? null;
@@ -136,7 +134,6 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
       void clearRestNotification();
       setPhase("active");
       setRestEndsAt(null);
-      setIsLogging(false);
     }
   }, [now, phase, restEndsAt]);
 
@@ -174,12 +171,20 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
       };
     }));
 
+    // Build label for confirmation display
+    const warmupRoundsForLabel = getWarmupRounds(blocks, currentExercise.id);
+    const totalLoggedBefore = exerciseStates[exerciseIndex]?.sets.length ?? 0;
+    const isWarmupSet = totalLoggedBefore < warmupRoundsForLabel;
+    const setLabel = isWarmupSet
+      ? `AW${totalLoggedBefore + 1}`
+      : `S${totalLoggedBefore - warmupRoundsForLabel + 1}`;
+    setLastLoggedSet({ exerciseName: currentExercise.name, setLabel, weight, reps });
+
     // Start rest timer immediately
     const dur = currentExercise.restSeconds;
     setRestDuration(dur);
     setRestEndsAt(Date.now() + dur * 1000);
     setPhase("resting");
-    setIsLogging(true);
 
     void scheduleRestNotification(currentExercise.name, Date.now() + dur * 1000);
 
@@ -207,7 +212,6 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
     void clearRestNotification();
     setPhase("active");
     setRestEndsAt(null);
-    setIsLogging(false);
   }, []);
 
   const handleNextExercise = useCallback(() => {
@@ -225,8 +229,6 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
     void clearRestNotification();
     void clearActiveWorkout(`workout-${sessionId}`);
     await updateSession(sessionId, { endedAt: Date.now() });
-    sessionSavedRef.current = true;
-    setSessionSaved(true);
     router.push("/workout/summary");
   }, [sessionId, router]);
 
@@ -285,14 +287,12 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
           secondsLeft={restSecondsLeft}
           totalSeconds={restDuration}
           progress={restProgress}
-          isLogging={isLogging}
+          lastLoggedSet={lastLoggedSet}
           pendingWeight={pendingWeight}
           pendingReps={pendingReps}
-          pendingSetType={pendingSetType}
           onWeightChange={setPendingWeight}
           onRepsChange={setPendingReps}
           onSkip={handleSkipRest}
-          onLogDone={() => setIsLogging(false)}
         />
       )}
 

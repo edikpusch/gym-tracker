@@ -62,7 +62,7 @@ const NAV_ITEMS: NavItem[] = [
     match: (p) => p === "/",
   },
   {
-    href: "/",
+    href: "/workout",
     label: "Workout",
     icon: <DumbbellIcon />,
     activeIcon: <DumbbellIcon filled />,
