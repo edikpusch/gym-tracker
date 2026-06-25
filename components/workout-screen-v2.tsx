@@ -218,11 +218,10 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
     if (exerciseIndex < exerciseStates.length - 1) {
       setExerciseIndex((i) => i + 1);
       setPhase("active");
-      setIsLogging(false);
     } else {
       handleFinish();
     }
-  }, [exerciseIndex, exerciseStates.length]);
+  }, [exerciseIndex, exerciseStates.length, handleFinish]);
 
   const handleFinish = useCallback(async () => {
     setPhase("done");

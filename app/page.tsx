@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { getAllTrainingPlans, getActivePlanId, getTrainingPlan, type TrainingPlan, type TrainingDay } from "@/lib/trainingPlans";
+import { APP_VERSION } from "@/lib/version";
 import { getRecentSessions, getSetsForSession, getDb, type WorkoutSession } from "@/lib/db";
 
 type RecentSession = WorkoutSession & { setCount: number; volume: number };
@@ -103,8 +104,13 @@ export default function Home() {
         paddingRight: "calc(20px + var(--safe-area-right))",
         paddingBottom: 20,
       }}>
-        <p style={{ fontSize: 12, color: "var(--c-text-3)", fontWeight: 500, marginBottom: 2, textTransform: "capitalize" }}>{today}</p>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--c-text)", lineHeight: 1.1 }}>{greeting}</h1>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <div>
+            <p style={{ fontSize: 12, color: "var(--c-text-3)", fontWeight: 500, marginBottom: 2, textTransform: "capitalize" }}>{today}</p>
+            <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--c-text)", lineHeight: 1.1 }}>{greeting}</h1>
+          </div>
+          <span style={{ fontSize: 10, color: "var(--c-text-3)", opacity: 0.5, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>v{APP_VERSION}</span>
+        </div>
       </div>
 
       <div style={{ paddingLeft: "calc(16px + var(--safe-area-left))", paddingRight: "calc(16px + var(--safe-area-right))" }}>
