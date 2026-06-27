@@ -1,5 +1,7 @@
 "use client";
 
+import type { SetEntry } from "@/lib/db";
+
 type LastLoggedSet = {
   exerciseName: string;
   setLabel: string;
@@ -12,6 +14,8 @@ type Props = {
   totalSeconds: number;
   progress: number;
   lastLoggedSet: LastLoggedSet | null;
+  lastSessionSets: SetEntry[];
+  nextWorkSetIndex: number;
   pendingWeight: number;
   pendingReps: number;
   onWeightChange: (w: number) => void;
@@ -22,11 +26,17 @@ type Props = {
 const RADIUS = 52;
 const CIRC = 2 * Math.PI * RADIUS;
 
+function weightStep(w: number): number {
+  return w >= 80 ? 5 : w >= 20 ? 2.5 : w >= 5 ? 1 : 0.5;
+}
+
 export function RestOverlay({
   secondsLeft,
   totalSeconds,
   progress,
   lastLoggedSet,
+  lastSessionSets,
+  nextWorkSetIndex,
   pendingWeight,
   pendingReps,
   onWeightChange,
@@ -37,7 +47,8 @@ export function RestOverlay({
   const secs = Math.floor(secondsLeft % 60);
   const timeStr = `${mins}:${String(secs).padStart(2, "0")}`;
   const dash = CIRC * (1 - progress);
-  const weightStep = pendingWeight >= 20 ? 2.5 : 1;
+  const step = weightStep(pendingWeight);
+  const nextRef = lastSessionSets[nextWorkSetIndex] ?? null;
 
   return (
     <div style={{
@@ -107,21 +118,31 @@ export function RestOverlay({
 
         {/* Next set inputs */}
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 10 }}>
-            Nächster Satz
-          </p>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 10 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: 0.7 }}>
+              Nächster Satz
+            </p>
+            {nextRef && (
+              <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>
+                · letztes Mal{" "}
+                <span style={{ fontWeight: 700, color: "var(--c-text-2)" }}>
+                  {nextRef.weight} kg × {nextRef.reps}
+                </span>
+              </span>
+            )}
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {/* KG */}
             <div style={{ display: "flex", alignItems: "center", background: "var(--c-surface-2)", borderRadius: 10, overflow: "hidden" }}>
               <button
-                onClick={() => onWeightChange(Math.max(0, +(pendingWeight - weightStep).toFixed(2)))}
+                onClick={() => onWeightChange(Math.max(0, +(pendingWeight - step).toFixed(2)))}
                 style={{ padding: "10px 14px", color: "var(--c-text-2)", fontSize: 20, fontWeight: 300, lineHeight: 1 }}
               >−</button>
               <span style={{ flex: 1, textAlign: "center", fontSize: 20, fontWeight: 700, color: "var(--c-text)", fontVariantNumeric: "tabular-nums" }}>
                 {pendingWeight % 1 === 0 ? pendingWeight : pendingWeight.toFixed(1)} <span style={{ fontSize: 12, color: "var(--c-text-3)", fontWeight: 400 }}>kg</span>
               </span>
               <button
-                onClick={() => onWeightChange(+(pendingWeight + weightStep).toFixed(2))}
+                onClick={() => onWeightChange(+(pendingWeight + step).toFixed(2))}
                 style={{ padding: "10px 14px", color: "var(--c-text-2)", fontSize: 20, fontWeight: 300, lineHeight: 1 }}
               >+</button>
             </div>

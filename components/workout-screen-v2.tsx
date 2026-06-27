@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getTrainingPlan, getActivePlanId, getDayBlocks, type TrainingDay, type TrainingExercise } from "@/lib/trainingPlans";
 import { type TrainingPlanBlock } from "@/lib/trainingModel";
-import { saveSet, saveSession, updateSession, getLastSessionSets, getBestSet, saveActiveWorkout, getActiveWorkout, clearActiveWorkout, setSetting, type SetEntry } from "@/lib/db";
+import { saveSet, saveSession, updateSession, getLastSessionSets, getBestSet, saveActiveWorkout, clearActiveWorkout, setSetting, type SetEntry } from "@/lib/db";
 import { scheduleRestNotification, clearRestNotification } from "@/lib/restNotifications";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { RestOverlay } from "@/components/workout/RestOverlay";
@@ -30,16 +30,6 @@ function getWarmupRounds(blocks: TrainingPlanBlock[], exerciseId: string): numbe
   return warmup?.type === "warmup" ? warmup.rounds : 0;
 }
 
-function buildWeightSuggestion(lastSets: SetEntry[], bestSet: SetEntry | null): { weight: number; label: string } {
-  if (lastSets.length > 0) {
-    const last = lastSets[lastSets.length - 1];
-    return { weight: last.weight, label: `${last.weight} kg · Letztes Mal` };
-  }
-  if (bestSet) {
-    return { weight: bestSet.weight, label: `${bestSet.weight} kg · Bestleistung` };
-  }
-  return { weight: 40, label: "Startgewicht" };
-}
 
 export function WorkoutScreen({ dayId }: { dayId: string }) {
   const router = useRouter();
@@ -57,14 +47,19 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
   const [startedAt] = useState(Date.now());
   const [pendingWeight, setPendingWeight] = useState(40);
   const [pendingReps, setPendingReps] = useState(10);
-  const [pendingSetType, setPendingSetType] = useState<"warmup" | "workset">("workset");
-  const [suggestion, setSuggestion] = useState<{ weight: number; label: string } | null>(null);
+  const [lastSessionSets, setLastSessionSets] = useState<SetEntry[]>([]);
+  const [bestSet, setBestSet] = useState<SetEntry | null>(null);
   const [lastLoggedSet, setLastLoggedSet] = useState<{ exerciseName: string; setLabel: string; weight: number; reps: number } | null>(null);
 
   const timerRef = useRef<number | null>(null);
 
   const currentExercise = exerciseStates[exerciseIndex]?.exercise ?? null;
   const currentState = exerciseStates[exerciseIndex] ?? null;
+
+  // Derived inline — no state needed
+  const warmupRoundsForCurrent = currentExercise ? getWarmupRounds(blocks, currentExercise.id) : 0;
+  const totalLoggedForCurrent = currentState?.sets.length ?? 0;
+  const pendingSetType: "warmup" | "workset" = totalLoggedForCurrent < warmupRoundsForCurrent ? "warmup" : "workset";
 
   // Load day & init exercise states
   useEffect(() => {
@@ -97,25 +92,22 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
     });
   }, [dayId, sessionId]);
 
-  // Load suggestion for current exercise
+  // Load comparison data — fires only when exercise changes, not on every set
   useEffect(() => {
     if (!currentExercise) return;
-    const exerciseId = currentExercise.id;
-    Promise.all([getLastSessionSets(exerciseId), getBestSet(exerciseId)]).then(([last, best]) => {
-      setSuggestion(buildWeightSuggestion(last, best));
+    setLastSessionSets([]);
+    setBestSet(null);
+    const id = currentExercise.id;
+    Promise.all([getLastSessionSets(id), getBestSet(id)]).then(([last, best]) => {
+      setLastSessionSets(last);
+      setBestSet(best);
       if (last.length > 0) {
         setPendingWeight(last[last.length - 1].weight);
         setPendingReps(last[last.length - 1].reps);
       }
     });
-
-    // Determine set type
-    const warmupRounds = getWarmupRounds(blocks, currentExercise.id);
-    const completedWorkSets = exerciseStates[exerciseIndex]?.completedWorkSets ?? 0;
-    const totalLogged = exerciseStates[exerciseIndex]?.sets.length ?? 0;
-    const warmupDone = totalLogged >= warmupRounds;
-    setPendingSetType(warmupDone ? "workset" : "warmup");
-  }, [currentExercise, exerciseIndex, blocks, exerciseStates]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentExercise?.id]);
 
   // Rest timer tick
   useEffect(() => {
@@ -260,7 +252,9 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
           <ExerciseFocus
             exerciseState={currentState}
             blocks={blocks}
-            suggestion={suggestion}
+            lastSessionSets={lastSessionSets}
+            bestSet={bestSet}
+            currentWorkSetIndex={currentState?.completedWorkSets ?? 0}
             pendingWeight={pendingWeight}
             pendingReps={pendingReps}
             pendingSetType={pendingSetType}
@@ -287,6 +281,8 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
           totalSeconds={restDuration}
           progress={restProgress}
           lastLoggedSet={lastLoggedSet}
+          lastSessionSets={lastSessionSets}
+          nextWorkSetIndex={currentState?.completedWorkSets ?? 0}
           pendingWeight={pendingWeight}
           pendingReps={pendingReps}
           onWeightChange={setPendingWeight}

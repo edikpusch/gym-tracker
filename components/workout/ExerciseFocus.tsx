@@ -4,6 +4,10 @@ import { useRef } from "react";
 import type { TrainingPlanBlock } from "@/lib/trainingModel";
 import type { SetEntry } from "@/lib/db";
 
+function weightStep(w: number): number {
+  return w >= 80 ? 5 : w >= 20 ? 2.5 : w >= 5 ? 1 : 0.5;
+}
+
 type ExerciseState = {
   exercise: {
     id: string;
@@ -20,7 +24,9 @@ type ExerciseState = {
 type Props = {
   exerciseState: ExerciseState | null;
   blocks: TrainingPlanBlock[];
-  suggestion: { weight: number; label: string } | null;
+  lastSessionSets: SetEntry[];
+  bestSet: SetEntry | null;
+  currentWorkSetIndex: number;
   pendingWeight: number;
   pendingReps: number;
   pendingSetType: "warmup" | "workset";
@@ -70,7 +76,9 @@ function SetDot({ logged, isCurrent, isWarmupSlot, index }: {
 export function ExerciseFocus({
   exerciseState,
   blocks,
-  suggestion,
+  lastSessionSets,
+  bestSet,
+  currentWorkSetIndex,
   pendingWeight,
   pendingReps,
   pendingSetType,
@@ -91,7 +99,8 @@ export function ExerciseFocus({
   const totalSets = warmupRounds + exercise.sets;
   const allDone = completedWorkSets >= exercise.sets;
   const isWarmup = pendingSetType === "warmup";
-  const weightStep = pendingWeight >= 20 ? 2.5 : 1;
+  const step = weightStep(pendingWeight);
+  const maxLastWeight = lastSessionSets.length ? Math.max(...lastSessionSets.map((s) => s.weight)) : 0;
 
   function handleWeightInput(raw: string) {
     const v = parseFloat(raw.replace(",", "."));
@@ -235,20 +244,39 @@ export function ExerciseFocus({
         </div>
       )}
 
-      {/* Suggestion */}
-      {suggestion && !isResting && (
-        <div style={{
-          background: "var(--c-surface)",
-          border: "1px solid var(--c-border)",
-          borderRadius: 12,
-          padding: "10px 14px",
-          marginBottom: 16,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}>
-          <span style={{ fontSize: 14 }}>💡</span>
-          <p style={{ fontSize: 13, color: "var(--c-text-2)" }}>{suggestion.label}</p>
+      {/* Last session comparison */}
+      {lastSessionSets.length > 0 && !isResting && (
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 10, fontWeight: 600, color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>
+            Letztes Training
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
+            {lastSessionSets.map((s, i) => {
+              const isCurrent = i === currentWorkSetIndex;
+              return (
+                <div key={i} style={{
+                  background: isCurrent ? "rgba(99,102,241,0.1)" : "var(--c-surface)",
+                  border: `1px solid ${isCurrent ? "var(--c-accent)" : "var(--c-border)"}`,
+                  borderRadius: 8,
+                  padding: "5px 10px",
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: isCurrent ? "var(--c-accent)" : "var(--c-text-2)" }}>
+                    S{i + 1}: {s.weight} kg × {s.reps}
+                  </span>
+                </div>
+              );
+            })}
+            {bestSet && bestSet.weight > maxLastWeight && (
+              <span style={{ fontSize: 11, color: "var(--c-warning)", fontWeight: 700, paddingLeft: 4 }}>
+                ↗ Best: {bestSet.weight} kg
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {lastSessionSets.length === 0 && !isResting && (
+        <div style={{ marginBottom: 16, padding: "8px 12px", background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 10 }}>
+          <p style={{ fontSize: 12, color: "var(--c-text-3)" }}>Erste Session — kein Vergleich</p>
         </div>
       )}
 
@@ -276,7 +304,7 @@ export function ExerciseFocus({
             <p style={{ fontSize: 11, color: "var(--c-text-3)", marginBottom: 6, textAlign: "center", fontWeight: 500 }}>GEWICHT (KG)</p>
             <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 14, overflow: "hidden" }}>
               <button
-                onClick={() => onWeightChange(Math.max(0, +(pendingWeight - weightStep).toFixed(2)))}
+                onClick={() => onWeightChange(Math.max(0, +(pendingWeight - step).toFixed(2)))}
                 style={{ width: "100%", padding: "10px 0", fontSize: 22, color: "var(--c-text-2)", fontWeight: 300 }}
               >−</button>
               <input
@@ -299,7 +327,7 @@ export function ExerciseFocus({
                 }}
               />
               <button
-                onClick={() => onWeightChange(+(pendingWeight + weightStep).toFixed(2))}
+                onClick={() => onWeightChange(+(pendingWeight + step).toFixed(2))}
                 style={{ width: "100%", padding: "10px 0", fontSize: 22, color: "var(--c-text-2)", fontWeight: 300 }}
               >+</button>
             </div>
