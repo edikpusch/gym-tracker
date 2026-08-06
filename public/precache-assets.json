@@ -1,5 +1,8 @@
 {
   "assets": [
+    "/_next/static/WMbQBf0PrsZMnnaZN_dA2/_buildManifest.js",
+    "/_next/static/WMbQBf0PrsZMnnaZN_dA2/_clientMiddlewareManifest.js",
+    "/_next/static/WMbQBf0PrsZMnnaZN_dA2/_ssgManifest.js",
     "/_next/static/chunks/08ttfj81-47mu.js",
     "/_next/static/chunks/0cz1d0mv5g_q7.js",
     "/_next/static/chunks/0l2l8f13s13wp.js",
@@ -7,7 +10,6 @@
     "/_next/static/chunks/0qvoil7k4y6ay.js",
     "/_next/static/chunks/0xokj_n9mivhb.css",
     "/_next/static/chunks/1allfjbbcrlw3.js",
-    "/_next/static/chunks/1hgunk5j0j7tk.js",
     "/_next/static/chunks/1iukzf_2dizd1.js",
     "/_next/static/chunks/1u5zan5bs9a7v.js",
     "/_next/static/chunks/1verluxmps6cp.js",
@@ -20,12 +22,10 @@
     "/_next/static/chunks/2zvc-4-0ru8zj.js",
     "/_next/static/chunks/32vs63h9i3e8s.js",
     "/_next/static/chunks/3fntmmi971322.js",
+    "/_next/static/chunks/3ho--lrouuf7i.js",
     "/_next/static/chunks/3n424-3g8yz2w.js",
     "/_next/static/chunks/42r3rinhhrhco.js",
     "/_next/static/chunks/turbopack-3w45y_lz1eo8j.js",
-    "/_next/static/gEEdDeZBNXhJOqYsHOVNQ/_buildManifest.js",
-    "/_next/static/gEEdDeZBNXhJOqYsHOVNQ/_clientMiddlewareManifest.js",
-    "/_next/static/gEEdDeZBNXhJOqYsHOVNQ/_ssgManifest.js",
     "/_next/static/media/favicon.2vob68tjqpejf.ico"
   ]
 }
