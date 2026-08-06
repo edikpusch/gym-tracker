@@ -1,4 +1,4 @@
-const CACHE_NAME = "gym-tracker-6b1cc762495a";
+const CACHE_NAME = "gym-tracker-be3196321fc6";
 const APP_SHELL = [
   "/",
   "/history",
@@ -10,27 +10,37 @@ const APP_SHELL = [
   "/favicon.ico",
   "/icon",
   "/apple-icon",
-  "/precache-assets.json",
 ];
 
-async function getPrecacheAssets() {
-  try {
-    const response = await fetch("/precache-assets.json", { cache: "no-store" });
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data.assets) ? data.assets : [];
-  } catch (error) {
-    console.error("Failed to load precache assets:", error);
-    return [];
+const SHELL_PAGES = APP_SHELL.filter((url) => !url.includes("."));
+
+async function getCurrentBuildAssets() {
+  const responses = await Promise.all(
+    SHELL_PAGES.map((url) => fetch(url, { cache: "no-store" }))
+  );
+  const htmlDocuments = await Promise.all(
+    responses.filter((response) => response.ok).map((response) => response.text())
+  );
+  const assets = new Set();
+
+  for (const html of htmlDocuments) {
+    for (const match of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
+      const assetUrl = new URL(match[1], self.location.origin);
+      if (assetUrl.origin === self.location.origin && assetUrl.pathname.startsWith("/_next/static/")) {
+        assets.add(`${assetUrl.pathname}${assetUrl.search}`);
+      }
+    }
   }
+
+  return [...assets];
 }
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
-      const precacheAssets = await getPrecacheAssets();
-      await cache.addAll([...new Set([...APP_SHELL, ...precacheAssets])]);
+      const buildAssets = await getCurrentBuildAssets();
+      await cache.addAll([...new Set([...APP_SHELL, ...buildAssets])]);
     })()
   );
 });
