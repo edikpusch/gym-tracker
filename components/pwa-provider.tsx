@@ -113,6 +113,7 @@ export function PwaProvider({ children }: { children: ReactNode }) {
         .then((registered) => {
           registration = registered;
           setOfflineReady(Boolean(navigator.serviceWorker.controller || registered.active));
+          void navigator.serviceWorker.ready.then(() => setOfflineReady(true));
 
           if (registered.waiting) {
             waitingWorkerRef.current = registered.waiting;
