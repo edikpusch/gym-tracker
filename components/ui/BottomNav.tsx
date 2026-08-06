@@ -87,7 +87,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Settings",
     icon: <GearIcon />,
     activeIcon: <GearIcon filled />,
-    match: (p) => p.startsWith("/settings"),
+    match: (p) => p.startsWith("/settings") || p.startsWith("/plans"),
   },
 ];
 
@@ -109,7 +109,7 @@ export function BottomNav() {
         borderTop: "0.5px solid var(--c-border)",
         display: "flex",
         alignItems: "stretch",
-        zIndex: 50,
+        zIndex: 20,
       }}
     >
       {NAV_ITEMS.map((item) => {

@@ -21,6 +21,7 @@ import {
   type StretchPlanBlock,
   type TrainingPlanBlock,
 } from "@/lib/trainingModel";
+import type { LoadKind, WeightUnit } from "@/lib/workout-domain/types";
 
 export type PlanRouteSlot = "push" | "pull" | "mixed";
 
@@ -31,6 +32,17 @@ export type TrainingExercise = {
   minReps: number;
   maxReps: number;
   restSeconds: number;
+  loadKind?: LoadKind;
+  weightUnit?: WeightUnit;
+  weightStep?: number;
+  group?: {
+    id: string;
+    type: "superset" | "circuit";
+    label: string;
+    rounds: number;
+    transitionSeconds: number;
+    roundRestSeconds: number;
+  };
 };
 
 export type TrainingDay = {
@@ -69,12 +81,28 @@ export type DayPlanQuality = {
 };
 
 function normalizeTrainingExercise(exercise: TrainingExercise): TrainingExercise {
+  const validLoadKinds: LoadKind[] = ["external", "bodyweight", "bodyweight-plus", "assisted", "machine", "per-side"];
+  const loadKind = exercise.loadKind && validLoadKinds.includes(exercise.loadKind) ? exercise.loadKind : undefined;
+  const group = exercise.group
+    ? {
+        ...exercise.group,
+        label: exercise.group.label.trim() || (exercise.group.type === "superset" ? "Supersatz" : "Zirkel"),
+        rounds: Math.max(1, Math.round(Number(exercise.group.rounds) || 1)),
+        transitionSeconds: Math.max(0, Math.round(Number(exercise.group.transitionSeconds) || 0)),
+        roundRestSeconds: Math.max(15, Math.round(Number(exercise.group.roundRestSeconds) || 60)),
+      }
+    : undefined;
+
   return {
     ...exercise,
     sets: Math.max(1, Math.round(Number(exercise.sets) || 1)),
     minReps: Math.max(1, Number(exercise.minReps) || 1),
     maxReps: Math.max(Math.max(1, Number(exercise.minReps) || 1), Number(exercise.maxReps) || Number(exercise.minReps) || 1),
     restSeconds: Math.max(15, Math.round(Number(exercise.restSeconds) || 60)),
+    loadKind,
+    weightUnit: exercise.weightUnit === "lb" ? "lb" : "kg",
+    weightStep: Math.max(0.1, Number(exercise.weightStep) || 2.5),
+    group,
   };
 }
 
@@ -83,7 +111,13 @@ function normalizeTrainingDay(day: TrainingDay): TrainingDay {
   const migratedBlocks = materializeLegacyWarmupBlocks(
     exercises,
     day.blocks ?? []
-  );
+  ).map((block): TrainingPlanBlock => {
+    if (block.type === "pause") return { ...block, label: block.label.trim() || "Geplante Pause", seconds: Math.max(5, Math.round(Number(block.seconds) || 60)) };
+    if (block.type === "note") return { ...block, label: block.label.trim() || "Trainingshinweis", notes: block.notes.trim() };
+    if (block.type === "stretch") return { ...block, label: block.label.trim() || "Mobilität", holdSeconds: Math.max(5, Math.round(Number(block.holdSeconds) || 30)), rounds: Math.max(1, Math.round(Number(block.rounds) || 1)) };
+    if (block.type === "warmup") return { ...block, rounds: Math.max(1, Math.round(Number(block.rounds) || 1)), restSeconds: Math.max(15, Math.round(Number(block.restSeconds) || 45)) };
+    return block;
+  });
 
   return {
     ...day,
@@ -955,6 +989,58 @@ function writeCustomPlans(plans: TrainingPlan[]) {
 
 function clonePlan(plan: TrainingPlan): TrainingPlan {
   return normalizeTrainingPlan(JSON.parse(JSON.stringify(plan)) as TrainingPlan);
+}
+
+export function cloneTrainingPlan(plan: TrainingPlan) {
+  return clonePlan(plan);
+}
+
+export function createTrainingPlanDraft(source?: TrainingPlan): TrainingPlan {
+  const planId = createCustomPlanId();
+  if (source) {
+    const copy = clonePlan(source);
+    return {
+      ...copy,
+      id: planId,
+      name: `${source.name} Kopie`,
+      origin: "custom",
+      days: copy.days,
+    };
+  }
+
+  return normalizeTrainingPlan({
+    id: planId,
+    name: "Mein Trainingsplan",
+    description: "Workout A",
+    accent: "#6366f1",
+    origin: "custom",
+    days: [{ id: `${planId}-mixed-0`, name: "Workout A", slot: "mixed", color: DEFAULT_DAY_COLORS.mixed, exercises: [] }],
+  });
+}
+
+export function saveTrainingPlanDraft(draft: TrainingPlan) {
+  if (draft.origin !== "custom") {
+    return null;
+  }
+
+  const customPlans = readCustomPlans();
+  const index = customPlans.findIndex((plan) => plan.id === draft.id);
+  if (!draft.name.trim() || !draft.days.length) {
+    return null;
+  }
+
+  const normalized = normalizeTrainingPlan({
+    ...clonePlan(draft),
+    name: draft.name.trim(),
+    description: draft.days.map((day) => day.name.trim()).join(" / "),
+  });
+  if (index === -1) {
+    customPlans.unshift(normalized);
+  } else {
+    customPlans[index] = normalized;
+  }
+  writeCustomPlans(customPlans);
+  return clonePlan(normalized);
 }
 
 function rememberRecentPlanExerciseRef(exerciseRef: string) {
