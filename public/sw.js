@@ -1,11 +1,11 @@
-const CACHE_NAME = "gym-tracker-v3";
+const CACHE_NAME = "gym-tracker-3047105c45e7";
 const APP_SHELL = [
   "/",
   "/history",
+  "/plans",
+  "/statistics",
+  "/settings",
   "/workout",
-  "/workout/push",
-  "/workout/pull",
-  "/workout/legs",
   "/manifest.webmanifest",
   "/favicon.ico",
   "/icon",
@@ -15,14 +15,8 @@ const APP_SHELL = [
 
 async function getPrecacheAssets() {
   try {
-    const response = await fetch("/precache-assets.json", {
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      return [];
-    }
-
+    const response = await fetch("/precache-assets.json", { cache: "no-store" });
+    if (!response.ok) return [];
     const data = await response.json();
     return Array.isArray(data.assets) ? data.assets : [];
   } catch (error) {
@@ -36,60 +30,55 @@ self.addEventListener("install", (event) => {
     (async () => {
       const cache = await caches.open(CACHE_NAME);
       const precacheAssets = await getPrecacheAssets();
-      await cache.addAll([...APP_SHELL, ...precacheAssets]);
+      await cache.addAll([...new Set([...APP_SHELL, ...precacheAssets])]);
     })()
   );
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      )
-    )
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  if (request.method !== "GET" || url.origin !== self.location.origin) {
-    return;
-  }
+  if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        .then(async (response) => {
+          if (response.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(request, response.clone());
+          }
           return response;
         })
-        .catch(async () => {
-          const cachedResponse = await caches.match(request);
-          return cachedResponse || caches.match("/");
-        })
+        .catch(async () => (await caches.match(request)) || (await caches.match("/")))
     );
     return;
   }
 
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
+    caches.match(request).then(async (cachedResponse) => {
+      if (cachedResponse) return cachedResponse;
+      const response = await fetch(request);
+      if (response.ok) {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.put(request, response.clone());
       }
-
-      return fetch(request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        return response;
-      });
+      return response;
     })
   );
 });

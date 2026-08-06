@@ -6,9 +6,11 @@ import { getAppPreferences } from "@/lib/appPreferences";
 import { isAndroidPlatform, isNativePlatform } from "@/lib/platform";
 
 const REST_NOTIFICATION_ID = 42001;
-const REST_CHANNEL_ID_SOUND = "rest-timer-sound-v2";
-const REST_CHANNEL_ID_SILENT = "rest-timer-silent-v2";
-const REST_WARNING_LEAD_MS = 10_000;
+const REST_CHANNEL_ID_SIGNAL = "rest-timer-signal-v3";
+const REST_CHANNEL_ID_SOUND = "rest-timer-sound-v3";
+const REST_CHANNEL_ID_VIBRATION = "rest-timer-vibration-v3";
+const REST_CHANNEL_ID_SILENT = "rest-timer-silent-v3";
+const REST_WARNING_LEAD_MS = 15_000;
 
 let channelReady = false;
 
@@ -40,10 +42,30 @@ async function ensureChannel() {
   }
 
   await LocalNotifications.createChannel({
-    id: REST_CHANNEL_ID_SOUND,
-    name: "Pausen-Timer Signal",
-    description: "Kräftiges Signal 10 Sekunden vor dem Ende deiner Satzpause.",
+    id: REST_CHANNEL_ID_SIGNAL,
+    name: "Pausen-Timer Ton und Vibration",
+    description: "Kräftiges Signal 15 Sekunden vor dem Ende deiner Satzpause.",
     importance: 5,
+    visibility: 1,
+    vibration: true,
+    sound: "default",
+  });
+
+  await LocalNotifications.createChannel({
+    id: REST_CHANNEL_ID_SOUND,
+    name: "Pausen-Timer nur Ton",
+    description: "Warnton ohne Vibration.",
+    importance: 5,
+    visibility: 1,
+    vibration: false,
+    sound: "default",
+  });
+
+  await LocalNotifications.createChannel({
+    id: REST_CHANNEL_ID_VIBRATION,
+    name: "Pausen-Timer nur Vibration",
+    description: "Vibration ohne Warnton.",
+    importance: 4,
     visibility: 1,
     vibration: true,
   });
@@ -51,10 +73,10 @@ async function ensureChannel() {
   await LocalNotifications.createChannel({
     id: REST_CHANNEL_ID_SILENT,
     name: "Pausen-Timer leise",
-    description: "Stille Benachrichtigungen 10 Sekunden vor dem Ende deiner Satzpause.",
-    importance: 4,
+    description: "Stille Pausenbenachrichtigungen.",
+    importance: 3,
     visibility: 1,
-    vibration: true,
+    vibration: false,
   });
 
   channelReady = true;
@@ -82,11 +104,13 @@ export async function scheduleRestNotification(
     return;
   }
 
-  const withTone = getAppPreferences().getReadyTone;
+  const preferences = getAppPreferences();
+  const withTone = preferences.getReadyTone;
+  const withVibration = preferences.restVibration;
 
   const notification = {
     id: REST_NOTIFICATION_ID,
-    title: "Pause endet in 10 Sek.",
+    title: "Pause endet in 15 Sek.",
     body: `${exerciseLabel} ist gleich wieder dran.`,
     schedule: {
       at: new Date(triggerAtMs),
@@ -101,9 +125,9 @@ export async function scheduleRestNotification(
       isAndroid()
         ? {
             ...notification,
-            channelId: withTone ? REST_CHANNEL_ID_SOUND : REST_CHANNEL_ID_SILENT,
+            channelId: withTone && withVibration ? REST_CHANNEL_ID_SIGNAL : withTone ? REST_CHANNEL_ID_SOUND : withVibration ? REST_CHANNEL_ID_VIBRATION : REST_CHANNEL_ID_SILENT,
           }
-        : notification,
+        : { ...notification, sound: withTone ? "default" : undefined },
     ],
   });
 }

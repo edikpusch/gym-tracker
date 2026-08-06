@@ -30,8 +30,10 @@ import {
   PLAN_VERSION_KEY,
   WORKOUT_LOG_KEY,
 } from "@/lib/workoutEngine";
+import { getDb, type ActiveWorkoutSnapshot, type AppSetting, type GymTrackerDB, type SetEntry, type WeightEntry, type WorkoutSession } from "@/lib/db";
+import type { SessionSetRecord, WorkoutMetaEntry, WorkoutRuntimeState } from "@/lib/workout-domain/types";
 
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 
 type BackupEntryValue = string | null;
 
@@ -67,6 +69,22 @@ export type GymTrackerBackup = {
   storageDriver?: string;
   summary: GymTrackerBackupSummary;
   entries: BackupStorageEntries;
+  database?: BackupDatabaseEntries;
+};
+
+type BackupDatabaseEntries = {
+  legacySets: SetEntry[];
+  legacySessions: WorkoutSession[];
+  weights: WeightEntry[];
+  legacyActiveWorkout: ActiveWorkoutSnapshot[];
+  settings: AppSetting[];
+  workoutSessionsV2: WorkoutRuntimeState[];
+  workoutSetsV2: SessionSetRecord[];
+  workoutMeta: WorkoutMetaEntry[];
+};
+
+const EMPTY_DATABASE: BackupDatabaseEntries = {
+  legacySets: [], legacySessions: [], weights: [], legacyActiveWorkout: [], settings: [], workoutSessionsV2: [], workoutSetsV2: [], workoutMeta: [],
 };
 
 const STORAGE_KEY_MAP: Record<keyof BackupStorageEntries, string> = {
@@ -138,7 +156,7 @@ function parseJsonValue<T>(value: BackupEntryValue): T | null {
   }
 }
 
-function buildBackupSummary(entries: BackupStorageEntries): GymTrackerBackupSummary {
+function buildBackupSummary(entries: BackupStorageEntries, database?: BackupDatabaseEntries): GymTrackerBackupSummary {
   const workoutLogs = parseJsonValue<unknown[]>(entries.workoutLogs);
   const customPlans = parseJsonValue<unknown[]>(entries.customPlans);
   const customExercises = parseJsonValue<Array<{ archived?: boolean }>>(
@@ -170,9 +188,11 @@ function buildBackupSummary(entries: BackupStorageEntries): GymTrackerBackupSumm
     ? customExercises.filter((entry) => Boolean(entry?.archived)).length
     : 0;
 
+  const databaseSessionCount = database?.workoutSessionsV2.filter((session) => session.status === "completed").length ?? 0;
+  const databaseSetCount = database?.workoutSetsV2.filter((set) => set.status === "completed").length ?? 0;
   return {
-    workoutSessionCount,
-    loggedSetCount: Array.isArray(workoutLogs) ? workoutLogs.length : 0,
+    workoutSessionCount: Math.max(workoutSessionCount, databaseSessionCount),
+    loggedSetCount: Math.max(Array.isArray(workoutLogs) ? workoutLogs.length : 0, databaseSetCount),
     customPlanCount: Array.isArray(customPlans) ? customPlans.length : 0,
     customExerciseCount,
     archivedExerciseCount,
@@ -186,9 +206,10 @@ function buildBackupSummary(entries: BackupStorageEntries): GymTrackerBackupSumm
 
 function normalizeBackupSummary(
   summary: Partial<GymTrackerBackupSummary> | null | undefined,
-  entries: BackupStorageEntries
+  entries: BackupStorageEntries,
+  database?: BackupDatabaseEntries
 ): GymTrackerBackupSummary {
-  const fallback = buildBackupSummary(entries);
+  const fallback = buildBackupSummary(entries, database);
   if (!summary || typeof summary !== "object") {
     return fallback;
   }
@@ -236,14 +257,20 @@ export function inspectGymTrackerBackup(rawText: string) {
   }
 
   const entries = normalizeBackupEntries(parsed.entries);
+  const candidateDatabase = parsed.database as Partial<BackupDatabaseEntries> | undefined;
+  const database: BackupDatabaseEntries = candidateDatabase && typeof candidateDatabase === "object"
+    ? Object.fromEntries(Object.keys(EMPTY_DATABASE).map((key) => [key, Array.isArray(candidateDatabase[key as keyof BackupDatabaseEntries]) ? candidateDatabase[key as keyof BackupDatabaseEntries] : []])) as BackupDatabaseEntries
+    : EMPTY_DATABASE;
   return {
     version: typeof parsed.version === "number" ? parsed.version : 1,
     exportedAt:
       typeof parsed.exportedAt === "string" ? parsed.exportedAt : null,
     storageDriver:
       typeof parsed.storageDriver === "string" ? parsed.storageDriver : null,
-    summary: normalizeBackupSummary(parsed.summary, entries),
+    summary: normalizeBackupSummary(parsed.summary, entries, database),
     entries,
+    database,
+    hasDatabase: Boolean(candidateDatabase),
   };
 }
 
@@ -307,7 +334,7 @@ async function exportNativeBackupFile(fileName: string, text: string) {
   }
 }
 
-export function createGymTrackerBackup(): GymTrackerBackup {
+export async function createGymTrackerBackup(db: GymTrackerDB = getDb()): Promise<GymTrackerBackup> {
   const rawEntries = hasAppStorage()
     ? readStorageEntries(Object.values(STORAGE_KEY_MAP))
     : {};
@@ -324,18 +351,24 @@ export function createGymTrackerBackup(): GymTrackerBackup {
     entries.planVersion = PLAN_VERSION;
   }
 
+  const [legacySets, legacySessions, weights, legacyActiveWorkout, settings, workoutSessionsV2, workoutSetsV2, workoutMeta] = await Promise.all([
+    db.sets.toArray(), db.sessions.toArray(), db.weights.toArray(), db.activeWorkout.toArray(), db.settings.toArray(), db.workoutSessionsV2.toArray(), db.workoutSetsV2.toArray(), db.workoutMeta.toArray(),
+  ]);
+  const database: BackupDatabaseEntries = { legacySets, legacySessions, weights, legacyActiveWorkout, settings, workoutSessionsV2, workoutSetsV2, workoutMeta };
+
   return {
     app: "gym-tracker",
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     storageDriver: getAppStorageDriverName(),
-    summary: buildBackupSummary(entries),
+    summary: buildBackupSummary(entries, database),
     entries,
+    database,
   };
 }
 
-export function serializeGymTrackerBackup() {
-  return JSON.stringify(createGymTrackerBackup(), null, 2);
+export async function serializeGymTrackerBackup(db: GymTrackerDB = getDb()) {
+  return JSON.stringify(await createGymTrackerBackup(db), null, 2);
 }
 
 export async function exportGymTrackerBackup() {
@@ -344,7 +377,7 @@ export async function exportGymTrackerBackup() {
   }
 
   const fileName = buildBackupFileName();
-  const text = serializeGymTrackerBackup();
+  const text = await serializeGymTrackerBackup();
 
   if (isNativeApp()) {
     return exportNativeBackupFile(fileName, text);
@@ -385,13 +418,14 @@ export async function exportGymTrackerBackup() {
   return { method: "download" as const };
 }
 
-export function importGymTrackerBackup(rawText: string) {
+export async function importGymTrackerBackup(rawText: string, db: GymTrackerDB = getDb()) {
   if (!hasAppStorage()) {
     throw new Error("Lokaler Speicher ist auf diesem Geraet nicht verfuegbar.");
   }
 
   const inspected = inspectGymTrackerBackup(rawText);
   const entries = inspected.entries;
+  const database = inspected.database;
 
   clearActiveWorkoutState();
 
@@ -404,8 +438,22 @@ export function importGymTrackerBackup(rawText: string) {
 
   writeStorageEntries(nextStorageEntries);
 
+  if (inspected.hasDatabase) await db.transaction("rw", [db.sets, db.sessions, db.weights, db.activeWorkout, db.settings, db.workoutSessionsV2, db.workoutSetsV2, db.workoutMeta], async () => {
+    await Promise.all([db.sets.clear(), db.sessions.clear(), db.weights.clear(), db.activeWorkout.clear(), db.settings.clear(), db.workoutSessionsV2.clear(), db.workoutSetsV2.clear(), db.workoutMeta.clear()]);
+    await Promise.all([
+      database.legacySets.length ? db.sets.bulkPut(database.legacySets) : Promise.resolve(),
+      database.legacySessions.length ? db.sessions.bulkPut(database.legacySessions) : Promise.resolve(),
+      database.weights.length ? db.weights.bulkPut(database.weights) : Promise.resolve(),
+      database.legacyActiveWorkout.length ? db.activeWorkout.bulkPut(database.legacyActiveWorkout) : Promise.resolve(),
+      database.settings.length ? db.settings.bulkPut(database.settings) : Promise.resolve(),
+      database.workoutSessionsV2.length ? db.workoutSessionsV2.bulkPut(database.workoutSessionsV2) : Promise.resolve(),
+      database.workoutSetsV2.length ? db.workoutSetsV2.bulkPut(database.workoutSetsV2) : Promise.resolve(),
+      database.workoutMeta.length ? db.workoutMeta.bulkPut(database.workoutMeta) : Promise.resolve(),
+    ]);
+  });
+
   return {
     restoredAt: new Date().toISOString(),
-    summary: buildBackupSummary(entries),
+    summary: buildBackupSummary(entries, database),
   };
 }

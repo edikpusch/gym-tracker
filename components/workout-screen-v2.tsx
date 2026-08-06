@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getTrainingPlan, getActivePlanId, getDayBlocks, type TrainingDay, type TrainingExercise } from "@/lib/trainingPlans";
 import { type TrainingPlanBlock } from "@/lib/trainingModel";
@@ -8,7 +8,6 @@ import { saveSet, saveSession, updateSession, getLastSessionSets, getBestSet, sa
 import { scheduleRestNotification, clearRestNotification } from "@/lib/restNotifications";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { RestOverlay } from "@/components/workout/RestOverlay";
-import { SetLogger } from "@/components/workout/SetLogger";
 import { ExerciseList } from "@/components/workout/ExerciseList";
 import { WorkoutHeader } from "@/components/workout/WorkoutHeader";
 import { ExerciseFocus } from "@/components/workout/ExerciseFocus";
@@ -278,7 +277,6 @@ export function WorkoutScreen({ dayId }: { dayId: string }) {
       {phase === "resting" && (
         <RestOverlay
           secondsLeft={restSecondsLeft}
-          totalSeconds={restDuration}
           progress={restProgress}
           lastLoggedSet={lastLoggedSet}
           lastSessionSets={lastSessionSets}

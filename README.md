@@ -1,103 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Gym Tracker
 
-## Android Offline Test
+Gym Tracker ist eine lokal-first Progressive Web App für störungsarmes Krafttraining. Pläne, laufende Workouts und der Trainingsverlauf bleiben auf dem Gerät; für Sicherungen steht ein vollständiger JSON-Export mit Wiederherstellung bereit.
 
-1. Install dependencies if needed with `npm install`.
-2. Build once with `npm run build`.
-3. Start production with `npm run start -- --hostname 0.0.0.0`.
-4. Open `http://DEINE-IP:3000` on your Android phone while both devices are in the same WLAN.
-5. In Chrome on Android choose `Zum Startbildschirm hinzufuegen`.
-6. Open the installed app once while online so the app shell is cached.
-7. Disable WLAN/mobile data and test the workout flow offline in the gym.
+## Aktueller Funktionsumfang
 
-Firestore persistence is enabled. Offline-created sets stay on the device first and sync automatically when the phone is online again.
+- schneller Einstieg über empfohlenes Workout oder freie Workout-Auswahl
+- vollständige Workout-Vorschau vor dem Start und jederzeit während des Trainings
+- expliziter Satzstart mit Satzzeit sowie unauffälliger gesamter Workout-Zeit
+- Arbeitssätze und Aufwärmsätze mit getrennten Statistiken
+- automatische Pausen, anpassbare Pausendauer, 15-Sekunden-Signal, Vibration und 3–2–1-Countdown
+- Gewichts- und Wiederholungsvorschläge aus dem letzten passenden Training
+- freie Übungsauswahl, Überspringen, Zurückstellen und vorzeitiges Beenden
+- Supersätze, Zirkel und optionale Mobilitäts-, Pausen- und Hinweisblöcke
+- Planeditor mit Validierung, Sortierung und explizitem Speichern
+- Verlaufskorrekturen, Volumen-, Bestleistungs- und Fortschrittsauswertung
+- lokale Backups sowie Wiederaufnahme nach App-Wechsel oder Neustart
+- installierbare und offline nutzbare PWA für Android und iPhone
 
-## Android App (Capacitor)
+Übungshinweise sind technisch vorbereitet. Die endgültigen Ausführungsanimationen und Medien werden später separat festgelegt.
 
-The project is prepared for a native Android wrapper via Capacitor.
+## Daten und Datenschutz
 
-Useful commands:
+Die Web-App benötigt kein Benutzerkonto und überträgt keine Trainingsdaten an einen Cloud-Dienst. Trainingsdaten werden lokal in IndexedDB gespeichert. Einstellungen liegen ebenfalls lokal auf dem Gerät.
 
-1. `npm run build:capacitor`
-2. `npm run cap:sync`
-3. `npm run cap:open:android`
+Vor einem Browserwechsel, Zurücksetzen des Geräts oder Löschen der Website-Daten sollte unter **Einstellungen → Lokale Daten** ein Backup exportiert werden.
 
-Notes:
+## Lokale Entwicklung
 
-- The static app export is written to `out/`
-- The Android project lives in `android/`
-- After web changes for the APK, run `npm run build:capacitor` and then `npm run cap:sync`
-
-## iOS App (Capacitor)
-
-The project is prepared so the same static export can also be synced into an iOS Capacitor shell.
-
-Useful commands:
-
-1. `npm run build:capacitor`
-2. `npm run cap:add:ios`
-3. `npm run cap:sync`
-4. `npm run cap:open:ios`
-
-Notes:
-
-- `@capacitor/ios`, `@capacitor/preferences`, `@capacitor/share` and `@capacitor/filesystem` are already part of the project dependencies
-- The iOS project will live in `ios/` after running `npx cap add ios` on a Mac
-- Building, signing, simulator testing and deployment for iPhone still require `macOS` with `Xcode`
-- Safe-area handling for notch and home-indicator is enabled in the app layout
-- Rest timer notifications now avoid Android-only channel settings when running on iOS
-- App data is prepared for native storage mirroring via Capacitor Preferences
-- Native backup export writes a temporary backup file and opens the platform share sheet instead of relying on browser-style downloads
-
-### Mac handoff steps
-
-When you have temporary access to a Mac:
-
-1. Clone or open this project on the Mac
-2. Run `npm install`
-3. Run `npm run build:capacitor`
-4. Run `npm run cap:add:ios` once
-5. Run `npm run cap:sync`
-6. Open Xcode with `npm run cap:open:ios`
-7. Configure signing, test on a real iPhone, then create a TestFlight/App Store build
-
-Detailed first-run checklist:
-
-- `docs/IOS_FIRST_RUN_CHECKLIST.md`
-- `docs/CROSS_PLATFORM_DEVICE_QA.md`
-- `docs/IOS_RELEASE_AND_TESTFLIGHT.md`
-
-## Getting Started
-
-First, run the development server:
+Voraussetzung ist eine aktuelle Node.js-LTS-Version.
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Die App ist anschließend unter [http://localhost:3000](http://localhost:3000) erreichbar.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Qualitätsprüfungen
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm test
+npm run lint
+npx tsc --noEmit
+npm run build
+```
 
-## Learn More
+Der Produktionsbuild erzeugt zusätzlich eine versionsgebundene Service-Worker-Datei und ein Manifest der offline verfügbaren Assets.
 
-To learn more about Next.js, take a look at the following resources:
+## PWA testen
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run build
+npm run start
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Danach die App einmal vollständig online öffnen. Auf Android kann sie über Chrome installiert werden. Auf iPhone und iPad erfolgt die Installation in Safari über **Teilen → Zum Home-Bildschirm**.
 
-## Deploy on Vercel
+Updates werden nicht ungefragt während eines Trainings aktiviert. Wenn eine neue Version bereitsteht, erscheint die Aktualisierung kontrolliert in den Einstellungen.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Native Wrapper
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Die PWA ist zusätzlich für einen späteren Capacitor-Wrapper vorbereitet:
+
+```bash
+npm run cap:prepare
+npm run cap:open:android
+```
+
+Für iOS werden macOS und Xcode benötigt. Weiterführende Checklisten befinden sich in `docs/IOS_FIRST_RUN_CHECKLIST.md`, `docs/CROSS_PLATFORM_DEVICE_QA.md` und `docs/IOS_RELEASE_AND_TESTFLIGHT.md`.
+
+## Deployment
+
+Das Projekt ist für Next.js auf Vercel konfiguriert. Es benötigt aktuell keine Umgebungsvariablen oder externen Datendienste.

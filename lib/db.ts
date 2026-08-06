@@ -1,6 +1,11 @@
 "use client";
 
 import Dexie, { type Table } from "dexie";
+import type {
+  SessionSetRecord,
+  WorkoutMetaEntry,
+  WorkoutRuntimeState,
+} from "@/lib/workout-domain/types";
 
 export type LoggedSetType = "warmup" | "workset";
 
@@ -63,21 +68,36 @@ export type AppSetting = {
   value: string;
 };
 
-class GymTrackerDB extends Dexie {
+export class GymTrackerDB extends Dexie {
   sets!: Table<SetEntry, number>;
   sessions!: Table<WorkoutSession, number>;
   weights!: Table<WeightEntry, number>;
   activeWorkout!: Table<ActiveWorkoutSnapshot, number>;
   settings!: Table<AppSetting, string>;
+  workoutSessionsV2!: Table<WorkoutRuntimeState, string>;
+  workoutSetsV2!: Table<SessionSetRecord, string>;
+  workoutMeta!: Table<WorkoutMetaEntry, string>;
 
-  constructor() {
-    super("gym-tracker-v2");
+  constructor(databaseName = "gym-tracker-v2") {
+    super(databaseName);
     this.version(1).stores({
       sets: "++id, sessionId, timestamp, exercise, exerciseId, setType",
       sessions: "++id, sessionId, startedAt, planId, dayId",
       weights: "++id, date, timestamp",
       activeWorkout: "++id, key",
       settings: "key",
+    });
+    this.version(2).stores({
+      sets: "++id, sessionId, timestamp, exercise, exerciseId, setType",
+      sessions: "++id, sessionId, startedAt, planId, dayId",
+      weights: "++id, date, timestamp",
+      activeWorkout: "++id, key",
+      settings: "key",
+      workoutSessionsV2:
+        "sessionId, status, phase, startedAt, endedAt, updatedAt, snapshot.planId, snapshot.workoutId",
+      workoutSetsV2:
+        "id, sessionId, queueItemId, exerciseId, setKind, status, completedAt, updatedAt, [sessionId+queueItemId]",
+      workoutMeta: "key, updatedAt",
     });
   }
 }
@@ -89,6 +109,10 @@ export function getDb(): GymTrackerDB {
     _db = new GymTrackerDB();
   }
   return _db;
+}
+
+export function createGymTrackerDb(databaseName: string) {
+  return new GymTrackerDB(databaseName);
 }
 
 export async function getSetsForExercise(exerciseId: string): Promise<SetEntry[]> {
@@ -196,8 +220,19 @@ export async function getRecentSessions(limit = 20): Promise<WorkoutSession[]> {
 
 export async function saveSession(session: Omit<WorkoutSession, "id">): Promise<WorkoutSession> {
   const db = getDb();
-  const id = await db.sessions.add(session);
-  return { ...session, id };
+  return db.transaction("rw", db.sessions, async () => {
+    const existing = await db.sessions
+      .where("sessionId")
+      .equals(session.sessionId)
+      .first();
+    if (existing?.id) {
+      await db.sessions.update(existing.id, session);
+      return { ...existing, ...session };
+    }
+
+    const id = await db.sessions.add(session);
+    return { ...session, id };
+  });
 }
 
 export async function updateSession(sessionId: number, patch: Partial<WorkoutSession>): Promise<void> {

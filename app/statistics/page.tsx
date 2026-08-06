@@ -1,169 +1,69 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BottomNav } from "@/components/ui/BottomNav";
-import { getRecentSessions, getSetsForSession, type WorkoutSession, type SetEntry } from "@/lib/db";
+import { formatVolume } from "@/components/workout-session-summary";
+import { getExerciseBests, getExerciseProgress, getWorkoutHistory, type ExerciseBest, type HistorySession, type HistorySet } from "@/lib/workout-domain/analytics";
 
-type SessionStats = WorkoutSession & {
-  volume: number;
-  setCount: number;
-  durationMin: number;
-};
-
-type PersonalBest = {
-  exercise: string;
-  exerciseId: string;
-  weight: number;
-  reps: number;
-  date: number;
-};
-
-function formatDate(ts: number) {
-  return new Date(ts).toLocaleDateString("de-DE", { day: "numeric", month: "short" });
+function shortDate(timestamp: number) {
+  return new Date(timestamp).toLocaleDateString("de-DE", { day: "numeric", month: "short" });
 }
 
-function VolumeBars({ sessions }: { sessions: SessionStats[] }) {
-  const recent = sessions.slice(0, 10).reverse();
-  if (recent.length === 0) return null;
-  const maxVol = Math.max(...recent.map((s) => s.volume), 1);
-  const W = 320;
-  const H = 100;
-  const barW = Math.floor((W - (recent.length - 1) * 6) / Math.max(recent.length, 1));
+function loadLabel(set: Pick<HistorySet, "weight" | "unit" | "bodyWeight" | "loadKind">) {
+  if (set.loadKind === "bodyweight") return `${set.bodyWeight ?? set.weight} ${set.unit} Körpergewicht`;
+  if (set.loadKind === "bodyweight-plus") return `Körpergewicht + ${set.weight} ${set.unit}`;
+  if (set.loadKind === "assisted") return `Körpergewicht − ${set.weight} ${set.unit}`;
+  if (set.loadKind === "per-side") return `${set.weight} ${set.unit} je Seite`;
+  return `${set.weight} ${set.unit}`;
+}
 
-  return (
-    <svg viewBox={`0 0 ${W} ${H + 20}`} style={{ width: "100%", height: "auto" }}>
-      {recent.map((s, i) => {
-        const h = Math.max(4, (s.volume / maxVol) * H);
-        const x = i * (barW + 6);
-        const y = H - h;
-        return (
-          <g key={s.sessionId}>
-            <rect x={x} y={y} width={barW} height={h} rx={4} fill="var(--c-accent)" opacity={i === recent.length - 1 ? 1 : 0.45} />
-            <text x={x + barW / 2} y={H + 14} textAnchor="middle" fontSize={8} fill="var(--c-text-3)">
-              {formatDate(s.startedAt)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
+function MiniBars({ values, labels, color = "var(--c-accent)" }: { values: number[]; labels: string[]; color?: string }) {
+  const max = Math.max(...values, 1);
+  const width = 320;
+  const chartHeight = 96;
+  const gap = 6;
+  const barWidth = Math.max(8, (width - gap * Math.max(0, values.length - 1)) / Math.max(1, values.length));
+  return <svg role="img" aria-label="Verlauf der letzten Einheiten" viewBox={`0 0 ${width} 118`} style={{ width: "100%", display: "block" }}>{values.map((value, index) => { const height = Math.max(4, value / max * chartHeight); const x = index * (barWidth + gap); return <g key={`${labels[index]}:${index}`}><rect x={x} y={chartHeight - height} width={barWidth} height={height} rx={4} fill={color} opacity={index === values.length - 1 ? 1 : .42} /><text x={x + barWidth / 2} y={113} textAnchor="middle" fontSize="8" fill="var(--c-text-3)">{labels[index]}</text></g>; })}</svg>;
 }
 
 export default function StatisticsPage() {
-  const [sessions, setSessions] = useState<SessionStats[]>([]);
-  const [bests, setBests] = useState<PersonalBest[]>([]);
+  const [sessions, setSessions] = useState<HistorySession[]>([]);
+  const [bests, setBests] = useState<ExerciseBest[]>([]);
+  const [selectedExerciseId, setSelectedExerciseId] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      const raw = await getRecentSessions(20);
-      const enriched: SessionStats[] = await Promise.all(
-        raw.map(async (s) => {
-          const sets = await getSetsForSession(s.sessionId);
-          const work = sets.filter((x) => x.setType === "workset");
-          const volume = work.reduce((sum, x) => sum + x.weight * x.reps, 0);
-          const durationMin = s.endedAt ? Math.round((s.endedAt - s.startedAt) / 60000) : 0;
-          return { ...s, volume, setCount: work.length, durationMin };
-        })
-      );
-      setSessions(enriched);
-
-      // Personal bests: highest weight per exercise across all sets
-      const allSets: SetEntry[] = (
-        await Promise.all(raw.map((s) => getSetsForSession(s.sessionId)))
-      ).flat();
-
-      const bestMap = new Map<string, PersonalBest>();
-      for (const set of allSets) {
-        if (set.setType !== "workset" || !set.exerciseId) continue;
-        const prev = bestMap.get(set.exerciseId);
-        if (!prev || set.weight > prev.weight || (set.weight === prev.weight && set.reps > prev.reps)) {
-          bestMap.set(set.exerciseId, {
-            exercise: set.exercise,
-            exerciseId: set.exerciseId,
-            weight: set.weight,
-            reps: set.reps,
-            date: set.timestamp,
-          });
-        }
-      }
-      setBests(Array.from(bestMap.values()).sort((a, b) => b.weight - a.weight));
+    void getWorkoutHistory().then((history) => {
+      const nextBests = getExerciseBests(history);
+      setSessions(history);
+      setBests(nextBests);
+      setSelectedExerciseId(nextBests[0]?.exerciseId ?? "");
       setLoading(false);
-    }
-    void load();
+    });
   }, []);
 
-  const totalVolume = sessions.reduce((s, x) => s + x.volume, 0);
-  const totalWorkouts = sessions.length;
-  const avgDuration = sessions.length
-    ? Math.round(sessions.filter((s) => s.durationMin > 0).reduce((s, x) => s + x.durationMin, 0) / Math.max(1, sessions.filter((s) => s.durationMin > 0).length))
-    : 0;
+  const recent = sessions.slice(0, 10).reverse();
+  const progress = useMemo(() => selectedExerciseId ? getExerciseProgress(sessions, selectedExerciseId).slice(-10) : [], [selectedExerciseId, sessions]);
+  const totalVolume = sessions.reduce((sum, session) => sum + session.volumeKg, 0);
+  const totalSets = sessions.reduce((sum, session) => sum + session.workSetCount, 0);
+  const avgDuration = sessions.length ? sessions.reduce((sum, session) => sum + session.durationMs, 0) / sessions.length : 0;
+  const avgActive = sessions.length ? sessions.reduce((sum, session) => sum + session.activeDurationMs, 0) / sessions.length : 0;
+  const progressDelta = progress.length > 1 ? progress.at(-1)!.bestEstimatedOneRepMaxKg - progress[0].bestEstimatedOneRepMaxKg : null;
+  const latestProgress = progress.at(-1);
 
-  return (
-    <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 16px)" }}>
+  return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 20px)" }}>
+    <header style={{ padding: "calc(20px + var(--safe-area-top)) 20px 16px" }}><p style={{ color: "var(--c-text-3)", fontSize: 12 }}>Nur abgeschlossene Arbeitssätze</p><h1 style={{ fontSize: 27, marginTop: 2 }}>Fortschritt</h1></header>
+    <main style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 18 }}>
+      {loading ? <p style={{ color: "var(--c-text-3)", textAlign: "center", paddingTop: 40 }}>Lädt …</p> : !sessions.length ? <div style={{ padding: "42px 20px", borderRadius: 16, background: "var(--c-surface)", border: "1px solid var(--c-border)", textAlign: "center" }}><p style={{ fontSize: 32 }}>↗</p><h2 style={{ fontSize: 17, marginTop: 12 }}>Noch keine Statistik</h2><p style={{ color: "var(--c-text-3)", fontSize: 13, marginTop: 6 }}>Nach dem ersten abgeschlossenen Workout wird dein Fortschritt sichtbar.</p></div> : <>
+        <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>{[["Workouts", String(sessions.length)], ["Arbeitssätze", String(totalSets)], ["Gesamtvolumen", formatVolume(totalVolume)], ["Ø aktiv / gesamt", `${Math.round(avgActive / 60_000)} / ${Math.round(avgDuration / 60_000)} Min`]].map(([label, value]) => <div key={label} style={{ padding: 14, borderRadius: 14, background: "var(--c-surface)", border: "1px solid var(--c-border)" }}><p style={{ fontSize: 20, fontWeight: 800 }}>{value}</p><p style={{ color: "var(--c-text-3)", fontSize: 10, textTransform: "uppercase", marginTop: 4 }}>{label}</p></div>)}</section>
 
-      <div style={{ paddingTop: "calc(20px + var(--safe-area-top))", paddingLeft: 20, paddingRight: 20, paddingBottom: 16 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--c-text)" }}>Statistiken</h1>
-      </div>
+        <section style={{ padding: "15px 14px 8px", borderRadius: 16, background: "var(--c-surface)", border: "1px solid var(--c-border)" }}><p style={{ color: "var(--c-text-3)", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 10 }}>Trainingsvolumen · letzte Einheiten</p><MiniBars values={recent.map((session) => session.volumeKg)} labels={recent.map((session) => shortDate(session.startedAt))} /></section>
 
-      <div style={{ paddingLeft: 16, paddingRight: 16 }}>
+        {bests.length > 0 && <section><div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: 10, marginBottom: 10 }}><div><p style={{ fontWeight: 750 }}>Übungsfortschritt</p><p style={{ color: "var(--c-text-3)", fontSize: 12, marginTop: 2 }}>Stärkster Satz je Einheit</p></div>{progressDelta != null && <span style={{ color: progressDelta >= 0 ? "var(--c-success)" : "var(--c-danger)", fontSize: 12, fontWeight: 800 }}>{progressDelta >= 0 ? "+" : ""}{progressDelta.toFixed(1)} kg</span>}</div><select aria-label="Übung für Fortschritt" value={selectedExerciseId} onChange={(event) => setSelectedExerciseId(event.target.value)} style={{ width: "100%", padding: "11px 12px", borderRadius: 11, background: "var(--c-surface)", border: "1px solid var(--c-border-strong)", color: "var(--c-text)", marginBottom: 9 }}>{bests.map((best) => <option key={best.exerciseId} value={best.exerciseId}>{best.exerciseName}</option>)}</select>{latestProgress && <div style={{ padding: "12px 13px", borderRadius: 13, background: "var(--c-surface)", border: "1px solid var(--c-border)", marginBottom: 9 }}><p style={{ color: "var(--c-text-3)", fontSize: 10, textTransform: "uppercase", fontWeight: 750 }}>Letzter stärkster Satz</p><p style={{ fontWeight: 800, marginTop: 4 }}>{loadLabel(latestProgress.bestSet)} × {latestProgress.bestSet.reps}</p></div>}<div style={{ padding: "14px 12px 6px", borderRadius: 16, background: "var(--c-surface)", border: "1px solid var(--c-border)" }}><MiniBars color="#22d3ee" values={progress.map((entry) => entry.bestEstimatedOneRepMaxKg)} labels={progress.map((entry) => shortDate(entry.date))} /></div><p style={{ color: "var(--c-text-3)", fontSize: 11, lineHeight: 1.45, marginTop: 7 }}>Die Kurve nutzt einen geschätzten Leistungswert aus Last und Wiederholungen. Sie ist ein Trend, kein gemessener 1RM-Test.</p></section>}
 
-        {loading ? (
-          <p style={{ color: "var(--c-text-3)", textAlign: "center", paddingTop: 40 }}>Lädt…</p>
-        ) : sessions.length === 0 ? (
-          <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 16, padding: "40px 20px", textAlign: "center" }}>
-            <p style={{ fontSize: 32, marginBottom: 12 }}>📊</p>
-            <p style={{ fontSize: 16, fontWeight: 600, color: "var(--c-text)", marginBottom: 6 }}>Noch keine Daten</p>
-            <p style={{ fontSize: 13, color: "var(--c-text-3)" }}>Absolviere dein erstes Workout, um Statistiken zu sehen.</p>
-          </div>
-        ) : (
-          <>
-            {/* Summary cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
-              {[
-                { label: "Einheiten", value: String(totalWorkouts) },
-                { label: "Gesamt-Ton.", value: `${(totalVolume / 1000).toFixed(1)} t` },
-                { label: "Ø Dauer", value: `${avgDuration} Min` },
-              ].map(({ label, value }) => (
-                <div key={label} style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 14, padding: "14px 10px", textAlign: "center" }}>
-                  <p style={{ fontSize: 18, fontWeight: 700, color: "var(--c-text)", marginBottom: 2 }}>{value}</p>
-                  <p style={{ fontSize: 10, color: "var(--c-text-3)", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Volume chart */}
-            <div style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 16, padding: "16px 16px 8px", marginBottom: 20 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--c-text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 12 }}>Volumen (letzte 10 Einheiten)</p>
-              <VolumeBars sessions={sessions} />
-            </div>
-
-            {/* Personal bests */}
-            {bests.length > 0 && (
-              <div style={{ marginBottom: 20 }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--c-text-3)", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 10 }}>Bestleistungen</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {bests.map((b) => (
-                    <div key={b.exerciseId} style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div>
-                        <p style={{ fontSize: 14, fontWeight: 600, color: "var(--c-text)", marginBottom: 2 }}>{b.exercise}</p>
-                        <p style={{ fontSize: 11, color: "var(--c-text-3)" }}>{formatDate(b.date)}</p>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <p style={{ fontSize: 16, fontWeight: 700, color: "var(--c-accent)" }}>{b.weight} kg</p>
-                        <p style={{ fontSize: 11, color: "var(--c-text-3)" }}>× {b.reps} Wdh</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-      </div>
-
-      <BottomNav />
-    </div>
-  );
+        {bests.length > 0 && <section><p style={{ color: "var(--c-text-3)", fontSize: 11, fontWeight: 750, textTransform: "uppercase", marginBottom: 9 }}>Stärkste protokollierte Sätze</p><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{bests.map((best) => <div key={best.exerciseId} style={{ padding: "13px 14px", borderRadius: 13, background: "var(--c-surface)", border: "1px solid var(--c-border)", display: "flex", justifyContent: "space-between", gap: 12 }}><div><p style={{ fontWeight: 700, fontSize: 14 }}>{best.exerciseName}</p><p style={{ color: "var(--c-text-3)", fontSize: 11, marginTop: 3 }}>{shortDate(best.date)} · geschätzter Wert {best.estimatedOneRepMaxKg.toFixed(1)} kg</p></div><div style={{ textAlign: "right", flexShrink: 0 }}><p style={{ color: "var(--c-accent)", fontWeight: 800 }}>{loadLabel(best)}</p><p style={{ color: "var(--c-text-3)", fontSize: 11 }}>× {best.reps}</p></div></div>)}</div></section>}
+      </>}
+    </main>
+    <BottomNav />
+  </div>;
 }

@@ -11,7 +11,6 @@ type LastLoggedSet = {
 
 type Props = {
   secondsLeft: number;
-  totalSeconds: number;
   progress: number;
   lastLoggedSet: LastLoggedSet | null;
   lastSessionSets: SetEntry[];
@@ -32,7 +31,6 @@ function weightStep(w: number): number {
 
 export function RestOverlay({
   secondsLeft,
-  totalSeconds,
   progress,
   lastLoggedSet,
   lastSessionSets,

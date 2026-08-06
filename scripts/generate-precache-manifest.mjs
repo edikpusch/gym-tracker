@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const projectRoot = process.cwd();
 const staticDir = path.join(projectRoot, ".next", "static");
@@ -8,6 +9,8 @@ const outputFile = path.join(
   "public",
   "precache-assets.json"
 );
+const serviceWorkerTemplate = path.join(projectRoot, "scripts", "sw.template.js");
+const serviceWorkerOutput = path.join(projectRoot, "public", "sw.js");
 
 async function collectFiles(dir) {
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -42,7 +45,21 @@ async function main() {
     "utf8"
   );
 
-  console.log(`Wrote ${assetUrls.length} precache assets to public/precache-assets.json`);
+  const buildId = await fs.readFile(path.join(projectRoot, ".next", "BUILD_ID"), "utf8");
+  const buildVersion = createHash("sha256")
+    .update(buildId.trim())
+    .update("\n")
+    .update(assetUrls.join("\n"))
+    .digest("hex")
+    .slice(0, 12);
+  const template = await fs.readFile(serviceWorkerTemplate, "utf8");
+  await fs.writeFile(
+    serviceWorkerOutput,
+    template.replaceAll("__BUILD_VERSION__", buildVersion),
+    "utf8"
+  );
+
+  console.log(`Wrote ${assetUrls.length} precache assets and service worker ${buildVersion}`);
 }
 
 main().catch((error) => {

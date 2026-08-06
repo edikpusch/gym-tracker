@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ViewportMetricsController } from "@/components/viewport-metrics-controller";
+import { WorkoutDomainBootstrap } from "@/components/workout-domain-bootstrap";
+import { RestSignalMonitor } from "@/components/rest-signal-monitor";
+import { PwaProvider } from "@/components/pwa-provider";
 
 export const metadata: Metadata = {
   title: "Gym Tracker",
@@ -30,8 +33,12 @@ export default function RootLayout({
   return (
     <html lang="de">
       <body style={{ background: "var(--c-bg)" }}>
-        <ViewportMetricsController />
-        {children}
+        <PwaProvider>
+          <ViewportMetricsController />
+          <WorkoutDomainBootstrap />
+          <RestSignalMonitor />
+          {children}
+        </PwaProvider>
       </body>
     </html>
   );

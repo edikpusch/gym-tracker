@@ -43,11 +43,10 @@ function getWarmupRounds(blocks: TrainingPlanBlock[], exerciseId: string): numbe
   return warmup?.type === "warmup" ? warmup.rounds : 0;
 }
 
-function SetDot({ logged, isCurrent, isWarmupSlot, index }: {
+function SetDot({ logged, isCurrent, isWarmupSlot }: {
   logged: (SetEntry & { saved: boolean }) | null;
   isCurrent: boolean;
   isWarmupSlot: boolean;
-  index: number;
 }) {
   const color = isWarmupSlot ? "var(--c-warning)" : "var(--c-accent)";
   const size = isCurrent ? 14 : 12;
@@ -218,7 +217,7 @@ export function ExerciseFocus({
                 {Array.from({ length: warmupRounds }).map((_, i) => {
                   const logged = sets[i] ?? null;
                   const isCurrent = i === sets.length && !isResting;
-                  return <SetDot key={i} logged={logged} isCurrent={isCurrent} isWarmupSlot={true} index={i} />;
+                  return <SetDot key={i} logged={logged} isCurrent={isCurrent} isWarmupSlot={true} />;
                 })}
               </div>
             </div>
@@ -237,7 +236,7 @@ export function ExerciseFocus({
                 const globalIndex = warmupRounds + i;
                 const logged = sets[globalIndex] ?? null;
                 const isCurrent = globalIndex === sets.length && !isResting;
-                return <SetDot key={i} logged={logged} isCurrent={isCurrent} isWarmupSlot={false} index={i} />;
+                return <SetDot key={i} logged={logged} isCurrent={isCurrent} isWarmupSlot={false} />;
               })}
             </div>
           </div>

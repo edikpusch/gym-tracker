@@ -8,12 +8,29 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "GymTracker",
     description:
       "Offline-fähiger Gym Tracker für dein Training im Fitnessstudio.",
+    id: "/",
     start_url: "/",
+    scope: "/",
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#111111",
+    background_color: "#0b1120",
+    theme_color: "#0b1120",
     orientation: "portrait",
     lang: "de-DE",
+    categories: ["fitness", "health", "productivity"],
+    shortcuts: [
+      {
+        name: "Workout starten",
+        short_name: "Workout",
+        description: "Workout-Auswahl öffnen",
+        url: "/workout",
+      },
+      {
+        name: "Trainingsverlauf",
+        short_name: "Verlauf",
+        description: "Abgeschlossene Workouts ansehen",
+        url: "/history",
+      },
+    ],
     icons: [
       {
         src: "/apple-icon",

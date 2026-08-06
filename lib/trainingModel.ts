@@ -1,4 +1,5 @@
 import { getExerciseCatalogEntry, type ExerciseKind } from "@/lib/trainingCatalog";
+import type { LoadKind, WeightUnit } from "@/lib/workout-domain/types";
 
 export type PlanBlockType =
   | "exercise"
@@ -7,10 +8,11 @@ export type PlanBlockType =
   | "pause"
   | "note";
 
-export type WeightStep = 5 | 2.5 | 1 | 0.5;
+export type WeightStep = number;
 
 export type WeightConfig = {
-  unit: "kg";
+  unit: WeightUnit;
+  loadKind: LoadKind;
   allowNegative: boolean;
   min: number;
   max: number | null;
@@ -24,6 +26,9 @@ export type ExerciseDefinition = {
   minReps: number;
   maxReps: number;
   restSeconds: number;
+  loadKind?: LoadKind;
+  weightUnit?: WeightUnit;
+  weightStep?: number;
 };
 
 export type ExercisePlanBlock = {
@@ -87,6 +92,7 @@ export type PlanBlock = TrainingPlanBlock;
 export const DEFAULT_WEIGHT_STEPS: WeightStep[] = [5, 2.5, 1, 0.5];
 export const DEFAULT_WEIGHT_CONFIG: WeightConfig = {
   unit: "kg",
+  loadKind: "external",
   allowNegative: false,
   min: 0,
   max: null,
@@ -111,6 +117,7 @@ export function getDefaultWeightConfig(exerciseName: string): WeightConfig {
 
   return {
     unit: "kg",
+    loadKind: allowNegative ? "bodyweight" : "external",
     allowNegative,
     min: allowNegative ? -100 : 0,
     max: null,
@@ -138,7 +145,12 @@ export function buildExerciseBlock(
     maxReps: exercise.maxReps,
     restSeconds: exercise.restSeconds,
     warmupSets: existingBlock?.warmupSets ?? 0,
-    weight: existingBlock?.weight ?? getDefaultWeightConfig(exercise.name),
+    weight: {
+      ...(existingBlock?.weight ?? getDefaultWeightConfig(exercise.name)),
+      unit: exercise.weightUnit ?? existingBlock?.weight.unit ?? "kg",
+      loadKind: exercise.loadKind ?? existingBlock?.weight.loadKind ?? (existingBlock?.weight.allowNegative ? "bodyweight" : "external"),
+      quickSteps: exercise.weightStep ? [exercise.weightStep] : existingBlock?.weight.quickSteps ?? DEFAULT_WEIGHT_STEPS,
+    },
   };
 }
 
@@ -257,6 +269,64 @@ export function syncDayBlocks(
   });
 
   return blocks;
+}
+
+export function reorderDayExerciseBlocks(
+  exercises: ExerciseDefinition[],
+  existingBlocks: TrainingPlanBlock[] = []
+) {
+  const synced = syncDayBlocks(exercises, existingBlocks);
+  const optionalByBoundary = new Map<number, TrainingPlanBlock[]>();
+  let exerciseBoundary = 0;
+
+  synced.forEach((block) => {
+    if (block.type === "exercise") {
+      exerciseBoundary += 1;
+      return;
+    }
+    if (block.type === "warmup") return;
+    const boundary = Math.min(exercises.length, exerciseBoundary);
+    optionalByBoundary.set(boundary, [...(optionalByBoundary.get(boundary) ?? []), block]);
+  });
+
+  const exerciseBlocks = new Map(
+    synced.filter((block): block is ExercisePlanBlock => block.type === "exercise").map((block) => [block.exerciseId, block])
+  );
+  const warmupBlocks = new Map(
+    synced.filter((block): block is WarmupPlanBlock => block.type === "warmup").map((block) => [block.parentExerciseId, block])
+  );
+  const result: TrainingPlanBlock[] = [...(optionalByBoundary.get(0) ?? [])];
+
+  exercises.forEach((exercise, index) => {
+    const warmup = warmupBlocks.get(exercise.id);
+    const exerciseBlock = exerciseBlocks.get(exercise.id);
+    if (warmup) result.push(warmup);
+    if (exerciseBlock) result.push(exerciseBlock);
+    result.push(...(optionalByBoundary.get(index + 1) ?? []));
+  });
+
+  return result;
+}
+
+export function placeOptionalBlockAtExerciseBoundary(
+  exercises: ExerciseDefinition[],
+  existingBlocks: TrainingPlanBlock[],
+  blockId: string,
+  boundary: number
+) {
+  const ordered = reorderDayExerciseBlocks(exercises, existingBlocks);
+  const target = ordered.find((block) => block.id === blockId);
+  if (!target || target.type === "exercise" || target.type === "warmup") return ordered;
+  const withoutTarget = ordered.filter((block) => block.id !== blockId);
+  const clampedBoundary = Math.min(exercises.length, Math.max(0, Math.round(boundary)));
+  if (clampedBoundary === 0) return [target, ...withoutTarget];
+  let seenExercises = 0;
+  const insertAfter = withoutTarget.findIndex((block) => {
+    if (block.type === "exercise") seenExercises += 1;
+    return seenExercises === clampedBoundary && block.type === "exercise";
+  });
+  if (insertAfter < 0) return [...withoutTarget, target];
+  return [...withoutTarget.slice(0, insertAfter + 1), target, ...withoutTarget.slice(insertAfter + 1)];
 }
 
 export function materializeLegacyWarmupBlocks(
