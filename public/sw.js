@@ -1,4 +1,4 @@
-const CACHE_NAME = "gym-tracker-3047105c45e7";
+const CACHE_NAME = "gym-tracker-6b1cc762495a";
 const APP_SHELL = [
   "/",
   "/history",
