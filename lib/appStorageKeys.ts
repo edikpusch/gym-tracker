@@ -14,7 +14,7 @@ import {
 import {
   PLAN_VERSION_KEY,
   WORKOUT_LOG_KEY,
-} from "@/lib/workoutEngine";
+} from "@/lib/legacyStorageKeys";
 
 export const APP_STORAGE_KEYS = [
   APP_PREFERENCES_KEY,

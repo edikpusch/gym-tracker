@@ -36,3 +36,46 @@ test("v3 backup round-trips workout sessions, records and local entries", async 
   await target.delete();
   configureAppStorageDriver(null);
 });
+
+test("an empty backup does not wipe existing training data", async () => {
+  configureAppStorageDriver(memoryStorage());
+  const db = createGymTrackerDb(`backup-empty-guard-${Date.now()}`);
+  // Ein echtes Training auf dem Gerät …
+  // Ein minimaler, aber gültiger Session-Datensatz reicht — geprüft wird nur,
+  // dass der Import ihn nicht anfasst.
+  await db.workoutSessionsV2.put({
+    sessionId: "session:vorhanden",
+    status: "completed",
+    phase: "review",
+    schemaVersion: WORKOUT_SCHEMA_VERSION,
+    results: [],
+    queue: [],
+    queueIndex: 0,
+    startedAt: 1,
+    updatedAt: 1,
+  } as never);
+
+  // … und ein Backup, das auf einem frischen Gerät erzeugt wurde: alles leer.
+  const emptyBackup = JSON.stringify({
+    app: "gym-tracker",
+    version: 3,
+    exportedAt: new Date(0).toISOString(),
+    entries: {
+      workoutLogs: null, activePlan: null, customPlans: null, recentPlanExercises: null,
+      bodyWeight: null, preferences: null, exerciseFavorites: null, customExercises: null,
+      planVersion: null, activeWorkout: null, activeWorkoutSnapshot: null,
+    },
+    database: {
+      legacySets: [], legacySessions: [], weights: [], legacyActiveWorkout: [],
+      settings: [], workoutSessionsV2: [], workoutSetsV2: [], workoutMeta: [],
+    },
+  });
+
+  await assert.rejects(
+    () => importGymTrackerBackup(emptyBackup, db),
+    /keine Trainings/,
+    "der Import muss abbrechen statt alles zu löschen"
+  );
+  assert.equal(await db.workoutSessionsV2.count(), 1, "das vorhandene Training muss erhalten bleiben");
+  await db.delete();
+});

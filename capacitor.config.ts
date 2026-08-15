@@ -5,10 +5,13 @@ const config: CapacitorConfig = {
   appName: "Gym Tracker",
   webDir: "out",
   ios: {
-    // Prevent WKWebView from scrolling natively — the app manages its own scroll containers.
-    // Without this, both the WKWebView and the app's inner scrollers respond to swipes,
-    // causing a double-scroll / rubber-band effect on iPhone.
-    scrollEnabled: false,
+    // Muss `true` bleiben. Der frühere Kommentar behauptete, die App verwalte
+    // ihre Scroll-Container selbst — das stimmt aber nur für den Workout-Screen.
+    // Verlauf, Statistik, Einstellungen, Pläne und der Plan-Editor scrollen über
+    // das Dokument. Mit `scrollEnabled: false` wären sie auf dem iPhone
+    // vollständig eingefroren, alles unterhalb des ersten Bildschirms
+    // unerreichbar.
+    scrollEnabled: true,
     // Let Capacitor derive safe-area insets from the WKWebView's layout guides
     // so env(safe-area-inset-*) values are correct for Notch / Dynamic Island.
     contentInset: "automatic",

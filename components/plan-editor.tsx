@@ -365,7 +365,7 @@ export function PlanEditor({ initialPlan, initiallyUnsaved = false, onCancel, on
   if (!day) return null;
 
   return (
-    <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", paddingBottom: "calc(28px + var(--safe-area-bottom))" }}>
+    <div style={{ minHeight: "100dvh", background: "var(--c-bg)", paddingBottom: "calc(28px + var(--safe-area-bottom))" }}>
       <header style={{ position: "sticky", top: 0, zIndex: 10, background: "rgba(11,17,32,.96)", backdropFilter: "blur(16px)", borderBottom: "1px solid var(--c-border)", padding: "calc(12px + var(--safe-area-top)) 16px 12px", display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={requestClose} style={smallButton} aria-label="Editor schließen">←</button>
         <div style={{ flex: 1, minWidth: 0 }}>
