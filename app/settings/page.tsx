@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { AppVersionCard } from "@/components/app-version-card";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { PwaSettingsCard } from "@/components/pwa-settings-card";
 import { exportGymTrackerBackup, importGymTrackerBackup } from "@/lib/appBackup";
@@ -102,7 +103,7 @@ export default function SettingsPage() {
           <button onClick={() => void clearData()} style={{ width: "100%", padding: "14px 16px", textAlign: "left" }}><p style={{ fontWeight: 700, fontSize: 14, color: clearConfirm ? "var(--c-danger)" : "var(--c-text)" }}>{clearConfirm ? "Wirklich alle Trainingsdaten löschen?" : "Trainingsdaten löschen"}</p><p style={{ color: "var(--c-text-3)", fontSize: 12, marginTop: 2 }}>{clearConfirm ? "Noch einmal tippen zum Bestätigen" : "Pläne und Einstellungen bleiben erhalten"}</p></button>
         </div></section>
 
-        <p style={{ textAlign: "center", color: "var(--c-text-3)", fontSize: 11 }}>Gym Tracker · lokale Vorschau</p>
+        <section><p style={sectionTitle}>Über die App</p><AppVersionCard /></section>
       </main>
       <BottomNav />
     </div>
