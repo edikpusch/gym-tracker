@@ -377,3 +377,23 @@ test("an early finish keeps completed sets while discard clears active status", 
   assert.equal(discarded.status, "discarded");
   assert.equal(discarded.phase, "discarded");
 });
+
+test("re-logging a set after undo keeps record ids unique", () => {
+  let state = createWorkoutRuntime({
+    sessionId: "session:test",
+    snapshot: snapshot(),
+    now: 1_000,
+  });
+  state = reduceWorkoutState(state, { type: "update_draft", draft: { weight: 60, reps: 10 }, now: 1_100 });
+  state = reduceWorkoutState(state, { type: "start_set", now: 2_000 });
+  state = reduceWorkoutState(state, { type: "complete_set", now: 5_000 });
+  state = reduceWorkoutState(state, { type: "undo_last_set", now: 6_000 });
+  state = reduceWorkoutState(state, { type: "update_draft", draft: { weight: 62.5, reps: 10 }, now: 6_500 });
+  state = reduceWorkoutState(state, { type: "start_set", now: 7_000 });
+  state = reduceWorkoutState(state, { type: "complete_set", now: 9_000 });
+
+  assert.equal(state.results.length, 2);
+  assert.equal(new Set(state.results.map((record) => record.id)).size, 2);
+  assert.equal(state.results.filter((record) => record.status === "completed").length, 1);
+  assert.equal(state.results.find((record) => record.status === "completed")?.weight, 62.5);
+});

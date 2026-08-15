@@ -55,3 +55,47 @@ test("deleting a migrated session also removes the preserved legacy source", asy
   assert.equal(await db.sets.count(), 0);
   await db.delete();
 });
+
+test("editing a set that was re-logged after undo does not revive the discarded record", async () => {
+  const db = createGymTrackerDb(`history-undo-relog-${Date.now()}`);
+  let state = createWorkoutRuntime({ sessionId: "session", snapshot, now: 10 });
+  state = reduceWorkoutState(state, { type: "update_draft", draft: { weight: 60, reps: 10 }, now: 11 });
+  state = reduceWorkoutState(state, { type: "start_set", now: 12 });
+  state = reduceWorkoutState(state, { type: "complete_set", now: 13 });
+  state = reduceWorkoutState(state, { type: "undo_last_set", now: 14 });
+  state = reduceWorkoutState(state, { type: "update_draft", draft: { weight: 62.5, reps: 10 }, now: 15 });
+  state = reduceWorkoutState(state, { type: "start_set", now: 16 });
+  state = reduceWorkoutState(state, { type: "complete_set", now: 17 });
+  state = reduceWorkoutState(state, { type: "review_workout", now: 18 });
+  state = reduceWorkoutState(state, { type: "finish_workout", now: 19 });
+  await db.workoutSessionsV2.put(state);
+  await db.workoutSetsV2.bulkPut(state.results);
+
+  const live = state.results.find((record) => record.status === "completed");
+  assert.ok(live);
+  assert.equal(await updateCompletedHistorySet({ sessionId: "session", source: "v2", setId: live.id, weight: 65, reps: 10 }, db), true);
+
+  const stored = await db.workoutSessionsV2.get("session");
+  const completed = stored?.results.filter((record) => record.status === "completed") ?? [];
+  assert.equal(completed.length, 1, "die Korrektur darf den verworfenen Satz nicht wiederbeleben");
+  assert.equal(completed[0].weight, 65);
+  assert.equal(await db.workoutSetsV2.where("status").equals("completed").count(), 1);
+  await db.delete();
+});
+
+test("deleting a legacy session works when its primary key differs from its sessionId", async () => {
+  const { db, state } = await completedSession(`history-legacy-pk-${Date.now()}`);
+  await db.workoutSessionsV2.clear();
+  await db.workoutSetsV2.clear();
+  const migrated = { ...state, sessionId: "legacy:1712345678901", migrationSource: "legacy-dexie-v1" as const, results: state.results.map((record) => ({ ...record, sessionId: "legacy:1712345678901" })) };
+  await db.workoutSessionsV2.put(migrated);
+  await db.workoutSetsV2.bulkPut(migrated.results);
+  // Auto-Increment-PK (7) weicht bewusst vom fachlichen sessionId-Wert ab.
+  await db.sessions.put({ id: 7, sessionId: 1712345678901, startedAt: 1, endedAt: 2, dayName: "Legacy" });
+  await db.sets.put({ id: 7, sessionId: 1712345678901, timestamp: 1, exercise: "Bench", weight: 10, reps: 10, setIndex: 0, setType: "workset" });
+
+  assert.equal(await deleteCompletedHistorySession({ id: "legacy:1712345678901", source: "v2" }, db), true);
+  assert.equal(await db.sessions.count(), 0, "die Legacy-Session darf nicht zurückbleiben");
+  assert.equal(await db.sets.count(), 0);
+  await db.delete();
+});

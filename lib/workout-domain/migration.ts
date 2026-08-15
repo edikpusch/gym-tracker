@@ -140,6 +140,13 @@ export async function migrateLegacyWorkoutData(db: GymTrackerDB = getDb()) {
         LEGACY_MIGRATION_META_KEY
       );
 
+      // Ohne diesen Abbruch läuft die Migration bei jedem Kaltstart erneut über
+      // alle Legacy-Zeilen — und importiert dabei Sessions zurück, die der
+      // Nutzer im Verlauf bereits gelöscht hat.
+      if (alreadyMigrated) {
+        return { migratedSessions: 0, migratedSets: 0, alreadyMigrated: true };
+      }
+
       const legacySessions = await db.sessions.toArray();
       const legacySets = await db.sets.toArray();
       let migratedSessions = 0;

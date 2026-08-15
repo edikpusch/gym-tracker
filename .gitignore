@@ -52,3 +52,7 @@ android/.gradle/
 android/app/build/
 android/build/
 .claude/
+
+# vom Build erzeugt (scripts/generate-precache-manifest.mjs)
+public/sw.js
+public/precache-assets.json
