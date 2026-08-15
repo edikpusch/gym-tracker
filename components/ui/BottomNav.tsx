@@ -56,7 +56,7 @@ const GearIcon = ({ filled }: { filled?: boolean }) => (
 const NAV_ITEMS: NavItem[] = [
   {
     href: "/",
-    label: "Home",
+    label: "Start",
     icon: <HomeIcon />,
     activeIcon: <HomeIcon filled />,
     match: (p) => p === "/",
@@ -70,7 +70,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/statistics",
-    label: "Stats",
+    label: "Statistik",
     icon: <ChartIcon />,
     activeIcon: <ChartIcon filled />,
     match: (p) => p.startsWith("/statistics"),
@@ -84,7 +84,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/settings",
-    label: "Settings",
+    label: "Einstellungen",
     icon: <GearIcon />,
     activeIcon: <GearIcon filled />,
     match: (p) => p.startsWith("/settings") || p.startsWith("/plans"),
@@ -96,6 +96,7 @@ export function BottomNav() {
 
   return (
     <nav
+      aria-label="Hauptnavigation"
       style={{
         position: "fixed",
         bottom: 0,
@@ -119,13 +120,18 @@ export function BottomNav() {
             key={item.href}
             href={item.href}
             style={{
-              flex: 1,
+              // `flex: 1 1 0` statt `flex: 1`: sonst bestimmt der längste Text
+              // ("Einstellungen") die Spaltenbreite und das Raster verschiebt
+              // sich auf schmalen Geräten.
+              flex: "1 1 0",
+              minWidth: 0,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
               gap: 3,
-              color: active ? "var(--c-accent)" : "var(--c-text-3)",
+              // --c-text-3 lag bei 3.96:1 auf dem Hintergrund; --c-text-2 bei 7.34:1.
+              color: active ? "var(--c-accent)" : "var(--c-text-2)",
               textDecoration: "none",
               fontSize: 10,
               fontWeight: active ? 600 : 400,

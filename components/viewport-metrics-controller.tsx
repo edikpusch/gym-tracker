@@ -28,27 +28,40 @@ function applyViewportMetrics(baselineHeight: number) {
 
 export function ViewportMetricsController() {
   const baselineHeightRef = useRef<number>(0);
+  const frameRef = useRef<number>(0);
 
   useEffect(() => {
-    // Capture the full-screen height once on mount, before any keyboard appears.
-    // This baseline is used to calculate the keyboard inset on Android where
-    // window.innerHeight shrinks along with visualViewport.height.
     baselineHeightRef.current = window.innerHeight;
     applyViewportMetrics(baselineHeightRef.current);
 
     const viewport = window.visualViewport;
 
     const handleMetricsChange = () => {
-      applyViewportMetrics(baselineHeightRef.current);
+      // Die Baseline wächst mit: In iOS Safari ist innerHeight beim Laden klein,
+      // weil die Adressleiste ausgeklappt ist. Ohne das Nachziehen bliebe
+      // --app-keyboard-inset für immer 0, sobald die Leiste einmal einklappt.
+      // Eine Tastatur macht den Viewport nur kleiner, nie größer — deshalb ist
+      // das Maximum die richtige Referenz.
+      baselineHeightRef.current = Math.max(baselineHeightRef.current, window.innerHeight);
+
+      // Gedrosselt auf einen Frame: visualViewport.scroll feuert auf iOS während
+      // des gesamten Scrollens. Da die Dokumenthöhe an --app-viewport-height
+      // hängt, wurde sie sonst mitten im Scroll pro Ereignis neu gesetzt und der
+      // Scroll stockte.
+      if (frameRef.current) return;
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = 0;
+        applyViewportMetrics(baselineHeightRef.current);
+      });
     };
 
     const handleOrientationChange = () => {
-      // After rotation the baseline must be refreshed — wait one frame for the
-      // browser to settle on the new dimensions before re-reading innerHeight.
-      requestAnimationFrame(() => {
+      // Nach der Drehung braucht iOS länger als einen Frame, bis die Maße stehen.
+      baselineHeightRef.current = 0;
+      window.setTimeout(() => {
         baselineHeightRef.current = window.innerHeight;
         applyViewportMetrics(baselineHeightRef.current);
-      });
+      }, 300);
     };
 
     window.addEventListener("resize", handleMetricsChange);
@@ -57,6 +70,7 @@ export function ViewportMetricsController() {
     viewport?.addEventListener("scroll", handleMetricsChange);
 
     return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
       window.removeEventListener("resize", handleMetricsChange);
       window.removeEventListener("orientationchange", handleOrientationChange);
       viewport?.removeEventListener("resize", handleMetricsChange);
