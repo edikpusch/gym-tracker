@@ -9,6 +9,8 @@ import { exportGymTrackerBackup, importGymTrackerBackup } from "@/lib/appBackup"
 import { getDb } from "@/lib/db";
 import { DEFAULT_APP_PREFERENCES, getAppPreferences, updateAppPreferences, type AppPreferences } from "@/lib/appPreferences";
 import { getBodyWeightEntries, saveBodyWeightEntry } from "@/lib/bodyWeight";
+import { haptic, hapticsSupported } from "@/lib/haptics";
+import { previewSignal, setSignalVolume } from "@/lib/restAudio";
 
 const sectionTitle = { fontSize: 12, fontWeight: 650, color: "var(--c-text-3)", letterSpacing: .8, textTransform: "uppercase" as const, marginBottom: 10 };
 const card = { background: "var(--c-surface)", border: "1px solid var(--c-border)", borderRadius: 15, overflow: "hidden" };
@@ -36,8 +38,17 @@ export default function SettingsPage() {
     return () => { cancelled = true; };
   }, []);
 
-  function togglePreference(key: "getReadyTone" | "restVibration" | "countdownOverlay") {
-    setPreferences((current) => updateAppPreferences({ [key]: !current[key] }));
+  function togglePreference(key: "getReadyTone" | "restEndTone" | "restVibration" | "countdownOverlay") {
+    setPreferences((current) => {
+      const next = updateAppPreferences({ [key]: !current[key] });
+      if (key === "restVibration" && next.restVibration) haptic("tap");
+      return next;
+    });
+  }
+
+  function changeVolume(value: number) {
+    setPreferences(updateAppPreferences({ signalVolume: value }));
+    setSignalVolume(value);
   }
 
   function changeWeightUnit(weightUnit: "kg" | "lb") {
@@ -91,7 +102,33 @@ export default function SettingsPage() {
 
         <section><p style={sectionTitle}>Pausensignale</p><div style={card}>
           <PreferenceToggle label="Warnton bei 15 Sekunden" detail="Zwei kurze Töne, bevor die Pause endet" checked={preferences.getReadyTone} onChange={() => togglePreference("getReadyTone")} />
-          <PreferenceToggle label="Vibration" detail="Wenn das Gerät und der Browser Haptik unterstützen" checked={preferences.restVibration} onChange={() => togglePreference("restVibration")} />
+          <PreferenceToggle label="Ton am Pausenende" detail="Drei aufsteigende Töne, wenn die Pause abgelaufen ist" checked={preferences.restEndTone} onChange={() => togglePreference("restEndTone")} />
+
+          <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--c-border)" }}>
+            <label htmlFor="signal-volume" style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>Lautstärke der Signaltöne</span>
+              <span style={{ color: "var(--c-text-2)", fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{Math.round(preferences.signalVolume * 100)} %</span>
+            </label>
+            <input
+              id="signal-volume"
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={Math.round(preferences.signalVolume * 100)}
+              onChange={(event) => changeVolume(Number(event.target.value) / 100)}
+              style={{ width: "100%", marginTop: 10, height: 32, accentColor: "var(--c-accent)" }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <button onClick={() => void previewSignal("warning")} style={{ flex: 1, minHeight: 44, borderRadius: 11, background: "var(--c-surface-2)", color: "var(--c-text)", fontSize: 13, fontWeight: 700 }}>Warnton hören</button>
+              <button onClick={() => void previewSignal("end")} style={{ flex: 1, minHeight: 44, borderRadius: 11, background: "var(--c-surface-2)", color: "var(--c-text)", fontSize: 13, fontWeight: 700 }}>Endton hören</button>
+            </div>
+            <p style={{ color: "var(--c-text-2)", fontSize: 11, marginTop: 9, lineHeight: 1.45 }}>
+              Die Töne werden beim Pausenstart fest eingeplant und kommen auch, wenn du zwischendurch eine andere App öffnest. Auf dem iPhone hält Safari den Ton beim Verlassen der App an — dort hilft nur, die App offen zu lassen.
+            </p>
+          </div>
+
+          <PreferenceToggle label="Vibration" detail={hapticsSupported() ? "Rückmeldung bei gespeicherten Sätzen, Pausenende und Bestleistungen" : "Dieses Gerät oder dieser Browser unterstützt keine Vibration"} checked={preferences.restVibration} onChange={() => togglePreference("restVibration")} />
           <div style={{ borderBottom: 0 }}><PreferenceToggle label="3–2–1-Countdown" detail="Große Animation in den letzten drei Sekunden" checked={preferences.countdownOverlay} onChange={() => togglePreference("countdownOverlay")} /></div>
         </div></section>
 

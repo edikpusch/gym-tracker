@@ -39,7 +39,6 @@
 html, body {
   width: 100%;
   min-height: var(--app-viewport-height, 100dvh);
-  overflow-x: hidden;
   background: var(--c-bg);
   color: var(--c-text);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif;
@@ -51,6 +50,33 @@ html, body {
   touch-action: manipulation;
   overscroll-behavior: none;
 }
+
+/*
+ * `overflow-x: hidden` auf html UND body ließ beide zu Scroll-Containern werden
+ * (overflow-y rechnet dann zu `auto`), was in WebKit `position: sticky`
+ * aussetzen lässt. `clip` erzeugt keinen Scroll-Container und tut dasselbe.
+ */
+body { overflow-x: clip; }
+
+/*
+ * Scroll-Container: `overscroll-behavior` wirkt nur auf dem Element, auf dem es
+ * steht, und wird nicht vererbt. Ohne `contain` scrollt am Ende eines Sheets
+ * der Inhalt dahinter weiter.
+ */
+.scroll-y {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-x::-webkit-scrollbar { display: none; }
 
 input, textarea, select, button { font: inherit; }
 

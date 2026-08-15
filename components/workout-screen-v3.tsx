@@ -9,6 +9,9 @@ import {
   type TrainingDay,
   type TrainingPlan,
 } from "@/lib/trainingPlans";
+import { haptic } from "@/lib/haptics";
+import { cancelRestTones, scheduleRestTones, unlockRestAudio } from "@/lib/restAudio";
+import { useOverlay } from "@/lib/useOverlay";
 import { createWorkoutSnapshotFromPlan } from "@/lib/workout-domain/planAdapter";
 import { getWorkoutTimes } from "@/lib/workout-domain/stateMachine";
 import {
@@ -204,11 +207,15 @@ function ActiveHeader({ state, now, onOverview, onMinimize, onMenu }: { state: W
 
 function ExerciseOverview({ state, onClose, onSelect, onDefer, onSkip }: { state: WorkoutRuntimeState; onClose: () => void; onSelect: (index: number) => void; onDefer: (exerciseId: string) => void; onSkip: (exerciseId: string) => void }) {
   const exercises = Array.from(new Map(state.queue.filter((item) => !item.activity).map((item) => [item.exercise.exerciseId, item.exercise])).values());
+  const dialogRef = useOverlay(true, onClose);
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "var(--c-bg)", overflowY: "auto", padding: "calc(16px + var(--safe-area-top)) 16px calc(24px + var(--safe-area-bottom))" }}>
+    // `height: var(--app-viewport-height)` statt `inset: 0`: In Safari als Tab
+    // bezieht sich `inset` auf den Layout-Viewport, wodurch die letzte Zeile
+    // unter der Browser-Leiste lag und nicht antippbar war.
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Alle Übungen" className="scroll-y" style={{ position: "fixed", top: 0, left: 0, right: 0, height: "var(--app-viewport-height)", zIndex: 100, background: "var(--c-bg)", padding: "calc(16px + var(--safe-area-top)) 16px calc(24px + var(--safe-area-bottom))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div><p style={{ fontSize: 12, color: "var(--c-accent)", fontWeight: 700, textTransform: "uppercase" }}>Workout</p><h2 style={{ fontSize: 24, marginTop: 3 }}>Alle Übungen</h2></div>
-        <button onClick={onClose} style={{ width: 40, height: 40, borderRadius: 14, background: "var(--c-surface)", color: "var(--c-text)", fontSize: 22 }}>×</button>
+        <button aria-label="Übersicht schließen" onClick={onClose} style={{ width: 44, height: 44, borderRadius: 14, background: "var(--c-surface)", color: "var(--c-text)", fontSize: 22 }}><span aria-hidden="true">×</span></button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
         {exercises.map((exercise, exerciseIndex) => {
@@ -263,9 +270,9 @@ function RestScreen({ state, now, onAction, onDraft, onEditLast, onUndoLast }: {
       <div style={{ padding: "12px 14px", borderRadius: 13, background: "var(--c-success-dim)", border: "1px solid rgba(16,185,129,.25)" }}>
         <p style={{ color: "var(--c-success)", fontWeight: 800, fontSize: 13 }}>{last ? `${last.exerciseName} gespeichert` : "Satz gespeichert"}</p>
         {last && <p style={{ color: "var(--c-text-3)", fontSize: 12, marginTop: 3 }}>{recordLoadLabel(last, lastItem?.exercise.loadKind ?? "external")} × {last.reps}</p>}
-        {last && <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
-          <button onClick={() => setEditingLast((value) => !value)} style={{ color: "var(--c-success)", fontSize: 12, fontWeight: 750 }}>{editingLast ? "Fertig" : "Bearbeiten"}</button>
-          <button onClick={onUndoLast} style={{ color: "var(--c-danger)", fontSize: 12, fontWeight: 750 }}>Rückgängig</button>
+        {last && <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+          <button onClick={() => setEditingLast((value) => !value)} style={{ minHeight: 44, padding: "0 12px", marginLeft: -12, color: "var(--c-success)", fontSize: 13, fontWeight: 750 }}>{editingLast ? "Fertig" : "Bearbeiten"}</button>
+          <button onClick={onUndoLast} style={{ minHeight: 44, padding: "0 12px", color: "var(--c-danger)", fontSize: 13, fontWeight: 750 }}>Rückgängig</button>
         </div>}
       </div>
 
@@ -274,8 +281,34 @@ function RestScreen({ state, now, onAction, onDraft, onEditLast, onUndoLast }: {
         <Adjuster label="Letzte Wdh." value={last.reps} suffix="Wdh." step={1} min={1} onChange={(reps) => onEditLast(last.weight, reps)} />
       </div>}
 
-      <div style={{ width: 210, height: 210, borderRadius: "50%", margin: "30px auto 24px", display: "grid", placeItems: "center", background: `conic-gradient(${visualStage.type === "countdown" ? "var(--c-warning)" : "var(--c-accent)"} ${progress * 360}deg, var(--c-surface-2) 0)`, position: "relative", boxShadow: visualStage.type === "countdown" ? "0 0 42px rgba(245,158,11,.2)" : undefined }}>
-        <div style={{ position: "absolute", inset: 12, borderRadius: "50%", background: "var(--c-bg)", display: "grid", placeItems: "center", textAlign: "center" }}><div>{countdownEnabled && visualStage.type === "countdown" ? <p key={visualStage.value} style={{ fontSize: 88, lineHeight: 1, fontWeight: 900, color: "var(--c-warning)", animation: "rest-countdown-pop .55s ease-out" }}>{visualStage.value}</p> : visualStage.type === "ready" ? <p style={{ fontSize: 27, fontWeight: 900, color: "var(--c-success)" }}>BEREIT</p> : <p style={{ fontSize: 45, lineHeight: 1, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{formatTime(remaining)}</p>}<p style={{ color: visualStage.type === "warning" || visualStage.type === "countdown" ? "var(--c-warning)" : "var(--c-text-3)", fontSize: 11, letterSpacing: 1.2, fontWeight: 800, marginTop: 8 }}>{visualStage.type === "warning" ? "GLEICH BEREIT" : "PAUSE"}</p></div></div>
+      {/*
+        Vorher ein conic-gradient: bei wenigen Prozent Fortschritt entstand oben
+        ein rechteckiger Klotz statt einer Kappe. Ein SVG-Ring mit runder Kappe
+        sieht bei jedem Wert sauber aus und animiert weicher.
+      */}
+      <div style={{ width: 210, height: 210, margin: "30px auto 24px", display: "grid", placeItems: "center", position: "relative", filter: visualStage.type === "countdown" ? "drop-shadow(0 0 22px rgba(245,158,11,.25))" : undefined }}>
+        <svg aria-hidden="true" width={210} height={210} viewBox="0 0 210 210" style={{ position: "absolute", inset: 0, transform: "rotate(-90deg)" }}>
+          <circle cx={105} cy={105} r={96} fill="none" stroke="var(--c-surface-2)" strokeWidth={13} />
+          {progress > 0.002 && (
+            <circle
+              cx={105}
+              cy={105}
+              r={96}
+              fill="none"
+              stroke={visualStage.type === "countdown" ? "var(--c-warning)" : "var(--c-accent)"}
+              strokeWidth={13}
+              strokeLinecap="round"
+              strokeDasharray={2 * Math.PI * 96}
+              strokeDashoffset={2 * Math.PI * 96 * (1 - Math.min(1, progress))}
+              style={{ transition: "stroke-dashoffset .3s linear" }}
+            />
+          )}
+        </svg>
+        <div style={{ position: "relative", display: "grid", placeItems: "center", textAlign: "center" }}><div>{countdownEnabled && visualStage.type === "countdown" ? <p key={visualStage.value} style={{ fontSize: 88, lineHeight: 1, fontWeight: 900, color: "var(--c-warning)", animation: "rest-countdown-pop .55s ease-out" }}>{visualStage.value}</p> : visualStage.type === "ready" ? <p style={{ fontSize: 27, fontWeight: 900, color: "var(--c-success)" }}>BEREIT</p> : <p style={{ fontSize: 45, lineHeight: 1, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{formatTime(remaining)}</p>}<p style={{ color: visualStage.type === "warning" || visualStage.type === "countdown" ? "var(--c-warning)" : "var(--c-text-2)", fontSize: 11, letterSpacing: 1.2, fontWeight: 800, marginTop: 8 }}>{visualStage.type === "warning" ? "GLEICH BEREIT" : "PAUSE"}</p></div></div>
+        {/* Meilensteine für Screenreader — nicht jede Sekunde, nur die zwei relevanten. */}
+        <p role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>
+          {visualStage.type === "ready" ? "Pause beendet, nächster Satz bereit" : visualStage.type === "warning" ? "Noch 15 Sekunden Pause" : ""}
+        </p>
       </div>
 
       <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 24 }}>
@@ -305,16 +338,22 @@ function ActivityScreen({ state, now, onStart, onComplete }: { state: WorkoutRun
     <h1 style={{ fontSize: 30, lineHeight: 1.15, marginTop: 8 }}>{activity.label}</h1>
     {activity.text && <p style={{ marginTop: 16, padding: 16, borderRadius: 14, background: "var(--c-surface)", border: "1px solid var(--c-border)", color: "var(--c-text-2)", lineHeight: 1.55 }}>{activity.text}</p>}
     {activity.durationSeconds ? <div style={{ flex: 1, display: "grid", placeItems: "center", minHeight: 250 }}><div style={{ width: 215, height: 215, borderRadius: "50%", background: `conic-gradient(${color} ${timed ? Math.max(0, 1 - remaining / (activity.durationSeconds * 1000)) * 360 : 0}deg, var(--c-surface-2) 0)`, display: "grid", placeItems: "center" }}><div style={{ width: 185, height: 185, borderRadius: "50%", background: "var(--c-bg)", display: "grid", placeItems: "center", textAlign: "center" }}><div><p style={{ fontSize: 48, fontWeight: 850, fontVariantNumeric: "tabular-nums" }}>{formatTime(remaining)}</p>{activity.rounds && <p style={{ color: "var(--c-text-3)", fontSize: 12, marginTop: 6 }}>{activity.rounds} Runden gesamt</p>}</div></div></div></div> : <div style={{ flex: 1 }} />}
-    <button onClick={activity.durationSeconds && !timed ? onStart : onComplete} style={{ width: "100%", padding: 17, borderRadius: 15, background: timed ? "var(--c-surface-2)" : color, color: activity.type === "pause" ? "#111827" : "white", fontWeight: 850 }}>{activity.durationSeconds ? timed ? "Jetzt weiter" : "Timer starten" : "Gelesen · weiter"}</button>
+    {/*
+      Vorher: bei laufendem Timer dunkles #111827 auf var(--c-surface-2) — 1.18:1,
+      praktisch unsichtbar. Und weiß auf dem hellen Cyan der Mobilität: 1.81:1.
+      Jetzt: helle Schrift auf dunklem Grund, dunkle Schrift auf hellem Grund.
+    */}
+    <button onClick={activity.durationSeconds && !timed ? onStart : onComplete} style={{ width: "100%", padding: 17, borderRadius: 15, background: timed ? "var(--c-surface-2)" : color, color: timed ? "var(--c-text)" : activity.type === "pause" || activity.type === "mobility" ? "#0b1120" : "#fff", fontWeight: 850 }}>{activity.durationSeconds ? timed ? "Jetzt weiter" : "Timer starten" : "Gelesen · weiter"}</button>
   </main>;
 }
 
 function WorkoutMenu({ onClose, onPause, onReview, onDiscard }: { onClose: () => void; onPause: () => void; onReview: () => void; onDiscard: () => void }) {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const dialogRef = useOverlay(true, onClose);
   return (
-    <div role="dialog" aria-modal="true" aria-label="Workout-Menü" style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,.62)", display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div style={{ width: "100%", padding: "20px 16px calc(20px + var(--safe-area-bottom))", borderRadius: "24px 24px 0 0", background: "var(--c-surface)", borderTop: "1px solid var(--c-border-strong)" }} onClick={(event) => event.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}><h2 style={{ fontSize: 20 }}>Workout</h2><button onClick={onClose} style={{ width: 38, height: 38, borderRadius: 12, background: "var(--c-surface-2)", color: "var(--c-text)", fontSize: 20 }}>×</button></div>
+    <div role="presentation" style={{ position: "fixed", top: 0, left: 0, right: 0, height: "var(--app-viewport-height)", zIndex: 120, background: "rgba(0,0,0,.62)", display: "flex", alignItems: "flex-end" }} onClick={onClose}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Workout-Menü" style={{ width: "100%", padding: "20px 16px calc(20px + var(--safe-area-bottom))", borderRadius: "24px 24px 0 0", background: "var(--c-surface)", borderTop: "1px solid var(--c-border-strong)" }} onClick={(event) => event.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}><h2 style={{ fontSize: 20 }}>Workout</h2><button aria-label="Menü schließen" onClick={onClose} style={{ width: 44, height: 44, borderRadius: 12, background: "var(--c-surface-2)", color: "var(--c-text)", fontSize: 20 }}><span aria-hidden="true">×</span></button></div>
         {!confirmDiscard ? <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           <button onClick={onPause} style={{ width: "100%", padding: "15px", borderRadius: 14, background: "var(--c-surface-2)", color: "var(--c-text)", textAlign: "left", fontWeight: 750 }}>Workout bewusst pausieren</button>
           <button onClick={onReview} style={{ width: "100%", padding: "15px", borderRadius: 14, background: "var(--c-surface-2)", color: "var(--c-text)", textAlign: "left", fontWeight: 750 }}>Mit bisherigen Sätzen beenden</button>
@@ -336,30 +375,54 @@ function SetScreen({ state, now, suggestion, onStart, onComplete, onDraft }: { s
   const active = state.phase === "active_set";
   const times = getWorkoutTimes(state, now);
   const justReady = !active && state.clock.lastRestCompletedAt != null && now - state.clock.lastRestCompletedAt < 2_500;
+  // Bereits erledigte Sätze derselben Übung in dieser Einheit — füllt die Mitte
+  // mit etwas Nützlichem statt mit Leere.
+  const doneSets = state.results.filter(
+    (record) => record.status === "completed" && record.exerciseId === item.exercise.exerciseId
+  );
 
   return (
-    <main style={{ flex: 1, display: "flex", flexDirection: "column", padding: "24px 16px calc(24px + var(--safe-area-bottom))", overflowY: "auto" }}>
+    <main className="scroll-y" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "24px 16px calc(24px + var(--safe-area-bottom))" }}>
       <div>
         <p style={{ color: justReady ? "var(--c-success)" : item.plannedSet.kind === "warmup" ? "var(--c-warning)" : "var(--c-accent)", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: .9, animation: justReady ? "scale-in .35s ease-out" : undefined }}>{justReady ? "Bereit · " : ""}{item.groupType ? `${item.groupType === "superset" ? "Supersatz" : "Zirkel"} · Runde ${item.round ?? "Aufwärmen"} · ` : ""}{setLabel(state, item)}</p>
         <h1 style={{ fontSize: 29, lineHeight: 1.12, marginTop: 7 }}>{item.exercise.name}</h1>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 7 }}><p style={{ flex: 1, color: "var(--c-text-3)", fontSize: 13 }}>Ziel: {item.plannedSet.targetReps.min}–{item.plannedSet.targetReps.max} Wiederholungen</p>{guidance && <button onClick={() => setGuidanceOpen(true)} style={{ padding: "8px 10px", borderRadius: 10, background: "var(--c-surface)", border: "1px solid var(--c-border)", color: "var(--c-text-2)", fontSize: 11, fontWeight: 750 }}>Ausführung</button>}</div>
       </div>
 
-      {active ? (
-        <div style={{ textAlign: "center", margin: "34px 0 28px" }}>
-          <p style={{ color: "var(--c-text-3)", fontSize: 11, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase" }}>Satzzeit</p>
-          <p style={{ fontSize: 68, lineHeight: 1.05, fontWeight: 800, letterSpacing: -3, fontVariantNumeric: "tabular-nums", marginTop: 8 }}>{formatTime(times.setMs)}</p>
-        </div>
-      ) : (
-        <div style={{ margin: "24px 0", padding: "13px 14px", borderRadius: 13, background: "var(--c-surface)", border: "1px solid var(--c-border)" }}>
-          <p style={{ fontSize: 11, color: "var(--c-text-3)", fontWeight: 700, textTransform: "uppercase" }}>Letztes Training</p>
-          <p style={{ color: "var(--c-text-2)", fontSize: 13, marginTop: 5 }}>{suggestion ? `${recordLoadLabel(suggestion, item.exercise.loadKind)} × ${suggestion.reps} Wdh.` : "Für diesen Satz liegt noch kein passender Vergleich vor."}</p>
-        </div>
-      )}
+      {/*
+        Die Eingaben unten kleben zu lassen ist für den Daumen richtig, hinterließ
+        aber ein totes Loch von rund 400px in der Bildschirmmitte. Der mittlere
+        Block füllt jetzt den freien Platz und zentriert sich darin — dadurch ist
+        die Satzzeit auch aus einiger Entfernung ablesbar.
+      */}
+      <div style={{ flex: 1, minHeight: 0, display: "grid", placeItems: "center", alignContent: "center", gap: 16, padding: "20px 0" }}>
+        {active ? (
+          <div style={{ textAlign: "center" }}>
+            <p style={{ color: "var(--c-text-2)", fontSize: 11, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase" }}>Satzzeit</p>
+            <p style={{ fontSize: 76, lineHeight: 1.02, fontWeight: 800, letterSpacing: -3, fontVariantNumeric: "tabular-nums", marginTop: 8 }}>{formatTime(times.setMs)}</p>
+          </div>
+        ) : (
+          <div style={{ width: "100%", padding: "13px 14px", borderRadius: 13, background: "var(--c-surface)", border: "1px solid var(--c-border)" }}>
+            <p style={{ fontSize: 11, color: "var(--c-text-2)", fontWeight: 700, textTransform: "uppercase" }}>Letztes Training</p>
+            <p style={{ color: "var(--c-text)", fontSize: 14, marginTop: 5 }}>{suggestion ? `${recordLoadLabel(suggestion, item.exercise.loadKind)} × ${suggestion.reps} Wdh.` : "Für diesen Satz liegt noch kein passender Vergleich vor."}</p>
+          </div>
+        )}
+
+        {doneSets.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
+            <span style={{ width: "100%", textAlign: "center", color: "var(--c-text-2)", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: .9 }}>Heute bereits</span>
+            {doneSets.map((record, index) => (
+              <span key={record.id} style={{ padding: "6px 10px", borderRadius: 999, background: "var(--c-surface-2)", color: "var(--c-text)", fontSize: 12, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                {index + 1}. {recordLoadLabel(record, item.exercise.loadKind)} × {record.reps}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
 
       <LoadInputs item={item} draft={state.draft} onDraft={onDraft} />
 
-      <button onClick={active ? onComplete : onStart} style={{ width: "100%", padding: "17px", marginTop: 18, borderRadius: 15, background: active ? "var(--c-success)" : "var(--c-accent)", color: "#fff", fontSize: 16, fontWeight: 850 }}>{active ? "Satz speichern" : "Satz starten"}</button>
+      <button onClick={active ? onComplete : onStart} style={{ width: "100%", padding: "17px", marginTop: 18, borderRadius: 15, background: active ? "var(--c-success)" : "var(--c-accent)", color: active ? "#052e21" : "#fff", fontSize: 16, fontWeight: 850 }}>{active ? "Satz speichern" : "Satz starten"}</button>
       {guidanceOpen && guidance && <ExerciseGuidanceSheet guide={guidance} onClose={() => setGuidanceOpen(false)} />}
     </main>
   );
@@ -387,6 +450,7 @@ export function WorkoutScreenV3({ dayId }: { dayId: string }) {
   const [day, setDay] = useState<TrainingDay | null>(null);
   const [state, setState] = useState<WorkoutRuntimeState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [suggestion, setSuggestion] = useState<SessionSetRecord | null>(null);
@@ -394,13 +458,23 @@ export function WorkoutScreenV3({ dayId }: { dayId: string }) {
 
   useEffect(() => {
     async function load() {
-      const selectedPlan = getTrainingPlan(getActivePlanId());
-      const selectedDay = selectedPlan.days.find((entry) => entry.id === dayId) ?? selectedPlan.days[0] ?? null;
-      const active = await getActiveWorkoutSession();
-      setPlan(selectedPlan);
-      setDay(selectedDay);
-      setState(active);
-      setLoading(false);
+      // Ohne try/catch blieb der Bildschirm bei blockiertem Speicher (Safari
+      // Privat-Modus, volle Quota) für immer auf "Lädt …" stehen.
+      try {
+        const selectedPlan = getTrainingPlan(getActivePlanId());
+        const selectedDay = selectedPlan.days.find((entry) => entry.id === dayId) ?? selectedPlan.days[0] ?? null;
+        const active = await getActiveWorkoutSession();
+        setPlan(selectedPlan);
+        setDay(selectedDay);
+        setState(active);
+        setLoadError(null);
+      } catch (error) {
+        console.error("Workout konnte nicht geladen werden:", error);
+        setLoadError("Die lokale Datenbank ist nicht erreichbar. Im privaten Modus oder bei vollem Speicher kann der Verlauf nicht gelesen werden.");
+        setState(null);
+      } finally {
+        setLoading(false);
+      }
     }
     void load();
   }, [dayId]);
@@ -417,9 +491,38 @@ export function WorkoutScreenV3({ dayId }: { dayId: string }) {
   }, [state]);
 
   const dispatch = useCallback(async (action: Parameters<typeof dispatchActiveWorkoutAction>[0]) => {
-    const next = await dispatchActiveWorkoutAction(action);
+    // Haptik sofort, nicht erst nach dem Schreiben in IndexedDB: die Rückmeldung
+    // muss sich wie eine direkte Folge des Tippens anfühlen.
+    switch (action.type) {
+      case "complete_set": haptic("success"); break;
+      case "start_set": haptic("tap"); void unlockRestAudio(); break;
+      case "skip_exercise":
+      case "defer_exercise": haptic("warning"); break;
+      case "undo_last_set": haptic("error"); break;
+      case "finish_workout": haptic("complete"); break;
+      default: break;
+    }
+
+    let next: Awaited<ReturnType<typeof dispatchActiveWorkoutAction>> = null;
+    try {
+      next = await dispatchActiveWorkoutAction(action);
+    } catch (error) {
+      console.error("Workout-Aktion fehlgeschlagen:", error);
+      haptic("error");
+      return null;
+    }
     if (next) setState(next);
     setNow(action.now);
+
+    // Töne für die kommende Pause im Voraus auf der Audio-Uhr einplanen, damit
+    // sie auch dann kommen, wenn das Handy in der Tasche liegt.
+    if (next) {
+      if (next.phase === "resting" && next.clock.restPlannedEndsAt != null) {
+        scheduleRestTones(Math.max(0, next.clock.restPlannedEndsAt - action.now));
+      } else if (next.phase !== "resting") {
+        cancelRestTones();
+      }
+    }
     return next;
   }, []);
 
@@ -518,7 +621,11 @@ export function WorkoutScreenV3({ dayId }: { dayId: string }) {
   const uniqueExerciseCount = useMemo(() => state ? new Set(state.queue.filter((item) => !item.activity).map((item) => item.exercise.exerciseId)).size : 0, [state]);
 
   if (loading || !plan || !day) {
-    return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", display: "grid", placeItems: "center", color: "var(--c-text-3)" }}>Lädt…</div>;
+    return <div role="status" style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", display: "grid", placeItems: "center", color: "var(--c-text-2)" }}>Lädt…</div>;
+  }
+
+  if (loadError) {
+    return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", display: "grid", placeItems: "center", padding: 24, textAlign: "center" }}><div style={{ maxWidth: 380 }}><h1 style={{ fontSize: 22 }}>Daten nicht erreichbar</h1><p role="alert" style={{ color: "var(--c-text-2)", marginTop: 10, lineHeight: 1.5 }}>{loadError}</p><button onClick={() => window.location.reload()} style={{ minHeight: 48, marginTop: 22, padding: "0 24px", borderRadius: 14, background: "var(--c-accent)", color: "#fff", fontWeight: 800 }}>Erneut versuchen</button></div></div>;
   }
 
   if (!state) return <Preview plan={plan} day={day} onStart={startWorkout} />;

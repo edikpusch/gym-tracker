@@ -12,6 +12,10 @@ export type AppPreferences = {
   menuSide: MenuSide;
   themeMode: ThemeMode;
   getReadyTone: boolean;
+  /** Eigener Ton, wenn die Pause abgelaufen ist — anders als die Vorwarnung. */
+  restEndTone: boolean;
+  /** Lautstärke der Signaltöne, 0 bis 1. */
+  signalVolume: number;
   restVibration: boolean;
   countdownOverlay: boolean;
   progressAnimations: boolean;
@@ -24,6 +28,8 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   menuSide: "left",
   themeMode: "light",
   getReadyTone: true,
+  restEndTone: true,
+  signalVolume: 0.7,
   restVibration: true,
   countdownOverlay: true,
   progressAnimations: true,
@@ -38,6 +44,14 @@ function normalizePreferences(value: Partial<AppPreferences> | null | undefined)
       typeof value?.getReadyTone === "boolean"
         ? value.getReadyTone
         : DEFAULT_APP_PREFERENCES.getReadyTone,
+    restEndTone:
+      typeof value?.restEndTone === "boolean"
+        ? value.restEndTone
+        : DEFAULT_APP_PREFERENCES.restEndTone,
+    signalVolume:
+      typeof value?.signalVolume === "number" && Number.isFinite(value.signalVolume)
+        ? Math.min(1, Math.max(0, value.signalVolume))
+        : DEFAULT_APP_PREFERENCES.signalVolume,
     restVibration:
       typeof value?.restVibration === "boolean"
         ? value.restVibration
