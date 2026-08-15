@@ -21,6 +21,30 @@ function legacyNumericId(value: string, prefix: string) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+/**
+ * Ersetzt genau den einen abgeschlossenen Record mit dieser ID.
+ *
+ * Neu geschriebene Records haben eindeutige IDs. Bestände, die vor dem Fix
+ * entstanden sind, können aber doppelte IDs enthalten (ein "deleted" aus
+ * "Rückgängig" plus ein "completed"). Ein naives `map` über alle Treffer würde
+ * dort den verworfenen Satz wiederbeleben — deshalb nur der erste passende
+ * Record mit Status "completed".
+ */
+function replaceFirstCompleted<T extends { id: string; status: string }>(
+  records: T[],
+  setId: string,
+  next: T
+) {
+  let replaced = false;
+  return records.map((record) => {
+    if (!replaced && record.id === setId && record.status === "completed") {
+      replaced = true;
+      return next;
+    }
+    return record;
+  });
+}
+
 export async function updateCompletedHistorySet(update: SetUpdate, db: GymTrackerDB = getDb()) {
   if (!Number.isFinite(update.weight) || update.weight < 0 || !Number.isInteger(update.reps) || update.reps < 1) return false;
   if (update.bodyWeight != null && (!Number.isFinite(update.bodyWeight) || update.bodyWeight <= 0)) return false;
@@ -37,7 +61,7 @@ export async function updateCompletedHistorySet(update: SetUpdate, db: GymTracke
     if (!session || !record) return false;
     const now = Date.now();
     const nextRecord = { ...record, weight: update.weight, reps: update.reps, bodyWeight: update.bodyWeight, updatedAt: now };
-    const nextSession = { ...session, results: session.results.map((result) => result.id === update.setId ? nextRecord : result), updatedAt: now };
+    const nextSession = { ...session, results: replaceFirstCompleted(session.results, update.setId, nextRecord), updatedAt: now };
     await Promise.all([db.workoutSessionsV2.put(nextSession), db.workoutSetsV2.put(nextRecord)]);
     return true;
   });
@@ -58,7 +82,7 @@ export async function deleteCompletedHistorySet(target: SetMutation, db: GymTrac
     const now = Date.now();
     const deletedRecord = { ...record, status: "deleted" as const, updatedAt: now };
     await Promise.all([
-      db.workoutSessionsV2.put({ ...session, results: session.results.map((result) => result.id === target.setId ? deletedRecord : result), updatedAt: now }),
+      db.workoutSessionsV2.put({ ...session, results: replaceFirstCompleted(session.results, target.setId, deletedRecord), updatedAt: now }),
       db.workoutSetsV2.put(deletedRecord),
     ]);
     return true;
@@ -71,7 +95,9 @@ export async function deleteCompletedHistorySession(session: Pick<HistorySession
     if (sessionId == null) return false;
     await db.transaction("rw", db.sessions, db.sets, async () => {
       await db.sets.where("sessionId").equals(sessionId).delete();
-      await db.sessions.delete(sessionId);
+      // Primärschlüssel von db.sessions ist "++id"; `sessionId` ist ein
+      // separates, indiziertes Feld. delete(sessionId) trifft daher nichts.
+      await db.sessions.where("sessionId").equals(sessionId).delete();
     });
     return true;
   }
@@ -85,7 +111,8 @@ export async function deleteCompletedHistorySession(session: Pick<HistorySession
       const legacySessionId = legacyNumericId(existing.sessionId, "legacy:");
       if (legacySessionId != null) {
         await db.sets.where("sessionId").equals(legacySessionId).delete();
-        await db.sessions.delete(legacySessionId);
+        // Siehe oben: über den sessionId-Index löschen, nicht über den PK.
+        await db.sessions.where("sessionId").equals(legacySessionId).delete();
       }
     }
   });

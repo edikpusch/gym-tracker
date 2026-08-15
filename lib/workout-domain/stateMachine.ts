@@ -261,7 +261,12 @@ export function reduceWorkoutState(
     );
     const activeDurationMs = getLiveSetDuration(state, action.now);
     const result: SessionSetRecord = {
-      id: `${state.sessionId}:${item.id}`,
+      // Der Zähler ist notwendig: `undo_last_set` markiert einen Record nur als
+      // "deleted" und behält ihn in `results`. Ohne den Suffix bekäme ein erneut
+      // geloggter Satz dieselbe ID wie der verworfene, und jede spätere
+      // Verlaufskorrektur würde beide Records treffen (verdoppeltes Volumen).
+      // `results` wächst ausschließlich, der Index ist damit eindeutig.
+      id: `${state.sessionId}:${item.id}:${state.results.length}`,
       sessionId: state.sessionId,
       queueItemId: item.id,
       stepId: item.stepId,
