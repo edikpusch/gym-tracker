@@ -36,9 +36,34 @@
   padding: 0;
 }
 
-html, body {
+/*
+ * Scroll-Modell — bewusst so einfach wie möglich.
+ *
+ * Das Dokument ist der einzige Scroller für gewöhnliche Seiten. Alles, was das
+ * stören kann, ist hier absichtlich NICHT gesetzt:
+ *
+ * - kein `touch-action` auf html/body. `manipulation` erlaubt Ein-Finger-Panning
+ *   zwar laut Spezifikation, aber mehrere Android-WebView-Versionen behandeln es
+ *   auf dem Wurzelelement fehlerhaft und lassen dann nur noch Zwei-Finger-Gesten
+ *   durch. Der Schutz vor Doppeltipp-Zoom sitzt jetzt nur noch auf Schaltflächen,
+ *   wo er tatsächlich gebraucht wird.
+ * - kein `overflow-x` auf html/body. Beide Varianten (`hidden` wie `clip`)
+ *   propagieren auf den Viewport und haben je nach Engine Nebenwirkungen bis hin
+ *   zum blockierten Scrollen. Überbreite Elemente werden stattdessen dort
+ *   geclippt, wo sie entstehen.
+ * - kein `min-height: var(--app-viewport-height)`. Der Wert kommt aus
+ *   JavaScript und ändert sich beim Ein- und Ausfahren der Adressleiste — die
+ *   Dokumenthöhe wackelte dadurch während des Scrollens. `100dvh` macht der
+ *   Browser selbst, ohne Umweg über den JavaScript-Thread.
+ */
+html {
+  height: 100%;
+  overscroll-behavior-y: contain;
+}
+
+body {
   width: 100%;
-  min-height: var(--app-viewport-height, 100dvh);
+  min-height: 100dvh;
   background: var(--c-bg);
   color: var(--c-text);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif;
@@ -47,16 +72,7 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  touch-action: manipulation;
-  overscroll-behavior: none;
 }
-
-/*
- * `overflow-x: hidden` auf html UND body ließ beide zu Scroll-Containern werden
- * (overflow-y rechnet dann zu `auto`), was in WebKit `position: sticky`
- * aussetzen lässt. `clip` erzeugt keinen Scroll-Container und tut dasselbe.
- */
-body { overflow-x: clip; }
 
 /*
  * Scroll-Container: `overscroll-behavior` wirkt nur auf dem Element, auf dem es

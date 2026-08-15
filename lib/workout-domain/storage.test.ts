@@ -168,3 +168,28 @@ test("matching suggestions use the same set slot from the latest session", async
     await db.delete();
   }
 });
+
+test("discarding a workout removes its sets so they cannot feed suggestions", async () => {
+  const db = createGymTrackerDb(`discard-suggestion-${Date.now()}`);
+  const started = await createOrResumeWorkoutSession({ snapshot: snapshot(), now: 10, db });
+
+  await dispatchActiveWorkoutAction({ type: "update_draft", draft: { weight: 999, reps: 3 }, now: 11 }, db);
+  await dispatchActiveWorkoutAction({ type: "start_set", now: 12 }, db);
+  await dispatchActiveWorkoutAction({ type: "complete_set", now: 13 }, db);
+
+  assert.equal(await db.workoutSetsV2.where("status").equals("completed").count(), 1);
+
+  await dispatchActiveWorkoutAction({ type: "discard_workout", now: 14 }, db);
+
+  assert.equal(
+    await db.workoutSetsV2.where("sessionId").equals(started.sessionId).count(),
+    0,
+    "verworfene Sätze dürfen nicht als Waisen zurückbleiben"
+  );
+
+  // Eine neue Session darf den 999-kg-Ausrutscher nicht mehr vorgeschlagen bekommen.
+  const fresh = await createOrResumeWorkoutSession({ snapshot: snapshot(), now: 20, db });
+  const suggestion = await getMatchingSetSuggestion(fresh, fresh.queue[0], db);
+  assert.equal(suggestion, null, "verworfene Sätze dürfen keine Vorschläge liefern");
+  await db.delete();
+});

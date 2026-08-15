@@ -51,7 +51,7 @@ export default function StatisticsPage() {
   const progressDelta = progress.length > 1 ? progress.at(-1)!.bestEstimatedOneRepMaxKg - progress[0].bestEstimatedOneRepMaxKg : null;
   const latestProgress = progress.at(-1);
 
-  return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 20px)" }}>
+  return <div style={{ minHeight: "100dvh", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 20px)" }}>
     <header style={{ padding: "calc(20px + var(--safe-area-top)) 20px 16px" }}><p style={{ color: "var(--c-text-3)", fontSize: 12 }}>Nur abgeschlossene Arbeitssätze</p><h1 style={{ fontSize: 27, marginTop: 2 }}>Fortschritt</h1></header>
     <main style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 18 }}>
       {loading ? <p style={{ color: "var(--c-text-3)", textAlign: "center", paddingTop: 40 }}>Lädt …</p> : !sessions.length ? <div style={{ padding: "42px 20px", borderRadius: 16, background: "var(--c-surface)", border: "1px solid var(--c-border)", textAlign: "center" }}><p style={{ fontSize: 32 }}>↗</p><h2 style={{ fontSize: 17, marginTop: 12 }}>Noch keine Statistik</h2><p style={{ color: "var(--c-text-3)", fontSize: 13, marginTop: 6 }}>Nach dem ersten abgeschlossenen Workout wird dein Fortschritt sichtbar.</p></div> : <>

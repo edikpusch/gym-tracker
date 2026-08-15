@@ -29,7 +29,7 @@ import {
   PLAN_VERSION,
   PLAN_VERSION_KEY,
   WORKOUT_LOG_KEY,
-} from "@/lib/workoutEngine";
+} from "@/lib/legacyStorageKeys";
 import { getDb, type ActiveWorkoutSnapshot, type AppSetting, type GymTrackerDB, type SetEntry, type WeightEntry, type WorkoutSession } from "@/lib/db";
 import type { SessionSetRecord, WorkoutMetaEntry, WorkoutRuntimeState } from "@/lib/workout-domain/types";
 
@@ -427,6 +427,24 @@ export async function importGymTrackerBackup(rawText: string, db: GymTrackerDB =
   const entries = inspected.entries;
   const database = inspected.database;
 
+  // Ein auf einem frischen Gerät erzeugtes Backup enthält lauter leere Listen.
+  // Bisher liefen die clear()-Aufrufe trotzdem — der komplette Verlauf war weg,
+  // ohne Rückfrage und ohne Möglichkeit, das rückgängig zu machen.
+  const existingSessions = await db.workoutSessionsV2.count();
+  const existingLegacySessions = await db.sessions.count();
+  const backupIsEmpty =
+    inspected.hasDatabase &&
+    database.workoutSessionsV2.length === 0 &&
+    database.legacySessions.length === 0 &&
+    database.workoutSetsV2.length === 0 &&
+    database.legacySets.length === 0;
+
+  if (backupIsEmpty && existingSessions + existingLegacySessions > 0) {
+    throw new Error(
+      `Dieses Backup enthält keine Trainings, auf dem Gerät liegen aber ${existingSessions + existingLegacySessions}. Der Import würde alles löschen und wurde abgebrochen.`
+    );
+  }
+
   clearActiveWorkoutState();
 
   const nextStorageEntries = (Object.keys(STORAGE_KEY_MAP) as Array<keyof BackupStorageEntries>).reduce<
@@ -436,8 +454,9 @@ export async function importGymTrackerBackup(rawText: string, db: GymTrackerDB =
     return result;
   }, {});
 
-  writeStorageEntries(nextStorageEntries);
-
+  // Erst die Datenbank, dann localStorage. Andersherum blieb bei einer
+  // fehlgeschlagenen Transaktion ein Mischzustand zurück: Pläne und
+  // Einstellungen bereits ersetzt, die Trainings noch die alten.
   if (inspected.hasDatabase) await db.transaction("rw", [db.sets, db.sessions, db.weights, db.activeWorkout, db.settings, db.workoutSessionsV2, db.workoutSetsV2, db.workoutMeta], async () => {
     await Promise.all([db.sets.clear(), db.sessions.clear(), db.weights.clear(), db.activeWorkout.clear(), db.settings.clear(), db.workoutSessionsV2.clear(), db.workoutSetsV2.clear(), db.workoutMeta.clear()]);
     await Promise.all([
@@ -451,6 +470,8 @@ export async function importGymTrackerBackup(rawText: string, db: GymTrackerDB =
       database.workoutMeta.length ? db.workoutMeta.bulkPut(database.workoutMeta) : Promise.resolve(),
     ]);
   });
+
+  writeStorageEntries(nextStorageEntries);
 
   return {
     restoredAt: new Date().toISOString(),

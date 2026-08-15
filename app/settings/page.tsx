@@ -90,7 +90,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 20px)" }}>
+    <div style={{ minHeight: "100dvh", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 20px)" }}>
       <header style={{ padding: "calc(20px + var(--safe-area-top)) 20px 16px" }}><p style={{ color: "var(--c-text-3)", fontSize: 12, marginBottom: 2 }}>Gym Tracker</p><h1 style={{ fontSize: 26, fontWeight: 750 }}>Einstellungen</h1></header>
 
       <main style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 22 }}>

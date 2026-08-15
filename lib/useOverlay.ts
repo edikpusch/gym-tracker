@@ -15,6 +15,57 @@ import { useEffect, useRef } from "react";
  * 4. Fokus wandert ins Overlay und beim Schließen zurück auf das auslösende
  *    Element; Tab bleibt innerhalb (Focus-Trap).
  */
+/*
+ * Die Scroll-Sperre wird gezählt statt einfach gesetzt und zurückgenommen.
+ *
+ * Warum das nötig ist: Öffnen sich zwei Overlays überlappend (Sheet über Sheet,
+ * oder ein Sheet, das beim Schließen ein anderes öffnet), setzt das zweite die
+ * Sperre und das erste hebt sie beim Aufräumen wieder auf — obwohl noch ein
+ * Overlay offen ist. Umgekehrt kann ein verschluckter Aufräumlauf den Body
+ * dauerhaft auf `position: fixed` stehen lassen. Dann scrollt die ganze App
+ * nicht mehr, und zwar bis zum Neuladen.
+ *
+ * Der Zähler macht beide Fälle unmöglich, und `releaseScrollLock()` ist die
+ * Notbremse, falls doch einmal etwas hängen bleibt.
+ */
+let lockCount = 0;
+let savedScrollY = 0;
+
+function lockScroll() {
+  if (lockCount === 0) {
+    savedScrollY = window.scrollY;
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${savedScrollY}px`;
+    document.body.style.width = "100%";
+  }
+  lockCount += 1;
+}
+
+function unlockScroll() {
+  lockCount = Math.max(0, lockCount - 1);
+  if (lockCount > 0) return;
+  document.body.style.overflow = "";
+  document.body.style.position = "";
+  document.body.style.top = "";
+  document.body.style.width = "";
+  window.scrollTo(0, savedScrollY);
+}
+
+/**
+ * Hebt die Sperre bedingungslos auf. Wird beim Seitenwechsel aufgerufen, damit
+ * ein Overlay, das während einer Navigation verschwindet, die App nicht
+ * unscrollbar zurücklässt.
+ */
+export function releaseScrollLock() {
+  if (typeof document === "undefined") return;
+  lockCount = 0;
+  document.body.style.overflow = "";
+  document.body.style.position = "";
+  document.body.style.top = "";
+  document.body.style.width = "";
+}
+
 export function useOverlay(open: boolean, onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   // Über einen Ref, damit die Effekte unten nicht bei jedem neuen onClose neu
@@ -24,27 +75,10 @@ export function useOverlay(open: boolean, onClose: () => void) {
     closeRef.current = onClose;
   }, [onClose]);
 
-  // Scroll-Sperre
   useEffect(() => {
     if (!open || typeof document === "undefined") return;
-    const y = window.scrollY;
-    const previous = {
-      overflow: document.body.style.overflow,
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-    };
-    document.body.style.overflow = "hidden";
-    document.body.style.position = "fixed";
-    document.body.style.top = `-${y}px`;
-    document.body.style.width = "100%";
-    return () => {
-      document.body.style.overflow = previous.overflow;
-      document.body.style.position = previous.position;
-      document.body.style.top = previous.top;
-      document.body.style.width = previous.width;
-      window.scrollTo(0, y);
-    };
+    lockScroll();
+    return unlockScroll;
   }, [open]);
 
   // Escape und Focus-Trap

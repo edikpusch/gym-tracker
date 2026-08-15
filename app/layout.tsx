@@ -4,6 +4,7 @@ import { ViewportMetricsController } from "@/components/viewport-metrics-control
 import { WorkoutDomainBootstrap } from "@/components/workout-domain-bootstrap";
 import { RestSignalMonitor } from "@/components/rest-signal-monitor";
 import { PwaProvider } from "@/components/pwa-provider";
+import { ScrollLockGuard } from "@/components/scroll-lock-guard";
 
 export const metadata: Metadata = {
   title: "Gym Tracker",
@@ -19,8 +20,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Zoom war gesperrt, bei Schriftgrößen von 9 bis 13px. Wer eine Lesebrille
+  // braucht, konnte die App damit nicht benutzen (WCAG 1.4.4). Der Schutz vor
+  // versehentlichem Doppeltipp-Zoom beim schnellen +/−-Tippen sitzt jetzt als
+  // `touch-action: manipulation` auf den Schaltflächen selbst.
+  maximumScale: 5,
+  userScalable: true,
   viewportFit: "cover",
   themeColor: "#0b1120",
 };
@@ -34,6 +39,7 @@ export default function RootLayout({
     <html lang="de">
       <body style={{ background: "var(--c-bg)" }}>
         <PwaProvider>
+          <ScrollLockGuard />
           <ViewportMetricsController />
           <WorkoutDomainBootstrap />
           <RestSignalMonitor />

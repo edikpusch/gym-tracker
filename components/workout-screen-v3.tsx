@@ -150,7 +150,7 @@ function Preview({
   const previewSteps = createWorkoutSnapshotFromPlan(plan, day, 0).steps;
 
   return (
-    <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 28px)" }}>
+    <div style={{ minHeight: "100dvh", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 28px)" }}>
       <header style={{ padding: "calc(18px + var(--safe-area-top)) 20px 18px" }}>
         <p style={{ fontSize: 12, color: "var(--c-accent)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.9 }}>{plan.name}</p>
         <h1 style={{ fontSize: 28, lineHeight: 1.15, marginTop: 5 }}>{day.name}</h1>
@@ -621,22 +621,22 @@ export function WorkoutScreenV3({ dayId }: { dayId: string }) {
   const uniqueExerciseCount = useMemo(() => state ? new Set(state.queue.filter((item) => !item.activity).map((item) => item.exercise.exerciseId)).size : 0, [state]);
 
   if (loading || !plan || !day) {
-    return <div role="status" style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", display: "grid", placeItems: "center", color: "var(--c-text-2)" }}>Lädt…</div>;
+    return <div role="status" style={{ minHeight: "100dvh", background: "var(--c-bg)", display: "grid", placeItems: "center", color: "var(--c-text-2)" }}>Lädt…</div>;
   }
 
   if (loadError) {
-    return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", display: "grid", placeItems: "center", padding: 24, textAlign: "center" }}><div style={{ maxWidth: 380 }}><h1 style={{ fontSize: 22 }}>Daten nicht erreichbar</h1><p role="alert" style={{ color: "var(--c-text-2)", marginTop: 10, lineHeight: 1.5 }}>{loadError}</p><button onClick={() => window.location.reload()} style={{ minHeight: 48, marginTop: 22, padding: "0 24px", borderRadius: 14, background: "var(--c-accent)", color: "#fff", fontWeight: 800 }}>Erneut versuchen</button></div></div>;
+    return <div style={{ minHeight: "100dvh", background: "var(--c-bg)", display: "grid", placeItems: "center", padding: 24, textAlign: "center" }}><div style={{ maxWidth: 380 }}><h1 style={{ fontSize: 22 }}>Daten nicht erreichbar</h1><p role="alert" style={{ color: "var(--c-text-2)", marginTop: 10, lineHeight: 1.5 }}>{loadError}</p><button onClick={() => window.location.reload()} style={{ minHeight: 48, marginTop: 22, padding: "0 24px", borderRadius: 14, background: "var(--c-accent)", color: "#fff", fontWeight: 800 }}>Erneut versuchen</button></div></div>;
   }
 
   if (!state) return <Preview plan={plan} day={day} onStart={startWorkout} />;
 
   if (state.status === "completed") {
     const completedSession = historySessionFromRuntime(state);
-    return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", padding: "calc(24px + var(--safe-area-top)) 16px calc(24px + var(--safe-area-bottom))" }}><main style={{ maxWidth: 560, margin: "0 auto", display: "flex", flexDirection: "column", gap: 22 }}><div><div style={{ width: 54, height: 54, borderRadius: 18, background: "var(--c-success-dim)", color: "var(--c-success)", display: "grid", placeItems: "center", fontSize: 26 }}>✓</div><h1 style={{ fontSize: 29, marginTop: 18 }}>Workout abgeschlossen</h1><p style={{ color: "var(--c-text-3)", marginTop: 7 }}>Gespeichert. Hier ist das Wesentliche aus deiner Einheit.</p></div><WorkoutSessionMetrics session={completedSession} /><WorkoutExerciseSummary session={completedSession} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}><button onClick={() => router.push("/history")} style={{ padding: "14px 12px", borderRadius: 14, background: "var(--c-surface)", color: "var(--c-text)", border: "1px solid var(--c-border-strong)", fontWeight: 800 }}>Im Verlauf</button><button onClick={() => router.push("/")} style={{ padding: "14px 12px", borderRadius: 14, background: "var(--c-accent)", color: "#fff", fontWeight: 800 }}>Fertig</button></div></main></div>;
+    return <div style={{ minHeight: "100dvh", background: "var(--c-bg)", padding: "calc(24px + var(--safe-area-top)) 16px calc(24px + var(--safe-area-bottom))" }}><main style={{ maxWidth: 560, margin: "0 auto", display: "flex", flexDirection: "column", gap: 22 }}><div><div style={{ width: 54, height: 54, borderRadius: 18, background: "var(--c-success-dim)", color: "var(--c-success)", display: "grid", placeItems: "center", fontSize: 26 }}>✓</div><h1 style={{ fontSize: 29, marginTop: 18 }}>Workout abgeschlossen</h1><p style={{ color: "var(--c-text-3)", marginTop: 7 }}>Gespeichert. Hier ist das Wesentliche aus deiner Einheit.</p></div><WorkoutSessionMetrics session={completedSession} /><WorkoutExerciseSummary session={completedSession} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}><button onClick={() => router.push("/history")} style={{ padding: "14px 12px", borderRadius: 14, background: "var(--c-surface)", color: "var(--c-text)", border: "1px solid var(--c-border-strong)", fontWeight: 800 }}>Im Verlauf</button><button onClick={() => router.push("/")} style={{ padding: "14px 12px", borderRadius: 14, background: "var(--c-accent)", color: "#fff", fontWeight: 800 }}>Fertig</button></div></main></div>;
   }
 
   if (state.status === "discarded") {
-    return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", display: "grid", placeItems: "center", padding: 24, textAlign: "center" }}><div><h1>Workout verworfen</h1><p style={{ color: "var(--c-text-3)", marginTop: 8 }}>Die laufende Session wird nicht als abgeschlossenes Training gewertet.</p><button onClick={() => router.push("/")} style={{ marginTop: 24, padding: "14px 24px", borderRadius: 14, background: "var(--c-surface)", color: "var(--c-text)", fontWeight: 800 }}>Zur Startseite</button></div></div>;
+    return <div style={{ minHeight: "100dvh", background: "var(--c-bg)", display: "grid", placeItems: "center", padding: 24, textAlign: "center" }}><div><h1>Workout verworfen</h1><p style={{ color: "var(--c-text-3)", marginTop: 8 }}>Die laufende Session wird nicht als abgeschlossenes Training gewertet.</p><button onClick={() => router.push("/")} style={{ marginTop: 24, padding: "14px 24px", borderRadius: 14, background: "var(--c-surface)", color: "var(--c-text)", fontWeight: 800 }}>Zur Startseite</button></div></div>;
   }
 
   return (

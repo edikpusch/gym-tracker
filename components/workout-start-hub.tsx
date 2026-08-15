@@ -72,12 +72,12 @@ export function WorkoutStartHub({ mode }: { mode: "home" | "picker" }) {
   const recommendation = useMemo(() => data ? getRecommendedWorkout(data.plan, data.sessions) : null, [data]);
   const latestByWorkout = useMemo(() => data ? getLatestSessionsByWorkout(data.sessions) : new Map<string, HistorySession>(), [data]);
 
-  if (!data) return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", display: "grid", placeItems: "center", color: "var(--c-text-3)" }}>Lädt …</div>;
+  if (!data) return <div style={{ minHeight: "100dvh", background: "var(--c-bg)", display: "grid", placeItems: "center", color: "var(--c-text-3)" }}>Lädt …</div>;
 
   const otherDays = data.plan.days.filter((day) => day.id !== recommendation?.day?.id);
   const today = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
 
-  return <div style={{ minHeight: "var(--app-viewport-height)", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 24px)" }}>
+  return <div style={{ minHeight: "100dvh", background: "var(--c-bg)", paddingBottom: "calc(var(--c-tab-height) + var(--safe-area-bottom) + 24px)" }}>
     <header style={{ padding: "calc(20px + var(--safe-area-top)) 20px 17px" }}>
       {mode === "home" ? <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}><div><p style={{ color: "var(--c-text-3)", fontSize: 12, textTransform: "capitalize" }}>{today}</p><h1 style={{ fontSize: 27, marginTop: 2 }}>{greeting()}</h1></div><span style={{ color: "var(--c-text-2)", fontSize: 12 }}>v{APP_VERSION}</span></div> : <><p style={{ color: "var(--c-text-3)", fontSize: 12 }}>{data.plan.name}</p><h1 style={{ fontSize: 27, marginTop: 2 }}>Workout wählen</h1><p style={{ color: "var(--c-text-3)", fontSize: 13, marginTop: 6 }}>Öffne zuerst die Übersicht. Das Training startet erst nach deiner Bestätigung.</p></>}
     </header>

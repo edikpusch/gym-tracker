@@ -141,7 +141,15 @@ export async function dispatchActiveWorkoutAction(
 
       const next = reduceWorkoutState(current, action);
       await db.workoutSessionsV2.put(next);
-      if (next.results.length > 0) {
+
+      if (next.status === "discarded") {
+        // Ohne dieses Aufräumen blieben die Sätze mit Status "completed" in
+        // workoutSetsV2 stehen. getMatchingSetSuggestion prüft nur den Status,
+        // nicht ob die Session verworfen wurde — ein versehentlich mit 999 kg
+        // gespeicherter Satz wurde deshalb auch nach dem Verwerfen noch als
+        // Vorschlag angeboten und automatisch in den Draft geschrieben.
+        await db.workoutSetsV2.where("sessionId").equals(next.sessionId).delete();
+      } else if (next.results.length > 0) {
         await db.workoutSetsV2.bulkPut(next.results);
       }
 
